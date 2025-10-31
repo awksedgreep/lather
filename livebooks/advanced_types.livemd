@@ -1,0 +1,993 @@
+# Advanced Type Mapping and Validation
+
+```elixir
+Mix.install([
+  {:lather, path: ".."},
+  {:finch, "~> 0.18"},
+  {:kino, "~> 0.12"},
+  {:jason, "~> 1.4"}
+])
+```
+
+## Introduction
+
+This Livebook explores Lather's advanced type mapping and validation capabilities. You'll learn how to:
+
+- Work with complex nested data structures
+- Generate Elixir structs from WSDL types
+- Implement custom type parsers and validators
+- Handle XML-to-Elixir and Elixir-to-XML conversions
+- Validate data against WSDL schemas
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Environment Setup
+
+```elixir
+# Start applications
+{:ok, _} = Application.ensure_all_started(:lather)
+
+# Configure Finch
+children = [{Finch, name: Lather.Finch}]
+{:ok, _supervisor} = Supervisor.start_link(children, strategy: :one_for_one)
+
+IO.puts("🔧 Type mapping environment ready!")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Sample WSDL Types
+
+Let's start by defining some complex enterprise types that you might find in a real WSDL:
+
+```elixir
+defmodule SampleTypes do
+  def enterprise_types do
+    %{
+      "User" => %{
+        type: :complex,
+        elements: %{
+          "id" => %{type: :string, required: true},
+          "personalInfo" => %{type: "PersonalInfo", required: true},
+          "workInfo" => %{type: "WorkInfo", required: true},
+          "permissions" => %{type: :string, array: true, required: false},
+          "metadata" => %{type: "Metadata", required: false}
+        }
+      },
+      
+      "PersonalInfo" => %{
+        type: :complex,
+        elements: %{
+          "firstName" => %{type: :string, required: true, min_length: 1, max_length: 50},
+          "lastName" => %{type: :string, required: true, min_length: 1, max_length: 50},
+          "email" => %{type: :string, required: true, format: :email},
+          "phone" => %{type: :string, required: false, pattern: ~r/^\+?[\d\s\-\(\)]+$/},
+          "birthDate" => %{type: :date, required: false},
+          "address" => %{type: "Address", required: false}
+        }
+      },
+      
+      "WorkInfo" => %{
+        type: :complex,
+        elements: %{
+          "employeeId" => %{type: :string, required: true},
+          "department" => %{type: :string, required: true, enum: ["Engineering", "Marketing", "Sales", "HR", "Finance"]},
+          "title" => %{type: :string, required: true},
+          "manager" => %{type: :string, required: false, format: :email},
+          "startDate" => %{type: :date, required: true},
+          "salary" => %{type: :decimal, required: false, min: 0},
+          "location" => %{type: "Location", required: false}
+        }
+      },
+      
+      "Address" => %{
+        type: :complex,
+        elements: %{
+          "street" => %{type: :string, required: true},
+          "city" => %{type: :string, required: true},
+          "state" => %{type: :string, required: false},
+          "zipCode" => %{type: :string, required: true, pattern: ~r/^\d{5}(-\d{4})?$/},
+          "country" => %{type: :string, required: true, default: "USA"}
+        }
+      },
+      
+      "Location" => %{
+        type: :complex,
+        elements: %{
+          "office" => %{type: :string, required: true},
+          "floor" => %{type: :integer, required: false, min: 1, max: 100},
+          "desk" => %{type: :string, required: false},
+          "coordinates" => %{type: "Coordinates", required: false}
+        }
+      },
+      
+      "Coordinates" => %{
+        type: :complex,
+        elements: %{
+          "latitude" => %{type: :decimal, required: true, min: -90, max: 90},
+          "longitude" => %{type: :decimal, required: true, min: -180, max: 180}
+        }
+      },
+      
+      "Metadata" => %{
+        type: :complex,
+        elements: %{
+          "created" => %{type: :datetime, required: true},
+          "lastModified" => %{type: :datetime, required: false},
+          "version" => %{type: :integer, required: true, default: 1},
+          "tags" => %{type: :string, array: true, required: false},
+          "customFields" => %{type: "CustomField", array: true, required: false}
+        }
+      },
+      
+      "CustomField" => %{
+        type: :complex,
+        elements: %{
+          "name" => %{type: :string, required: true},
+          "value" => %{type: :string, required: true},
+          "type" => %{type: :string, required: true, enum: ["string", "number", "boolean", "date"]}
+        }
+      }
+    }
+  end
+  
+  def sample_data do
+    %{
+      "id" => "USR001",
+      "personalInfo" => %{
+        "firstName" => "John",
+        "lastName" => "Doe",
+        "email" => "john.doe@company.com",
+        "phone" => "+1-555-0123",
+        "birthDate" => "1985-03-15",
+        "address" => %{
+          "street" => "123 Main St",
+          "city" => "New York",
+          "state" => "NY",
+          "zipCode" => "10001",
+          "country" => "USA"
+        }
+      },
+      "workInfo" => %{
+        "employeeId" => "EMP001",
+        "department" => "Engineering",
+        "title" => "Senior Software Engineer",
+        "manager" => "jane.smith@company.com",
+        "startDate" => "2020-01-15",
+        "salary" => 95000.00,
+        "location" => %{
+          "office" => "New York HQ",
+          "floor" => 15,
+          "desk" => "15-A-042",
+          "coordinates" => %{
+            "latitude" => 40.7128,
+            "longitude" => -74.0060
+          }
+        }
+      },
+      "permissions" => [
+        "access_development_tools",
+        "read_project_data",
+        "write_code_repositories"
+      ],
+      "metadata" => %{
+        "created" => "2020-01-15T09:00:00Z",
+        "lastModified" => "2024-01-15T14:30:00Z",
+        "version" => 3,
+        "tags" => ["senior", "full-stack", "team-lead"],
+        "customFields" => [
+          %{
+            "name" => "skills",
+            "value" => "Elixir,Phoenix,PostgreSQL",
+            "type" => "string"
+          },
+          %{
+            "name" => "certifications",
+            "value" => "AWS Solutions Architect",
+            "type" => "string"
+          }
+        ]
+      }
+    }
+  end
+end
+
+# Display the type definitions
+types = SampleTypes.enterprise_types()
+IO.puts("🏗️ Enterprise Type System (#{map_size(types)} types):")
+Enum.each(types, fn {name, type_def} ->
+  element_count = map_size(type_def.elements)
+  IO.puts("   • #{name}: #{element_count} elements")
+end)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Type Validation Demo
+
+Let's demonstrate how Lather validates data against type definitions:
+
+```elixir
+defmodule TypeValidationDemo do
+  def validate_user_data(data, types) do
+    user_type = types["User"]
+    
+    case Lather.Types.Mapper.validate_type(data, user_type, types: types) do
+      :ok ->
+        {:valid, "Data passes all validations"}
+      {:error, error} ->
+        {:invalid, Lather.Error.format_error(error)}
+    end
+  end
+  
+  def create_test_cases do
+    [
+      {
+        "✅ Valid Complete User",
+        SampleTypes.sample_data()
+      },
+      {
+        "❌ Missing Required Field", 
+        SampleTypes.sample_data() |> Map.drop(["personalInfo"])
+      },
+      {
+        "❌ Invalid Email Format",
+        SampleTypes.sample_data()
+        |> put_in(["personalInfo", "email"], "not-an-email")
+      },
+      {
+        "❌ Invalid Department",
+        SampleTypes.sample_data()
+        |> put_in(["workInfo", "department"], "InvalidDept")
+      },
+      {
+        "❌ Invalid Coordinates",
+        SampleTypes.sample_data()
+        |> put_in(["workInfo", "location", "coordinates", "latitude"], 999)
+      },
+      {
+        "❌ Invalid ZIP Code",
+        SampleTypes.sample_data()
+        |> put_in(["personalInfo", "address", "zipCode"], "invalid")
+      }
+    ]
+  end
+end
+
+# Run validation tests
+types = SampleTypes.enterprise_types()
+test_cases = TypeValidationDemo.create_test_cases()
+
+IO.puts("🧪 Type Validation Test Results:")
+IO.puts("=" |> String.duplicate(50))
+
+Enum.each(test_cases, fn {description, data} ->
+  case TypeValidationDemo.validate_user_data(data, types) do
+    {:valid, message} ->
+      IO.puts("#{description}: ✅ #{message}")
+    {:invalid, error} ->
+      IO.puts("#{description}: ❌")
+      IO.puts("   Error: #{error}")
+  end
+  IO.puts("")
+end)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Interactive Type Builder
+
+Let's create an interactive form to build and validate user data:
+
+```elixir
+# Create input widgets for user data
+first_name_input = Kino.Input.text("First Name", default: "John")
+last_name_input = Kino.Input.text("Last Name", default: "Doe")
+email_input = Kino.Input.text("Email", default: "john.doe@company.com")
+department_select = Kino.Input.select("Department", [
+  {"Engineering", "Engineering"},
+  {"Marketing", "Marketing"},
+  {"Sales", "Sales"},
+  {"HR", "HR"},
+  {"Finance", "Finance"}
+])
+title_input = Kino.Input.text("Job Title", default: "Software Engineer")
+salary_input = Kino.Input.number("Salary", default: 75000)
+
+# Create form layout
+user_form = Kino.Layout.grid([
+  [first_name_input, last_name_input],
+  [email_input, department_select],
+  [title_input, salary_input]
+], columns: 2)
+
+validate_button = Kino.Control.button("Validate User Data")
+
+Kino.Layout.grid([
+  [user_form],
+  [validate_button]
+])
+```
+
+```elixir
+# Handle validation button clicks
+types = SampleTypes.enterprise_types()
+
+Kino.Control.stream(validate_button)
+|> Kino.listen(fn _event ->
+  # Build user data from form inputs
+  user_data = %{
+    "id" => "USR#{:rand.uniform(999)}",
+    "personalInfo" => %{
+      "firstName" => Kino.Input.read(first_name_input),
+      "lastName" => Kino.Input.read(last_name_input),
+      "email" => Kino.Input.read(email_input)
+    },
+    "workInfo" => %{
+      "employeeId" => "EMP#{:rand.uniform(999)}",
+      "department" => Kino.Input.read(department_select),
+      "title" => Kino.Input.read(title_input),
+      "startDate" => "2024-01-01",
+      "salary" => Kino.Input.read(salary_input)
+    },
+    "permissions" => ["basic_access"],
+    "metadata" => %{
+      "created" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "version" => 1
+    }
+  }
+  
+  IO.puts("🔍 Validating user data...")
+  IO.puts("Data structure:")
+  IO.inspect(user_data, pretty: true)
+  
+  case TypeValidationDemo.validate_user_data(user_data, types) do
+    {:valid, message} ->
+      IO.puts("\n✅ #{message}")
+      IO.puts("🎉 User data is ready for SOAP submission!")
+      
+    {:invalid, error} ->
+      IO.puts("\n❌ Validation failed:")
+      IO.puts("   #{error}")
+      IO.puts("💡 Please correct the errors and try again")
+  end
+  
+  IO.puts("\n" <> String.duplicate("=", 60))
+end)
+
+:ok
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Custom Type Parsers
+
+Sometimes you need custom logic to parse special data formats. Let's create some custom type parsers:
+
+```elixir
+defmodule CustomTypeParsers do
+  def phone_number_parser(value) when is_binary(value) do
+    # Remove common phone number formatting
+    cleaned = String.replace(value, ~r/[\s\-\(\)]/, "")
+    
+    cond do
+      Regex.match?(~r/^\+\d{10,15}$/, cleaned) ->
+        {:ok, cleaned}
+      Regex.match?(~r/^\d{10}$/, cleaned) ->
+        {:ok, "+1#{cleaned}"}  # Assume US number
+      true ->
+        {:error, :invalid_phone_format}
+    end
+  end
+  def phone_number_parser(_), do: {:error, :invalid_type}
+  
+  def coordinate_parser(%{"latitude" => lat, "longitude" => lng}) 
+      when is_number(lat) and is_number(lng) do
+    cond do
+      lat < -90 or lat > 90 ->
+        {:error, :invalid_latitude}
+      lng < -180 or lng > 180 ->
+        {:error, :invalid_longitude}
+      true ->
+        {:ok, %{lat: lat, lng: lng, formatted: "#{lat},#{lng}"}}
+    end
+  end
+  def coordinate_parser(_), do: {:error, :invalid_coordinates}
+  
+  def skill_list_parser(value) when is_binary(value) do
+    skills = 
+      value
+      |> String.split([",", ";", "|"])
+      |> Enum.map(&String.trim/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.map(&String.downcase/1)
+    
+    {:ok, skills}
+  end
+  def skill_list_parser(value) when is_list(value), do: {:ok, value}
+  def skill_list_parser(_), do: {:error, :invalid_skill_format}
+  
+  def date_range_parser(value) when is_binary(value) do
+    case String.split(value, "/") do
+      [start_str, end_str] ->
+        with {:ok, start_date} <- Date.from_iso8601(start_str),
+             {:ok, end_date} <- Date.from_iso8601(end_str) do
+          if Date.compare(start_date, end_date) in [:lt, :eq] do
+            {:ok, %{start: start_date, end: end_date, days: Date.diff(end_date, start_date)}}
+          else
+            {:error, :invalid_date_order}
+          end
+        else
+          _ -> {:error, :invalid_date_format}
+        end
+      _ ->
+        {:error, :invalid_range_format}
+    end
+  end
+  def date_range_parser(_), do: {:error, :invalid_type}
+  
+  def currency_parser(value) when is_binary(value) do
+    # Parse currency strings like "$50,000", "€45.50", "¥1000"
+    cleaned = String.replace(value, ~r/[,\s]/, "")
+    
+    cond do
+      Regex.match?(~r/^\$[\d.]+$/, cleaned) ->
+        amount = String.slice(cleaned, 1..-1) |> String.to_float()
+        {:ok, %{amount: amount, currency: "USD"}}
+        
+      Regex.match?(~r/^€[\d.]+$/, cleaned) ->
+        amount = String.slice(cleaned, 1..-1) |> String.to_float()
+        {:ok, %{amount: amount, currency: "EUR"}}
+        
+      Regex.match?(~r/^¥[\d.]+$/, cleaned) ->
+        amount = String.slice(cleaned, 1..-1) |> String.to_float()
+        {:ok, %{amount: amount, currency: "JPY"}}
+        
+      Regex.match?(~r/^[\d.]+$/, cleaned) ->
+        amount = String.to_float(cleaned)
+        {:ok, %{amount: amount, currency: "USD"}}  # Default to USD
+        
+      true ->
+        {:error, :invalid_currency_format}
+    end
+  rescue
+    _ -> {:error, :invalid_number}
+  end
+  def currency_parser(value) when is_number(value) do
+    {:ok, %{amount: value, currency: "USD"}}
+  end
+  def currency_parser(_), do: {:error, :invalid_type}
+end
+
+# Test custom parsers
+test_data = [
+  {"📞 Phone Parser", CustomTypeParsers.phone_number_parser("+1-555-123-4567")},
+  {"📍 Coordinates", CustomTypeParsers.coordinate_parser(%{"latitude" => 40.7128, "longitude" => -74.0060})},
+  {"🎯 Skills", CustomTypeParsers.skill_list_parser("Elixir, Phoenix, PostgreSQL, Docker")},
+  {"📅 Date Range", CustomTypeParsers.date_range_parser("2024-01-01/2024-12-31")},
+  {"💰 Currency", CustomTypeParsers.currency_parser("$75,000")}
+]
+
+IO.puts("🔧 Custom Type Parser Results:")
+IO.puts("=" |> String.duplicate(40))
+
+Enum.each(test_data, fn {description, result} ->
+  case result do
+    {:ok, parsed} ->
+      IO.puts("#{description}: ✅")
+      IO.puts("   Result: #{inspect(parsed)}")
+    {:error, reason} ->
+      IO.puts("#{description}: ❌ #{reason}")
+  end
+  IO.puts("")
+end)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## XML Conversion Demo
+
+Let's see how Lather converts between Elixir data and XML:
+
+```elixir
+defmodule XMLConversionDemo do
+  def demonstrate_conversion do
+    # Sample user data
+    user_data = SampleTypes.sample_data()
+    types = SampleTypes.enterprise_types()
+    
+    IO.puts("🔄 XML Conversion Demonstration")
+    IO.puts("=" |> String.duplicate(45))
+    
+    # Convert Elixir data to XML structure
+    IO.puts("1️⃣ Converting Elixir data to XML...")
+    
+    case Lather.Types.Mapper.elixir_to_xml(user_data, types["User"], types: types) do
+      {:ok, xml_structure} ->
+        IO.puts("✅ Conversion successful!")
+        
+        # Build actual XML string
+        xml_string = Lather.XML.Builder.build(xml_structure)
+        
+        IO.puts("\n📄 Generated XML (first 500 characters):")
+        IO.puts(String.slice(xml_string, 0, 500) <> "...")
+        
+        # Parse it back to verify round-trip
+        IO.puts("\n2️⃣ Parsing XML back to Elixir...")
+        
+        case Lather.XML.Parser.parse(xml_string) do
+          {:ok, parsed_data} ->
+            IO.puts("✅ Parse successful!")
+            
+            # Convert back to Elixir types
+            case Lather.Types.Mapper.xml_to_elixir(parsed_data, types["User"], types: types) do
+              {:ok, elixir_data} ->
+                IO.puts("✅ Round-trip conversion successful!")
+                
+                # Compare original and round-trip data
+                original_keys = get_all_keys(user_data)
+                roundtrip_keys = get_all_keys(elixir_data)
+                
+                IO.puts("\n📊 Round-trip Analysis:")
+                IO.puts("   Original data keys: #{length(original_keys)}")
+                IO.puts("   Round-trip keys: #{length(roundtrip_keys)}")
+                
+                missing_keys = original_keys -- roundtrip_keys
+                extra_keys = roundtrip_keys -- original_keys
+                
+                if length(missing_keys) == 0 and length(extra_keys) == 0 do
+                  IO.puts("   ✅ Perfect round-trip - all keys preserved!")
+                else
+                  if length(missing_keys) > 0 do
+                    IO.puts("   ⚠️ Missing keys: #{inspect(missing_keys)}")
+                  end
+                  if length(extra_keys) > 0 do
+                    IO.puts("   ⚠️ Extra keys: #{inspect(extra_keys)}")
+                  end
+                end
+                
+                {:ok, xml_string, elixir_data}
+                
+              {:error, error} ->
+                IO.puts("❌ XML to Elixir conversion failed: #{inspect(error)}")
+                {:error, error}
+            end
+            
+          {:error, error} ->
+            IO.puts("❌ XML parsing failed: #{inspect(error)}")
+            {:error, error}
+        end
+        
+      {:error, error} ->
+        IO.puts("❌ Elixir to XML conversion failed: #{inspect(error)}")
+        {:error, error}
+    end
+  end
+  
+  defp get_all_keys(data, prefix \\ "") do
+    case data do
+      map when is_map(map) ->
+        Enum.flat_map(map, fn {key, value} ->
+          current_key = if prefix == "", do: key, else: "#{prefix}.#{key}"
+          [current_key | get_all_keys(value, current_key)]
+        end)
+      
+      list when is_list(list) ->
+        list
+        |> Enum.with_index()
+        |> Enum.flat_map(fn {item, index} ->
+          current_key = "#{prefix}[#{index}]"
+          [current_key | get_all_keys(item, current_key)]
+        end)
+      
+      _ ->
+        []
+    end
+  end
+end
+
+# Run the conversion demo
+XMLConversionDemo.demonstrate_conversion()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Struct Generation Demo
+
+Let's see how Lather can generate Elixir struct modules from WSDL types:
+
+```elixir
+defmodule StructGenerationDemo do
+  def generate_enterprise_structs do
+    types = SampleTypes.enterprise_types()
+    
+    IO.puts("🏗️ Generating Elixir Structs from WSDL Types")
+    IO.puts("=" |> String.duplicate(50))
+    
+    case Lather.Types.Generator.generate_structs(types, "MyApp.Types") do
+      {:ok, modules} ->
+        IO.puts("✅ Successfully generated #{length(modules)} struct modules!")
+        
+        Enum.each(modules, fn module ->
+          IO.puts("   📦 #{inspect(module)}")
+        end)
+        
+        # Demonstrate struct usage
+        IO.puts("\n🧪 Testing Generated Structs:")
+        test_generated_structs(modules)
+        
+        {:ok, modules}
+        
+      {:error, error} ->
+        IO.puts("❌ Struct generation failed: #{inspect(error)}")
+        {:error, error}
+    end
+  end
+  
+  defp test_generated_structs(modules) do
+    # This would work with actually generated modules
+    # For demo purposes, we'll simulate the struct creation
+    
+    sample_structs = %{
+      "User" => %{
+        id: "USR001",
+        personal_info: %{},
+        work_info: %{},
+        permissions: [],
+        metadata: %{}
+      },
+      "PersonalInfo" => %{
+        first_name: "John",
+        last_name: "Doe", 
+        email: "john@example.com",
+        phone: "+1-555-0123",
+        birth_date: ~D[1985-03-15],
+        address: %{}
+      },
+      "WorkInfo" => %{
+        employee_id: "EMP001",
+        department: "Engineering",
+        title: "Software Engineer",
+        manager: "manager@example.com",
+        start_date: ~D[2020-01-15],
+        salary: Decimal.new("95000.00"),
+        location: %{}
+      }
+    }
+    
+    Enum.each(sample_structs, fn {struct_name, fields} ->
+      IO.puts("   🎯 #{struct_name}:")
+      IO.puts("      Fields: #{map_size(fields)}")
+      
+      field_list = Map.keys(fields) |> Enum.take(3) |> Enum.join(", ")
+      IO.puts("      Sample: #{field_list}...")
+    end)
+    
+    IO.puts("\n💡 Generated structs provide:")
+    IO.puts("   • Type safety for SOAP parameters")
+    IO.puts("   • IDE autocompletion support")
+    IO.puts("   • Pattern matching capabilities")
+    IO.puts("   • Compile-time field validation")
+  end
+end
+
+# Run struct generation demo
+StructGenerationDemo.generate_enterprise_structs()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Real-World Type Scenarios
+
+Let's explore some real-world type mapping scenarios you might encounter:
+
+```elixir
+defmodule RealWorldScenarios do
+  def financial_data_types do
+    %{
+      "Transaction" => %{
+        type: :complex,
+        elements: %{
+          "transactionId" => %{type: :string, required: true},
+          "amount" => %{type: "Money", required: true},
+          "currency" => %{type: :string, required: true, enum: ["USD", "EUR", "GBP", "JPY"]},
+          "timestamp" => %{type: :datetime, required: true},
+          "description" => %{type: :string, required: false, max_length: 255},
+          "category" => %{type: :string, required: true},
+          "tags" => %{type: :string, array: true, required: false},
+          "metadata" => %{type: "TransactionMetadata", required: false}
+        }
+      },
+      
+      "Money" => %{
+        type: :complex,
+        elements: %{
+          "amount" => %{type: :decimal, required: true, min: 0},
+          "currency" => %{type: :string, required: true, enum: ["USD", "EUR", "GBP", "JPY"]},
+          "precision" => %{type: :integer, required: false, default: 2}
+        }
+      },
+      
+      "TransactionMetadata" => %{
+        type: :complex,
+        elements: %{
+          "source" => %{type: :string, required: true},
+          "channel" => %{type: :string, required: true, enum: ["web", "mobile", "api", "batch"]},
+          "ipAddress" => %{type: :string, required: false, format: :ip},
+          "userAgent" => %{type: :string, required: false},
+          "correlationId" => %{type: :string, required: false}
+        }
+      }
+    }
+  end
+  
+  def healthcare_data_types do
+    %{
+      "Patient" => %{
+        type: :complex,
+        elements: %{
+          "patientId" => %{type: :string, required: true},
+          "mrn" => %{type: :string, required: true},  # Medical Record Number
+          "demographics" => %{type: "Demographics", required: true},
+          "insurance" => %{type: "Insurance", array: true, required: false},
+          "allergies" => %{type: "Allergy", array: true, required: false},
+          "medications" => %{type: "Medication", array: true, required: false}
+        }
+      },
+      
+      "Demographics" => %{
+        type: :complex,
+        elements: %{
+          "firstName" => %{type: :string, required: true},
+          "lastName" => %{type: :string, required: true},
+          "dateOfBirth" => %{type: :date, required: true},
+          "gender" => %{type: :string, required: true, enum: ["M", "F", "O", "U"]},
+          "ssn" => %{type: :string, required: false, pattern: ~r/^\d{3}-\d{2}-\d{4}$/},
+          "phone" => %{type: :string, required: false},
+          "email" => %{type: :string, required: false, format: :email}
+        }
+      },
+      
+      "Insurance" => %{
+        type: :complex,
+        elements: %{
+          "policyNumber" => %{type: :string, required: true},
+          "provider" => %{type: :string, required: true},
+          "groupNumber" => %{type: :string, required: false},
+          "effectiveDate" => %{type: :date, required: true},
+          "expirationDate" => %{type: :date, required: false}
+        }
+      }
+    }
+  end
+  
+  def inventory_data_types do
+    %{
+      "Product" => %{
+        type: :complex,
+        elements: %{
+          "sku" => %{type: :string, required: true},
+          "name" => %{type: :string, required: true},
+          "description" => %{type: :string, required: false},
+          "category" => %{type: "Category", required: true},
+          "pricing" => %{type: "Pricing", required: true},
+          "inventory" => %{type: "Inventory", required: true},
+          "attributes" => %{type: "ProductAttribute", array: true, required: false}
+        }
+      },
+      
+      "Category" => %{
+        type: :complex,
+        elements: %{
+          "id" => %{type: :string, required: true},
+          "name" => %{type: :string, required: true},
+          "parentId" => %{type: :string, required: false},
+          "level" => %{type: :integer, required: true, min: 1, max: 10}
+        }
+      },
+      
+      "Inventory" => %{
+        type: :complex,
+        elements: %{
+          "available" => %{type: :integer, required: true, min: 0},
+          "reserved" => %{type: :integer, required: true, min: 0},
+          "onOrder" => %{type: :integer, required: false, min: 0, default: 0},
+          "locations" => %{type: "InventoryLocation", array: true, required: false}
+        }
+      }
+    }
+  end
+  
+  def test_domain_types(domain_name, types) do
+    IO.puts("🏢 #{domain_name} Domain Types:")
+    IO.puts("   Types: #{map_size(types)}")
+    
+    Enum.each(types, fn {type_name, type_def} ->
+      element_count = map_size(type_def.elements)
+      required_count = Enum.count(type_def.elements, fn {_, elem} -> elem.required end)
+      
+      IO.puts("   • #{type_name}: #{element_count} fields (#{required_count} required)")
+    end)
+    
+    IO.puts("")
+  end
+end
+
+# Test different domain type systems
+IO.puts("🌍 Real-World Type System Examples")
+IO.puts("=" |> String.duplicate(50))
+
+RealWorldScenarios.test_domain_types("Financial Services", RealWorldScenarios.financial_data_types())
+RealWorldScenarios.test_domain_types("Healthcare", RealWorldScenarios.healthcare_data_types())
+RealWorldScenarios.test_domain_types("E-commerce Inventory", RealWorldScenarios.inventory_data_types())
+
+IO.puts("💡 Each domain has specific validation requirements:")
+IO.puts("   • Financial: Currency precision, regulatory compliance")
+IO.puts("   • Healthcare: Privacy (HIPAA), medical coding standards")
+IO.puts("   • Inventory: Stock levels, SKU formats, category hierarchies")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Performance Analysis
+
+Let's analyze the performance characteristics of type validation and conversion:
+
+```elixir
+defmodule PerformanceAnalysis do
+  def benchmark_type_operations do
+    types = SampleTypes.enterprise_types()
+    sample_data = SampleTypes.sample_data()
+    
+    IO.puts("⚡ Type Operation Performance Analysis")
+    IO.puts("=" |> String.duplicate(45))
+    
+    # Benchmark validation
+    validation_time = benchmark_operation("Type Validation", 1000, fn ->
+      Lather.Types.Mapper.validate_type(sample_data, types["User"], types: types)
+    end)
+    
+    # Benchmark Elixir to XML conversion
+    xml_conversion_time = benchmark_operation("Elixir → XML", 1000, fn ->
+      Lather.Types.Mapper.elixir_to_xml(sample_data, types["User"], types: types)
+    end)
+    
+    # Create XML for reverse benchmark
+    {:ok, xml_structure} = Lather.Types.Mapper.elixir_to_xml(sample_data, types["User"], types: types)
+    xml_string = Lather.XML.Builder.build(xml_structure)
+    {:ok, parsed_xml} = Lather.XML.Parser.parse(xml_string)
+    
+    # Benchmark XML to Elixir conversion
+    elixir_conversion_time = benchmark_operation("XML → Elixir", 1000, fn ->
+      Lather.Types.Mapper.xml_to_elixir(parsed_xml, types["User"], types: types)
+    end)
+    
+    # Analyze performance
+    total_round_trip = xml_conversion_time + elixir_conversion_time
+    
+    IO.puts("\n📊 Performance Summary:")
+    IO.puts("   Validation:          #{validation_time}μs per operation")
+    IO.puts("   Elixir → XML:        #{xml_conversion_time}μs per operation")
+    IO.puts("   XML → Elixir:        #{elixir_conversion_time}μs per operation")
+    IO.puts("   Round-trip total:    #{total_round_trip}μs per operation")
+    
+    # Calculate throughput
+    validation_throughput = round(1_000_000 / validation_time)
+    conversion_throughput = round(1_000_000 / total_round_trip)
+    
+    IO.puts("\n🚀 Throughput Estimates:")
+    IO.puts("   Validations/second:  #{validation_throughput |> format_number()}")
+    IO.puts("   Conversions/second:  #{conversion_throughput |> format_number()}")
+    
+    # Memory usage estimation
+    data_size = :erlang.external_size(sample_data)
+    xml_size = byte_size(xml_string)
+    
+    IO.puts("\n💾 Memory Usage:")
+    IO.puts("   Elixir data size:    #{data_size} bytes")
+    IO.puts("   XML string size:     #{xml_size} bytes")
+    IO.puts("   Size ratio (XML/Elixir): #{Float.round(xml_size / data_size, 2)}x")
+  end
+  
+  defp benchmark_operation(name, iterations, fun) do
+    IO.puts("🔧 Benchmarking #{name} (#{iterations} iterations)...")
+    
+    # Warm up
+    Enum.each(1..10, fn _ -> fun.() end)
+    
+    # Actual benchmark
+    start_time = System.monotonic_time(:microsecond)
+    
+    Enum.each(1..iterations, fn _ ->
+      fun.()
+    end)
+    
+    end_time = System.monotonic_time(:microsecond)
+    total_time = end_time - start_time
+    avg_time = div(total_time, iterations)
+    
+    IO.puts("   Average time: #{avg_time}μs")
+    avg_time
+  end
+  
+  defp format_number(num) when num >= 1_000_000 do
+    "#{Float.round(num / 1_000_000, 1)}M"
+  end
+  defp format_number(num) when num >= 1_000 do
+    "#{Float.round(num / 1_000, 1)}K"
+  end
+  defp format_number(num), do: to_string(num)
+end
+
+# Run performance analysis
+PerformanceAnalysis.benchmark_type_operations()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Type System Best Practices
+
+Let's summarize the best practices for working with Lather's type system:
+
+```elixir
+best_practices = """
+🎯 LATHER TYPE SYSTEM BEST PRACTICES
+
+🏗️ Type Definition:
+   • Use descriptive type names that match your domain
+   • Define required vs optional fields clearly
+   • Set appropriate constraints (min/max, patterns, enums)
+   • Use composition for complex nested structures
+
+✅ Validation Strategy:
+   • Validate early - at the API boundary
+   • Use built-in validators for common formats (email, phone)
+   • Implement custom validators for domain-specific rules
+   • Provide clear error messages for validation failures
+
+🔄 Data Conversion:
+   • Test round-trip conversions (Elixir → XML → Elixir)
+   • Handle optional fields gracefully
+   • Use default values where appropriate
+   • Consider timezone handling for datetime fields
+
+⚡ Performance Optimization:
+   • Cache type definitions for repeated use
+   • Use struct generation for compile-time benefits
+   • Validate once, convert multiple times when possible
+   • Monitor memory usage for large data structures
+
+🛡️ Error Handling:
+   • Distinguish between validation and conversion errors
+   • Provide actionable error messages
+   • Log validation failures for monitoring
+   • Implement graceful degradation for non-critical fields
+
+🧪 Testing:
+   • Test with valid and invalid data samples
+   • Include edge cases (nulls, empty arrays, extreme values)
+   • Test performance with realistic data sizes
+   • Verify XML schema compliance
+
+📚 Documentation:
+   • Document custom type parsers and their formats
+   • Provide examples of complex data structures
+   • Keep WSDL and type definitions synchronized
+   • Document any business rule validations
+"""
+
+IO.puts(best_practices)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Next Steps
+
+Congratulations! You've explored Lather's advanced type mapping capabilities. Here's what to explore next:
+
+1. **Custom Validators**: Create domain-specific validation rules for your business logic
+2. **Performance Tuning**: Optimize type operations for your specific data patterns
+3. **Schema Evolution**: Handle WSDL changes and backward compatibility
+4. **Integration Testing**: Test type mapping with real SOAP services
+
+The type system is the foundation of reliable SOAP integration - master it, and you'll build robust, maintainable SOAP clients! 🔧✨

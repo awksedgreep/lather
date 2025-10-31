@@ -1,0 +1,1236 @@
+# Debugging and Troubleshooting SOAP Services
+
+```elixir
+Mix.install([
+  {:lather, path: ".."},
+  {:finch, "~> 0.18"},
+  {:kino, "~> 0.12"},
+  {:jason, "~> 1.4"}
+])
+```
+
+## Introduction
+
+This Livebook is your comprehensive guide to debugging and troubleshooting SOAP integrations with Lather. We'll cover:
+
+- Common SOAP service issues and their solutions
+- Debugging tools and techniques
+- Network and connectivity troubleshooting
+- Performance debugging and optimization
+- Error analysis and recovery strategies
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Environment Setup
+
+```elixir
+# Start applications with debug logging
+Application.put_env(:logger, :level, :debug)
+{:ok, _} = Application.ensure_all_started(:lather)
+
+# Configure Finch with debug options
+children = [
+  {Finch, 
+   name: Lather.Finch,
+   pools: %{
+     :default => [
+       size: 5,
+       count: 1,
+       conn_opts: [
+         transport_opts: [
+           # Enable detailed logging
+           timeout: 30_000
+         ]
+       ]
+     ]
+   }
+  }
+]
+
+{:ok, _supervisor} = Supervisor.start_link(children, strategy: :one_for_one)
+
+IO.puts("🔧 Debug environment ready!")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Debug Information Panel
+
+Let's create an interactive panel to gather information about SOAP service issues:
+
+```elixir
+# Create debug information inputs
+service_url_input = Kino.Input.text("Service URL", default: "http://www.webservicex.net/globalweather.asmx?WSDL")
+operation_input = Kino.Input.text("Operation Name", default: "GetWeather")
+error_message_input = Kino.Input.textarea("Error Message/Details")
+issue_type_select = Kino.Input.select("Issue Type", [
+  {"Connection Failed", "connection"},
+  {"Authentication Error", "auth"},
+  {"SOAP Fault", "soap_fault"},
+  {"Timeout", "timeout"},
+  {"Invalid Response", "invalid_response"},
+  {"Performance Issue", "performance"},
+  {"Other", "other"}
+])
+
+# Layout the debug form
+debug_form = Kino.Layout.grid([
+  [service_url_input],
+  [operation_input, issue_type_select],
+  [error_message_input]
+], columns: 2)
+
+debug_button = Kino.Control.button("Analyze Issue")
+
+Kino.Layout.grid([
+  [debug_form],
+  [debug_button]
+])
+```
+
+```elixir
+# Debug information collector
+debug_info = %{
+  service_url: Kino.Input.read(service_url_input),
+  operation: Kino.Input.read(operation_input),
+  error_message: Kino.Input.read(error_message_input),
+  issue_type: Kino.Input.read(issue_type_select)
+}
+
+IO.puts("🔍 Debug Information Collected:")
+IO.inspect(debug_info, pretty: true)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Diagnostic Tools
+
+Let's create a comprehensive diagnostic toolkit:
+
+```elixir
+defmodule SOAPDiagnostics do
+  def analyze_wsdl_url(url) do
+    IO.puts("🔗 Analyzing WSDL URL: #{url}")
+    
+    # Basic URL validation
+    case URI.parse(url) do
+      %URI{scheme: scheme, host: host} when scheme in ["http", "https"] and is_binary(host) ->
+        IO.puts("   ✅ URL format is valid")
+        
+        # Test connectivity
+        test_http_connectivity(url)
+        
+      %URI{scheme: nil} ->
+        IO.puts("   ❌ Missing URL scheme (http/https)")
+        
+      %URI{host: nil} ->
+        IO.puts("   ❌ Missing or invalid hostname")
+        
+      _ ->
+        IO.puts("   ❌ Invalid URL format")
+    end
+  end
+  
+  def test_http_connectivity(url) do
+    IO.puts("🌐 Testing HTTP connectivity...")
+    
+    request = Finch.build(:get, url)
+    
+    case Finch.request(request, Lather.Finch, receive_timeout: 10_000) do
+      {:ok, %Finch.Response{status: status, headers: headers}} when status in 200..299 ->
+        IO.puts("   ✅ HTTP connection successful (#{status})")
+        analyze_response_headers(headers)
+        
+      {:ok, %Finch.Response{status: status, body: body}} ->
+        IO.puts("   ⚠️ HTTP error #{status}")
+        IO.puts("   Response body: #{String.slice(body, 0, 200)}...")
+        
+      {:error, %Mint.TransportError{reason: :nxdomain}} ->
+        IO.puts("   ❌ DNS resolution failed - check hostname")
+        
+      {:error, %Mint.TransportError{reason: :timeout}} ->
+        IO.puts("   ❌ Connection timeout - check network/firewall")
+        
+      {:error, %Mint.TransportError{reason: reason}} ->
+        IO.puts("   ❌ Transport error: #{inspect(reason)}")
+        
+      {:error, error} ->
+        IO.puts("   ❌ Request failed: #{inspect(error)}")
+    end
+  end
+  
+  def analyze_response_headers(headers) do
+    IO.puts("📋 Response Headers Analysis:")
+    
+    headers_map = Enum.into(headers, %{})
+    
+    # Check content type
+    content_type = Map.get(headers_map, "content-type", "unknown")
+    IO.puts("   Content-Type: #{content_type}")
+    
+    if String.contains?(content_type, "xml") do
+      IO.puts("   ✅ XML content type detected")
+    else
+      IO.puts("   ⚠️ Non-XML content type - may not be a WSDL")
+    end
+    
+    # Check server info
+    server = Map.get(headers_map, "server", "unknown")
+    IO.puts("   Server: #{server}")
+    
+    # Check caching headers
+    cache_control = Map.get(headers_map, "cache-control")
+    if cache_control do
+      IO.puts("   Cache-Control: #{cache_control}")
+    end
+  end
+  
+  def diagnose_soap_fault(fault_xml) do
+    IO.puts("🚨 SOAP Fault Analysis:")
+    
+    case Lather.Error.parse_soap_fault(fault_xml) do
+      {:ok, fault} ->
+        IO.puts("   Fault Code: #{fault.fault_code}")
+        IO.puts("   Fault String: #{fault.fault_string}")
+        
+        if fault.fault_actor do
+          IO.puts("   Fault Actor: #{fault.fault_actor}")
+        end
+        
+        if fault.detail do
+          IO.puts("   Detail: #{inspect(fault.detail)}")
+        end
+        
+        # Provide suggestions based on fault code
+        suggest_fault_resolution(fault.fault_code, fault.fault_string)
+        
+      {:error, _reason} ->
+        IO.puts("   ❌ Unable to parse SOAP fault from XML")
+        IO.puts("   Raw XML: #{String.slice(fault_xml, 0, 300)}...")
+    end
+  end
+  
+  def suggest_fault_resolution(fault_code, fault_string) do
+    IO.puts("\n💡 Suggested Actions:")
+    
+    cond do
+      String.contains?(fault_code, "Client") ->
+        IO.puts("   • Check request parameters and format")
+        IO.puts("   • Verify required fields are provided")
+        IO.puts("   • Validate parameter types and constraints")
+        
+      String.contains?(fault_code, "Server") ->
+        IO.puts("   • Server-side error - may be temporary")
+        IO.puts("   • Try again after a delay")
+        IO.puts("   • Contact service provider if persistent")
+        
+      String.contains?(fault_string, "authentication") or String.contains?(fault_string, "unauthorized") ->
+        IO.puts("   • Check authentication credentials")
+        IO.puts("   • Verify authentication method (Basic, WS-Security)")
+        IO.puts("   • Ensure account has proper permissions")
+        
+      String.contains?(fault_string, "timeout") ->
+        IO.puts("   • Increase timeout values")
+        IO.puts("   • Check network latency")
+        IO.puts("   • Consider if operation is long-running")
+        
+      true ->
+        IO.puts("   • Review service documentation")
+        IO.puts("   • Check service status/availability")
+        IO.puts("   • Validate request format against WSDL")
+    end
+  end
+  
+  def test_operation_parameters(client, operation_name, params) do
+    IO.puts("🧪 Testing Operation Parameters:")
+    IO.puts("   Operation: #{operation_name}")
+    IO.puts("   Parameters: #{inspect(params)}")
+    
+    # Get operation info
+    case Lather.DynamicClient.get_operation_info(client, operation_name) do
+      {:ok, op_info} ->
+        IO.puts("   ✅ Operation found in WSDL")
+        
+        # Validate parameters
+        case Lather.DynamicClient.validate_parameters(client, operation_name, params) do
+          :ok ->
+            IO.puts("   ✅ Parameters pass validation")
+            
+          {:error, error} ->
+            IO.puts("   ❌ Parameter validation failed:")
+            IO.puts("      #{Lather.Error.format_error(error)}")
+        end
+        
+      {:error, error} ->
+        IO.puts("   ❌ Operation not found: #{inspect(error)}")
+        
+        # Suggest similar operations
+        operations = Lather.DynamicClient.list_operations(client)
+        similar = find_similar_operations(operation_name, operations)
+        
+        if length(similar) > 0 do
+          IO.puts("   💡 Similar operations found:")
+          Enum.each(similar, fn op -> IO.puts("      • #{op}") end)
+        end
+    end
+  end
+  
+  defp find_similar_operations(target, operations) do
+    target_lower = String.downcase(target)
+    
+    operations
+    |> Enum.filter(fn op ->
+      op_lower = String.downcase(op)
+      String.jaro_distance(target_lower, op_lower) > 0.6
+    end)
+    |> Enum.take(3)
+  end
+  
+  def network_diagnostics(url) do
+    IO.puts("🌍 Network Diagnostics:")
+    
+    uri = URI.parse(url)
+    
+    # DNS lookup
+    case :inet.gethostbyname(String.to_charlist(uri.host)) do
+      {:ok, {:hostent, _name, _aliases, :inet, _length, addresses}} ->
+        IP.puts("   ✅ DNS resolution successful")
+        Enum.each(addresses, fn addr ->
+          ip_str = addr |> Tuple.to_list() |> Enum.join(".")
+          IO.puts("      IP: #{ip_str}")
+        end)
+        
+      {:error, reason} ->
+        IO.puts("   ❌ DNS resolution failed: #{reason}")
+    end
+    
+    # Port connectivity (basic)
+    port = uri.port || (if uri.scheme == "https", do: 443, else: 80)
+    IO.puts("   Testing port #{port} connectivity...")
+    
+    case :gen_tcp.connect(String.to_charlist(uri.host), port, [], 5000) do
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+        IO.puts("   ✅ TCP connection successful")
+        
+      {:error, reason} ->
+        IO.puts("   ❌ TCP connection failed: #{reason}")
+    end
+  end
+end
+
+# Test the diagnostic tools
+test_url = Kino.Input.read(service_url_input)
+SOAPDiagnostics.analyze_wsdl_url(test_url)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Common Issues and Solutions
+
+Let's create an interactive troubleshooting guide:
+
+```elixir
+defmodule TroubleshootingGuide do
+  def common_issues do
+    %{
+      "connection_timeout" => %{
+        description: "Request times out before completion",
+        symptoms: [
+          "Mint.TransportError with reason :timeout",
+          "Long response times",
+          "Intermittent failures"
+        ],
+        solutions: [
+          "Increase timeout values in client options",
+          "Check network latency and bandwidth",
+          "Verify service is responsive",
+          "Consider connection pooling settings"
+        ],
+        code_example: """
+        # Increase timeouts
+        {:ok, client} = Lather.DynamicClient.new(wsdl_url, [
+          timeout: 120_000,        # 2 minutes
+          pool_timeout: 15_000     # 15 seconds
+        ])
+        """
+      },
+      
+      "ssl_verification_failed" => %{
+        description: "SSL certificate verification fails",
+        symptoms: [
+          "SSL handshake errors",
+          "Certificate verification failures",
+          "Connection refused on HTTPS"
+        ],
+        solutions: [
+          "Configure proper SSL options",
+          "Add custom CA certificates if needed",
+          "Disable SSL verification for testing (not production)",
+          "Check certificate validity and chain"
+        ],
+        code_example: """
+        # Proper SSL configuration
+        ssl_opts = [
+          verify: :verify_peer,
+          cacerts: :public_key.cacerts_get(),
+          customize_hostname_check: [
+            match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+          ]
+        ]
+        
+        {:ok, client} = Lather.DynamicClient.new(wsdl_url, [
+          ssl_options: ssl_opts
+        ])
+        """
+      },
+      
+      "authentication_failed" => %{
+        description: "Authentication credentials rejected",
+        symptoms: [
+          "HTTP 401 Unauthorized",
+          "SOAP faults about authentication",
+          "Access denied errors"
+        ],
+        solutions: [
+          "Verify username and password",
+          "Check authentication method (Basic vs WS-Security)",
+          "Ensure account permissions are sufficient",
+          "Test credentials with other tools"
+        ],
+        code_example: """
+        # Basic Authentication
+        {:ok, client} = Lather.DynamicClient.new(wsdl_url, [
+          basic_auth: {"username", "password"}
+        ])
+        
+        # WS-Security
+        token = Lather.Auth.WSSecurity.username_token("user", "pass")
+        header = Lather.Auth.WSSecurity.security_header(token)
+        
+        {:ok, client} = Lather.DynamicClient.new(wsdl_url, [
+          soap_headers: [header]
+        ])
+        """
+      },
+      
+      "invalid_parameters" => %{
+        description: "SOAP operation parameters are invalid",
+        symptoms: [
+          "Parameter validation failures",
+          "SOAP faults about missing/invalid data",
+          "Type conversion errors"
+        ],
+        solutions: [
+          "Check parameter names match WSDL exactly",
+          "Verify data types and formats",
+          "Ensure required parameters are provided",
+          "Review WSDL documentation"
+        ],
+        code_example: """
+        # Get operation info to see expected parameters
+        {:ok, info} = Lather.DynamicClient.get_operation_info(client, "OperationName")
+        IO.inspect(info.input_parts)
+        
+        # Validate parameters before calling
+        case Lather.DynamicClient.validate_parameters(client, "OperationName", params) do
+          :ok -> 
+            # Parameters are valid
+          {:error, error} -> 
+            # Fix parameters
+        end
+        """
+      },
+      
+      "wsdl_parsing_failed" => %{
+        description: "Unable to parse WSDL document",
+        symptoms: [
+          "WSDL analysis errors",
+          "XML parsing failures",
+          "Invalid WSDL structure errors"
+        ],
+        solutions: [
+          "Verify WSDL URL is accessible",
+          "Check WSDL XML syntax",
+          "Ensure WSDL follows standards",
+          "Try accessing WSDL manually"
+        ],
+        code_example: """
+        # Test WSDL accessibility
+        case Lather.Http.Transport.validate_url(wsdl_url) do
+          :ok -> 
+            # URL is valid
+          {:error, :invalid_url} -> 
+            # Fix URL format
+        end
+        
+        # Manual WSDL fetch for debugging
+        {:ok, response} = Lather.Http.Transport.post(wsdl_url, "", [])
+        IO.puts(response.body)
+        """
+      }
+    }
+  end
+  
+  def show_troubleshooting_guide(issue_type) do
+    issues = common_issues()
+    
+    case Map.get(issues, issue_type) do
+      nil ->
+        IO.puts("❓ Unknown issue type. Available types:")
+        Enum.each(Map.keys(issues), fn key ->
+          IO.puts("   • #{key}")
+        end)
+        
+      issue ->
+        IO.puts("🔧 #{String.replace(issue_type, "_", " ") |> String.upcase()}")
+        IO.puts("=" |> String.duplicate(50))
+        
+        IO.puts("📝 Description:")
+        IO.puts("   #{issue.description}")
+        
+        IO.puts("\n🚨 Common Symptoms:")
+        Enum.each(issue.symptoms, fn symptom ->
+          IO.puts("   • #{symptom}")
+        end)
+        
+        IO.puts("\n💡 Solutions:")
+        Enum.each(issue.solutions, fn solution ->
+          IO.puts("   • #{solution}")
+        end)
+        
+        IO.puts("\n📋 Code Example:")
+        IO.puts(issue.code_example)
+    end
+  end
+end
+
+# Show troubleshooting guide based on selected issue
+issue_type = Kino.Input.read(issue_type_select)
+TroubleshootingGuide.show_troubleshooting_guide(issue_type)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Live Debugging Session
+
+Let's create a live debugging session that walks through diagnosing a real SOAP service:
+
+```elixir
+defmodule LiveDebuggingSession do
+  def debug_soap_service(url) do
+    IO.puts("🔍 LIVE DEBUGGING SESSION")
+    IO.puts("=" |> String.duplicate(60))
+    IO.puts("Service URL: #{url}")
+    IO.puts("")
+    
+    # Step 1: Basic connectivity
+    step_1_connectivity(url)
+    
+    # Step 2: WSDL analysis
+    step_2_wsdl_analysis(url)
+    
+    # Step 3: Operation testing
+    step_3_operation_testing(url)
+  end
+  
+  defp step_1_connectivity(url) do
+    IO.puts("🌐 STEP 1: Testing Basic Connectivity")
+    IO.puts("-" |> String.duplicate(40))
+    
+    # URL validation
+    case Lather.Http.Transport.validate_url(url) do
+      :ok ->
+        IO.puts("✅ URL format is valid")
+      {:error, :invalid_url} ->
+        IO.puts("❌ Invalid URL format")
+        return {:error, :invalid_url}
+    end
+    
+    # HTTP connectivity test
+    case Lather.Http.Transport.post(url, "", timeout: 10_000) do
+      {:ok, %{status: status}} when status in 200..299 ->
+        IO.puts("✅ HTTP connectivity successful (#{status})")
+        
+      {:ok, %{status: status, body: body}} ->
+        IO.puts("⚠️ HTTP error #{status}")
+        IO.puts("Response: #{String.slice(body, 0, 200)}...")
+        
+      {:error, error} ->
+        IO.puts("❌ Connection failed: #{Lather.Error.format_error(error)}")
+        
+        # Provide specific guidance
+        case error do
+          %{type: :transport_error, reason: :nxdomain} ->
+            IO.puts("💡 DNS resolution failed - check the hostname")
+            
+          %{type: :transport_error, reason: :timeout} ->
+            IO.puts("💡 Connection timeout - check network connectivity")
+            
+          %{type: :http_error, status: 404} ->
+            IO.puts("💡 WSDL not found - verify the URL path")
+            
+          _ ->
+            IO.puts("💡 Check network settings and service availability")
+        end
+        
+        return {:error, error}
+    end
+    
+    IO.puts("")
+  end
+  
+  defp step_2_wsdl_analysis(url) do
+    IO.puts("📋 STEP 2: WSDL Analysis")
+    IO.puts("-" |> String.duplicate(40))
+    
+    case Lather.DynamicClient.new(url, timeout: 30_000) do
+      {:ok, client} ->
+        IO.puts("✅ WSDL parsed successfully")
+        
+        # Show service info
+        operations = Lather.DynamicClient.list_operations(client)
+        IO.puts("📊 Service Statistics:")
+        IO.puts("   Operations: #{length(operations)}")
+        
+        # Store client for next step
+        Process.put(:debug_client, client)
+        
+        # Show first few operations
+        IO.puts("   Available operations:")
+        operations
+        |> Enum.take(5)
+        |> Enum.each(fn op -> IO.puts("   • #{op}") end)
+        
+        if length(operations) > 5 do
+          IO.puts("   ... and #{length(operations) - 5} more")
+        end
+        
+      {:error, error} ->
+        IO.puts("❌ WSDL analysis failed: #{Lather.Error.format_error(error)}")
+        
+        case error do
+          %{type: :wsdl_error} ->
+            IO.puts("💡 WSDL parsing error - check WSDL syntax and structure")
+            
+          %{type: :http_error} ->
+            IO.puts("💡 HTTP error accessing WSDL - check URL and service status")
+            
+          _ ->
+            IO.puts("💡 Check WSDL accessibility and format")
+        end
+    end
+    
+    IO.puts("")
+  end
+  
+  defp step_3_operation_testing(url) do
+    IO.puts("🧪 STEP 3: Operation Testing")
+    IO.puts("-" |> String.duplicate(40))
+    
+    client = Process.get(:debug_client)
+    
+    if client do
+      operations = Lather.DynamicClient.list_operations(client)
+      
+      # Test first operation
+      if length(operations) > 0 do
+        test_operation = hd(operations)
+        IO.puts("Testing operation: #{test_operation}")
+        
+        case Lather.DynamicClient.get_operation_info(client, test_operation) do
+          {:ok, op_info} ->
+            IO.puts("✅ Operation info retrieved")
+            IO.puts("   Input parameters: #{length(op_info.input_parts)}")
+            IO.puts("   Output parameters: #{length(op_info.output_parts)}")
+            
+            # Show parameter details
+            if length(op_info.input_parts) > 0 do
+              IO.puts("   Required parameters:")
+              Enum.each(op_info.input_parts, fn part ->
+                required = if part.required, do: "*", else: ""
+                IO.puts("   • #{part.name}#{required}: #{part.type}")
+              end)
+            end
+            
+          {:error, error} ->
+            IO.puts("❌ Failed to get operation info: #{inspect(error)}")
+        end
+      else
+        IO.puts("⚠️ No operations found in WSDL")
+      end
+    else
+      IO.puts("⚠️ No client available - WSDL analysis failed")
+    end
+    
+    IO.puts("")
+    IO.puts("🎯 DEBUGGING COMPLETE")
+  end
+end
+
+# Run live debugging session
+debug_url = Kino.Input.read(service_url_input)
+LiveDebuggingSession.debug_soap_service(debug_url)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Performance Debugging
+
+Let's create tools to identify and debug performance issues:
+
+```elixir
+defmodule PerformanceDebugger do
+  def benchmark_soap_operation(client, operation, params, iterations \\ 10) do
+    IO.puts("⚡ Performance Benchmarking")
+    IO.puts("=" |> String.duplicate(40))
+    IO.puts("Operation: #{operation}")
+    IO.puts("Iterations: #{iterations}")
+    IO.puts("")
+    
+    # Warm up
+    IO.puts("🔥 Warming up...")
+    case Lather.DynamicClient.call(client, operation, params) do
+      {:ok, _} -> IO.puts("   ✅ Warm-up successful")
+      {:error, error} -> 
+        IO.puts("   ❌ Warm-up failed: #{Lather.Error.format_error(error)}")
+        return {:error, :warmup_failed}
+    end
+    
+    # Benchmark
+    IO.puts("📊 Running benchmark...")
+    
+    times = Enum.map(1..iterations, fn i ->
+      IO.write("   Iteration #{i}/#{iterations}: ")
+      
+      start_time = System.monotonic_time(:millisecond)
+      
+      result = Lather.DynamicClient.call(client, operation, params)
+      
+      end_time = System.monotonic_time(:millisecond)
+      duration = end_time - start_time
+      
+      case result do
+        {:ok, _} -> IO.puts("#{duration}ms ✅")
+        {:error, _} -> IO.puts("#{duration}ms ❌")
+      end
+      
+      {duration, result}
+    end)
+    
+    # Analyze results
+    analyze_performance_results(times)
+  end
+  
+  defp analyze_performance_results(times) do
+    durations = Enum.map(times, fn {duration, _} -> duration end)
+    successes = Enum.count(times, fn {_, result} -> match?({:ok, _}, result) end)
+    
+    total_time = Enum.sum(durations)
+    avg_time = total_time / length(durations)
+    min_time = Enum.min(durations)
+    max_time = Enum.max(durations)
+    
+    # Calculate percentiles
+    sorted_durations = Enum.sort(durations)
+    p50 = percentile(sorted_durations, 50)
+    p95 = percentile(sorted_durations, 95)
+    p99 = percentile(sorted_durations, 99)
+    
+    IO.puts("")
+    IO.puts("📈 Performance Analysis:")
+    IO.puts("   Success Rate:    #{successes}/#{length(times)} (#{Float.round(successes/length(times)*100, 1)}%)")
+    IO.puts("   Average Time:    #{Float.round(avg_time, 1)}ms")
+    IO.puts("   Min Time:        #{min_time}ms")
+    IO.puts("   Max Time:        #{max_time}ms")
+    IO.puts("   50th Percentile: #{p50}ms")
+    IO.puts("   95th Percentile: #{p95}ms")
+    IO.puts("   99th Percentile: #{p99}ms")
+    
+    # Performance assessment
+    IO.puts("")
+    assess_performance(avg_time, max_time, p95, successes/length(times))
+  end
+  
+  defp percentile(sorted_list, percentile) do
+    k = (length(sorted_list) - 1) * percentile / 100
+    f = floor(k)
+    c = ceil(k)
+    
+    if f == c do
+      Enum.at(sorted_list, round(k))
+    else
+      d0 = Enum.at(sorted_list, f) * (c - k)
+      d1 = Enum.at(sorted_list, c) * (k - f)
+      round(d0 + d1)
+    end
+  end
+  
+  defp assess_performance(avg_time, max_time, p95, success_rate) do
+    IO.puts("🎯 Performance Assessment:")
+    
+    # Response time assessment
+    cond do
+      avg_time < 500 ->
+        IO.puts("   ✅ Excellent response times")
+      avg_time < 2000 ->
+        IO.puts("   ✅ Good response times")
+      avg_time < 5000 ->
+        IO.puts("   ⚠️ Acceptable response times")
+      true ->
+        IO.puts("   ❌ Poor response times - optimization needed")
+    end
+    
+    # Consistency assessment
+    if max_time > avg_time * 3 do
+      IO.puts("   ⚠️ High response time variability detected")
+      IO.puts("      Consider connection pooling or service optimization")
+    end
+    
+    # Reliability assessment
+    cond do
+      success_rate == 1.0 ->
+        IO.puts("   ✅ Excellent reliability")
+      success_rate >= 0.95 ->
+        IO.puts("   ✅ Good reliability")
+      success_rate >= 0.90 ->
+        IO.puts("   ⚠️ Moderate reliability - investigate errors")
+      true ->
+        IO.puts("   ❌ Poor reliability - significant issues present")
+    end
+    
+    # Recommendations
+    IO.puts("")
+    IO.puts("💡 Recommendations:")
+    
+    if avg_time > 2000 do
+      IO.puts("   • Consider increasing timeout values")
+      IO.puts("   • Investigate network latency")
+      IO.puts("   • Check service performance")
+    end
+    
+    if success_rate < 0.95 do
+      IO.puts("   • Implement retry logic with exponential backoff")
+      IO.puts("   • Add circuit breaker pattern")
+      IO.puts("   • Monitor service health")
+    end
+    
+    if p95 > avg_time * 2 do
+      IO.puts("   • Enable connection pooling")
+      IO.puts("   • Consider service caching where appropriate")
+      IO.puts("   • Monitor for network issues")
+    end
+  end
+  
+  def memory_usage_analysis(data) do
+    IO.puts("💾 Memory Usage Analysis:")
+    
+    # Elixir data size
+    elixir_size = :erlang.external_size(data)
+    IO.puts("   Elixir data: #{format_bytes(elixir_size)}")
+    
+    # JSON representation (for comparison)
+    json_size = data |> Jason.encode!() |> byte_size()
+    IO.puts("   JSON equivalent: #{format_bytes(json_size)}")
+    
+    # Estimate XML size
+    xml_size = estimate_xml_size(data)
+    IO.puts("   Estimated XML: #{format_bytes(xml_size)}")
+    
+    # Memory efficiency
+    IO.puts("")
+    IO.puts("📊 Efficiency Ratios:")
+    IO.puts("   XML/Elixir: #{Float.round(xml_size / elixir_size, 2)}x")
+    IO.puts("   JSON/Elixir: #{Float.round(json_size / elixir_size, 2)}x")
+    
+    if xml_size > 1_000_000 do
+      IO.puts("")
+      IO.puts("⚠️ Large payload detected (>1MB)")
+      IO.puts("   Consider data compression or chunking")
+    end
+  end
+  
+  defp estimate_xml_size(data) when is_map(data) do
+    # Rough estimation: each key-value pair becomes XML elements
+    Enum.reduce(data, 0, fn {key, value}, acc ->
+      key_overhead = String.length(key) * 2 + 5  # <key></key>
+      value_size = estimate_xml_size(value)
+      acc + key_overhead + value_size
+    end)
+  end
+  
+  defp estimate_xml_size(data) when is_list(data) do
+    Enum.reduce(data, 0, fn item, acc ->
+      acc + estimate_xml_size(item) + 10  # Array element overhead
+    end)
+  end
+  
+  defp estimate_xml_size(data) when is_binary(data) do
+    byte_size(data)
+  end
+  
+  defp estimate_xml_size(_data), do: 10  # Numbers, booleans, etc.
+  
+  defp format_bytes(bytes) when bytes < 1024, do: "#{bytes} B"
+  defp format_bytes(bytes) when bytes < 1024 * 1024, do: "#{Float.round(bytes / 1024, 1)} KB"
+  defp format_bytes(bytes), do: "#{Float.round(bytes / (1024 * 1024), 1)} MB"
+end
+
+# Demonstrate memory analysis with sample data
+sample_data = %{
+  "users" => Enum.map(1..100, fn i ->
+    %{
+      "id" => "USER#{i}",
+      "name" => "User #{i}",
+      "email" => "user#{i}@example.com",
+      "metadata" => %{
+        "created" => "2024-01-01T00:00:00Z",
+        "tags" => ["tag1", "tag2", "tag3"]
+      }
+    }
+  end)
+}
+
+PerformanceDebugger.memory_usage_analysis(sample_data)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Error Pattern Analysis
+
+Let's create a tool to analyze error patterns and suggest improvements:
+
+```elixir
+defmodule ErrorPatternAnalysis do
+  def analyze_error_log(errors) do
+    IO.puts("🚨 Error Pattern Analysis")
+    IO.puts("=" |> String.duplicate(40))
+    IO.puts("Total errors: #{length(errors)}")
+    IO.puts("")
+    
+    # Group by error type
+    error_groups = Enum.group_by(errors, fn error -> error.type end)
+    
+    IO.puts("📊 Error Distribution:")
+    Enum.each(error_groups, fn {type, group_errors} ->
+      percentage = Float.round(length(group_errors) / length(errors) * 100, 1)
+      IO.puts("   #{type}: #{length(group_errors)} (#{percentage}%)")
+    end)
+    
+    IO.puts("")
+    
+    # Analyze each error type
+    Enum.each(error_groups, fn {type, group_errors} ->
+      analyze_error_type(type, group_errors)
+    end)
+    
+    # Overall recommendations
+    provide_overall_recommendations(error_groups)
+  end
+  
+  defp analyze_error_type(type, errors) do
+    IO.puts("🔍 #{String.upcase(to_string(type))} Analysis:")
+    
+    case type do
+      :transport_error ->
+        analyze_transport_errors(errors)
+      :http_error ->
+        analyze_http_errors(errors)
+      :soap_fault ->
+        analyze_soap_faults(errors)
+      :validation_error ->
+        analyze_validation_errors(errors)
+      _ ->
+        IO.puts("   Generic error analysis not available")
+    end
+    
+    IO.puts("")
+  end
+  
+  defp analyze_transport_errors(errors) do
+    # Group by reason
+    reason_groups = Enum.group_by(errors, fn error -> error.reason end)
+    
+    IO.puts("   Common transport issues:")
+    Enum.each(reason_groups, fn {reason, group} ->
+      IO.puts("   • #{reason}: #{length(group)} occurrences")
+    end)
+    
+    # Specific recommendations
+    if Map.has_key?(reason_groups, :timeout) do
+      IO.puts("   💡 Timeout issues detected:")
+      IO.puts("      - Increase timeout values")
+      IO.puts("      - Check network latency")
+      IO.puts("      - Implement retry logic")
+    end
+    
+    if Map.has_key?(reason_groups, :nxdomain) do
+      IO.puts("   💡 DNS issues detected:")
+      IO.puts("      - Verify service hostnames")
+      IO.puts("      - Check DNS configuration")
+      IO.puts("      - Consider DNS caching")
+    end
+  end
+  
+  defp analyze_http_errors(errors) do
+    # Group by status code
+    status_groups = Enum.group_by(errors, fn error -> error.status end)
+    
+    IO.puts("   HTTP status code distribution:")
+    Enum.each(status_groups, fn {status, group} ->
+      IO.puts("   • #{status}: #{length(group)} occurrences")
+    end)
+    
+    # Status-specific recommendations
+    Enum.each(status_groups, fn {status, _group} ->
+      case status do
+        401 ->
+          IO.puts("   💡 Authentication failures (401):")
+          IO.puts("      - Verify credentials")
+          IO.puts("      - Check authentication method")
+          
+        403 ->
+          IO.puts("   💡 Authorization failures (403):")
+          IO.puts("      - Check account permissions")
+          IO.puts("      - Verify API access rights")
+          
+        404 ->
+          IO.puts("   💡 Not found errors (404):")
+          IO.puts("      - Verify service URLs")
+          IO.puts("      - Check operation names")
+          
+        500..599 ->
+          IO.puts("   💡 Server errors (#{status}):")
+          IO.puts("      - Service may be experiencing issues")
+          IO.puts("      - Implement retry with backoff")
+          
+        _ ->
+          nil
+      end
+    end)
+  end
+  
+  defp analyze_soap_faults(errors) do
+    # Group by fault code
+    fault_groups = Enum.group_by(errors, fn error -> error.fault_code end)
+    
+    IO.puts("   SOAP fault code distribution:")
+    Enum.each(fault_groups, fn {code, group} ->
+      IO.puts("   • #{code}: #{length(group)} occurrences")
+    end)
+    
+    # Fault-specific recommendations
+    if Map.has_key?(fault_groups, "Client") do
+      IO.puts("   💡 Client fault issues:")
+      IO.puts("      - Validate request parameters")
+      IO.puts("      - Check data formats and types")
+      IO.puts("      - Review WSDL requirements")
+    end
+    
+    if Map.has_key?(fault_groups, "Server") do
+      IO.puts("   💡 Server fault issues:")
+      IO.puts("      - Service-side problems")
+      IO.puts("      - May be temporary - retry appropriate")
+      IO.puts("      - Contact service provider if persistent")
+    end
+  end
+  
+  defp analyze_validation_errors(errors) do
+    # Group by field
+    field_groups = Enum.group_by(errors, fn error -> error.field end)
+    
+    IO.puts("   Validation error fields:")
+    Enum.each(field_groups, fn {field, group} ->
+      IO.puts("   • #{field}: #{length(group)} occurrences")
+    end)
+    
+    IO.puts("   💡 Validation recommendations:")
+    IO.puts("      - Implement client-side validation")
+    IO.puts("      - Add parameter validation middleware")
+    IO.puts("      - Create validation schemas")
+  end
+  
+  defp provide_overall_recommendations(error_groups) do
+    IO.puts("🎯 Overall Recommendations:")
+    
+    total_errors = Enum.reduce(error_groups, 0, fn {_, errors}, acc -> acc + length(errors) end)
+    
+    # High error rate
+    if total_errors > 100 do
+      IO.puts("   🚨 High error rate detected:")
+      IO.puts("      - Implement comprehensive monitoring")
+      IO.puts("      - Add alerting for error thresholds")
+      IO.puts("      - Consider circuit breaker pattern")
+    end
+    
+    # Transport vs application errors
+    transport_errors = length(Map.get(error_groups, :transport_error, []))
+    app_errors = total_errors - transport_errors
+    
+    if transport_errors > app_errors do
+      IO.puts("   🌐 Network-related issues predominant:")
+      IO.puts("      - Focus on connection reliability")
+      IO.puts("      - Implement robust retry logic")
+      IO.puts("      - Consider connection pooling")
+    else
+      IO.puts("   🔧 Application-level issues predominant:")
+      IO.puts("      - Focus on request validation")
+      IO.puts("      - Improve error handling")
+      IO.puts("      - Review API usage patterns")
+    end
+  end
+  
+  def generate_sample_errors do
+    # Generate sample error data for demonstration
+    [
+      %{type: :transport_error, reason: :timeout, timestamp: DateTime.utc_now()},
+      %{type: :transport_error, reason: :timeout, timestamp: DateTime.utc_now()},
+      %{type: :http_error, status: 401, timestamp: DateTime.utc_now()},
+      %{type: :http_error, status: 500, timestamp: DateTime.utc_now()},
+      %{type: :soap_fault, fault_code: "Client", fault_string: "Invalid parameter", timestamp: DateTime.utc_now()},
+      %{type: :soap_fault, fault_code: "Server", fault_string: "Internal error", timestamp: DateTime.utc_now()},
+      %{type: :validation_error, field: "email", reason: "invalid_format", timestamp: DateTime.utc_now()},
+      %{type: :transport_error, reason: :nxdomain, timestamp: DateTime.utc_now()}
+    ]
+  end
+end
+
+# Analyze sample errors
+sample_errors = ErrorPatternAnalysis.generate_sample_errors()
+ErrorPatternAnalysis.analyze_error_log(sample_errors)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Debugging Checklist
+
+Let's create an interactive debugging checklist:
+
+```elixir
+# Create debugging checklist
+debug_checklist = [
+  "✅ URL Format Validation",
+  "✅ Network Connectivity Test", 
+  "✅ DNS Resolution Check",
+  "✅ SSL Certificate Validation",
+  "✅ WSDL Accessibility Test",
+  "✅ WSDL Parsing Verification", 
+  "✅ Operation Discovery",
+  "✅ Parameter Validation",
+  "✅ Authentication Testing",
+  "✅ Error Pattern Analysis",
+  "✅ Performance Benchmarking",
+  "✅ Memory Usage Analysis"
+]
+
+# Create checkboxes for each item
+debug_widgets = Enum.map(debug_checklist, fn item ->
+  Kino.Input.checkbox(item, default: false)
+end)
+
+# Layout the checklist
+debug_checklist_form = Kino.Layout.grid(
+  Enum.map(debug_widgets, fn widget -> [widget] end),
+  columns: 2
+)
+
+IO.puts("🔧 SOAP Debugging Checklist")
+debug_checklist_form
+```
+
+```elixir
+# Check debugging progress
+completed_checks = Enum.count(debug_widgets, fn widget ->
+  Kino.Input.read(widget)
+end)
+
+total_checks = length(debug_checklist)
+completion_percentage = completed_checks / total_checks * 100
+
+IO.puts("📊 Debugging Progress: #{completed_checks}/#{total_checks} (#{Float.round(completion_percentage, 1)}%)")
+
+case completion_percentage do
+  p when p == 100.0 ->
+    IO.puts("🎉 Complete debugging session finished!")
+    IO.puts("   Your SOAP integration should be well-diagnosed")
+    
+  p when p >= 80.0 ->
+    IO.puts("🚀 Nearly complete! Just a few more checks to go")
+    
+  p when p >= 60.0 ->
+    IO.puts("⚡ Good progress! You're more than halfway there")
+    
+  p when p >= 40.0 ->
+    IO.puts("🔧 Making progress! Keep going with the debugging")
+    
+  _ ->
+    IO.puts("🏗️ Just getting started! Work through the checklist systematically")
+end
+
+# Provide next steps based on completion
+if completion_percentage < 100.0 do
+  IO.puts("\n💡 Next steps:")
+  incomplete_items = 
+    Enum.zip(debug_checklist, debug_widgets)
+    |> Enum.reject(fn {_item, widget} -> Kino.Input.read(widget) end)
+    |> Enum.map(fn {item, _widget} -> item end)
+    |> Enum.take(3)
+  
+  Enum.each(incomplete_items, fn item ->
+    IO.puts("   • #{item}")
+  end)
+end
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Summary and Next Steps
+
+Congratulations! You've learned comprehensive debugging and troubleshooting techniques for SOAP services with Lather. Here's what you've covered:
+
+```elixir
+summary = """
+🎯 SOAP DEBUGGING MASTERY SUMMARY
+
+🔧 Diagnostic Tools:
+   • URL and connectivity validation
+   • WSDL analysis and parsing verification
+   • Operation parameter testing
+   • Network diagnostics and DNS resolution
+
+🚨 Common Issues Covered:
+   • Connection timeouts and network issues
+   • SSL/TLS certificate problems
+   • Authentication and authorization failures
+   • Parameter validation errors
+   • WSDL parsing failures
+
+⚡ Performance Debugging:
+   • Response time benchmarking
+   • Memory usage analysis
+   • Performance assessment and recommendations
+   • Reliability monitoring
+
+📊 Error Analysis:
+   • Error pattern recognition
+   • Root cause identification
+   • Automated recommendations
+   • Performance optimization suggestions
+
+🎯 Best Practices:
+   • Systematic debugging approach
+   • Comprehensive error logging
+   • Performance monitoring
+   • Proactive issue detection
+
+🚀 Next Steps:
+   • Implement monitoring dashboards
+   • Set up automated health checks
+   • Create custom diagnostic tools
+   • Build comprehensive test suites
+"""
+
+IO.puts(summary)
+```
+
+You're now equipped to debug any SOAP service integration issues like a pro! 🔧🎯

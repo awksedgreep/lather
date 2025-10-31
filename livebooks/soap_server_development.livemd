@@ -1,0 +1,1465 @@
+# Building SOAP Servers with Lather
+
+```elixir
+Mix.install([
+  {:lather, path: ".."},
+  {:finch, "~> 0.18"},
+  {:kino, "~> 0.12"},
+  {:jason, "~> 1.4"}
+])
+```
+
+## Introduction
+
+Welcome to the **SOAP Server Development** tutorial with Lather! While previous Livebooks focused on SOAP **clients**, this one is all about building your own **SOAP web services**.
+
+In this Livebook, you'll learn:
+- How to define SOAP service operations
+- Automatic WSDL generation from code
+- Request/response handling and validation
+- Authentication and authorization
+- Phoenix integration and standalone deployment
+- Testing and debugging SOAP services
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Environment Setup
+
+Let's start by setting up our environment and creating our first SOAP service:
+
+```elixir
+# Start required applications
+{:ok, _} = Application.ensure_all_started(:lather)
+{:ok, _} = Application.ensure_all_started(:finch)
+
+# Configure Finch for HTTP connections
+children = [
+  {Finch, name: Lather.Finch}
+]
+
+{:ok, _supervisor} = Supervisor.start_link(children, strategy: :one_for_one)
+
+IO.puts("🏗️ SOAP Server development environment ready!")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Your First SOAP Service
+
+Let's create a simple calculator service to demonstrate the basics:
+
+```elixir
+defmodule CalculatorService do
+  @moduledoc """
+  A simple calculator SOAP service demonstrating basic operations.
+  """
+  
+  use Lather.Server
+  
+  @namespace "http://calculator.example.com"
+  @service_name "CalculatorService"
+  
+  # Add operation
+  soap_operation "Add" do
+    description "Adds two numbers"
+    
+    input do
+      parameter "a", :decimal, required: true, description: "First number"
+      parameter "b", :decimal, required: true, description: "Second number"
+    end
+    
+    output do
+      parameter "result", :decimal, description: "Sum of the two numbers"
+    end
+    
+    soap_action "http://calculator.example.com/Add"
+  end
+  
+  def add(%{"a" => a, "b" => b}) do
+    # Convert strings to numbers and add them
+    num_a = String.to_float(a)
+    num_b = String.to_float(b)
+    result = num_a + num_b
+    
+    {:ok, %{"result" => Float.to_string(result)}}
+  end
+  
+  # Subtract operation
+  soap_operation "Subtract" do
+    description "Subtracts second number from first"
+    
+    input do
+      parameter "a", :decimal, required: true, description: "First number"
+      parameter "b", :decimal, required: true, description: "Second number"
+    end
+    
+    output do
+      parameter "result", :decimal, description: "Difference of the two numbers"
+    end
+    
+    soap_action "http://calculator.example.com/Subtract"
+  end
+  
+  def subtract(%{"a" => a, "b" => b}) do
+    num_a = String.to_float(a)
+    num_b = String.to_float(b)
+    result = num_a - num_b
+    
+    {:ok, %{"result" => Float.to_string(result)}}
+  end
+  
+  # Multiply operation
+  soap_operation "Multiply" do
+    description "Multiplies two numbers"
+    
+    input do
+      parameter "a", :decimal, required: true, description: "First number"
+      parameter "b", :decimal, required: true, description: "Second number"
+    end
+    
+    output do
+      parameter "result", :decimal, description: "Product of the two numbers"
+    end
+    
+    soap_action "http://calculator.example.com/Multiply"
+  end
+  
+  def multiply(%{"a" => a, "b" => b}) do
+    num_a = String.to_float(a)
+    num_b = String.to_float(b)
+    result = num_a * num_b
+    
+    {:ok, %{"result" => Float.to_string(result)}}
+  end
+  
+  # Divide operation with error handling
+  soap_operation "Divide" do
+    description "Divides first number by second"
+    
+    input do
+      parameter "a", :decimal, required: true, description: "Dividend"
+      parameter "b", :decimal, required: true, description: "Divisor"
+    end
+    
+    output do
+      parameter "result", :decimal, description: "Quotient of the division"
+    end
+    
+    soap_action "http://calculator.example.com/Divide"
+  end
+  
+  def divide(%{"a" => a, "b" => b}) do
+    num_a = String.to_float(a)
+    num_b = String.to_float(b)
+    
+    if num_b == 0.0 do
+      # Return a SOAP fault for division by zero
+      soap_fault("Client", "Division by zero is not allowed")
+    else
+      result = num_a / num_b
+      {:ok, %{"result" => Float.to_string(result)}}
+    end
+  end
+end
+
+IO.puts("📊 Calculator service defined!")
+```
+
+Let's inspect our service metadata:
+
+```elixir
+service_info = CalculatorService.__soap_service__()
+
+IO.puts("🔍 Service Information:")
+IO.puts("Name: #{service_info.name}")
+IO.puts("Namespace: #{service_info.namespace}")
+IO.puts("Operations: #{length(service_info.operations)}")
+
+IO.puts("\n📋 Available Operations:")
+Enum.each(service_info.operations, fn operation ->
+  IO.puts("  • #{operation.name}: #{operation.description}")
+  IO.puts("    Inputs: #{Enum.map_join(operation.input, ", ", & &1.name)}")
+  IO.puts("    Output: #{Enum.map_join(operation.output, ", ", & &1.name)}")
+end)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Generating WSDL
+
+One of the powerful features of Lather is automatic WSDL generation. Let's generate the WSDL for our calculator service:
+
+```elixir
+# Generate WSDL
+base_url = "http://localhost:4000/soap/calculator"
+wsdl_content = Lather.Server.WSDLGenerator.generate(service_info, base_url)
+
+IO.puts("📄 Generated WSDL:")
+IO.puts(wsdl_content)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Testing SOAP Operations
+
+Let's test our calculator service operations directly:
+
+```elixir
+defmodule SOAPTester do
+  def test_calculator_operations do
+    IO.puts("🧪 Testing Calculator Operations")
+    IO.puts("=" |> String.duplicate(40))
+    
+    # Test Add operation
+    IO.puts("\n➕ Testing Add operation:")
+    result = CalculatorService.add(%{"a" => "10.5", "b" => "5.2"})
+    IO.inspect(result, label: "Add Result")
+    
+    # Test Subtract operation
+    IO.puts("\n➖ Testing Subtract operation:")
+    result = CalculatorService.subtract(%{"a" => "10.5", "b" => "5.2"})
+    IO.inspect(result, label: "Subtract Result")
+    
+    # Test Multiply operation
+    IO.puts("\n✖️ Testing Multiply operation:")
+    result = CalculatorService.multiply(%{"a" => "10.5", "b" => "5.2"})
+    IO.inspect(result, label: "Multiply Result")
+    
+    # Test Divide operation
+    IO.puts("\n➗ Testing Divide operation:")
+    result = CalculatorService.divide(%{"a" => "10.5", "b" => "5.2"})
+    IO.inspect(result, label: "Divide Result")
+    
+    # Test error case - division by zero
+    IO.puts("\n🚨 Testing Division by Zero:")
+    result = CalculatorService.divide(%{"a" => "10.5", "b" => "0"})
+    IO.inspect(result, label: "Division by Zero Result")
+  end
+end
+
+SOAPTester.test_calculator_operations()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Advanced Service with Complex Types
+
+Let's create a more sophisticated service with complex types:
+
+```elixir
+defmodule BookstoreService do
+  @moduledoc """
+  A bookstore SOAP service demonstrating complex types and business logic.
+  """
+  
+  use Lather.Server
+  
+  @namespace "http://bookstore.example.com"
+  @service_name "BookstoreService"
+  
+  # Define complex types
+  soap_type "Book" do
+    description "Book information"
+    
+    element "id", :string, required: true, description: "Book ID"
+    element "title", :string, required: true, description: "Book title"
+    element "author", :string, required: true, description: "Author name"
+    element "isbn", :string, required: true, description: "ISBN number"
+    element "price", :decimal, required: true, description: "Book price"
+    element "inStock", :boolean, required: true, description: "Availability"
+    element "categories", :string, max_occurs: "unbounded", description: "Book categories"
+  end
+  
+  soap_type "BookList" do
+    description "List of books"
+    
+    element "books", "Book", max_occurs: "unbounded", description: "Books"
+    element "totalCount", :int, required: true, description: "Total number of books"
+  end
+  
+  soap_type "SearchCriteria" do
+    description "Book search criteria"
+    
+    element "title", :string, required: false, description: "Title search term"
+    element "author", :string, required: false, description: "Author search term"
+    element "category", :string, required: false, description: "Category filter"
+    element "maxPrice", :decimal, required: false, description: "Maximum price"
+  end
+  
+  # GetBook operation
+  soap_operation "GetBook" do
+    description "Retrieve a book by ID"
+    
+    input do
+      parameter "bookId", :string, required: true, description: "Book ID to retrieve"
+    end
+    
+    output do
+      parameter "book", "Book", description: "Book information"
+    end
+    
+    soap_action "http://bookstore.example.com/GetBook"
+  end
+  
+  def get_book(%{"bookId" => book_id}) do
+    case BookDatabase.get_book(book_id) do
+      {:ok, book} ->
+        {:ok, %{"book" => book}}
+      {:error, :not_found} ->
+        soap_fault("Client", "Book not found", %{bookId: book_id})
+    end
+  end
+  
+  # SearchBooks operation
+  soap_operation "SearchBooks" do
+    description "Search for books based on criteria"
+    
+    input do
+      parameter "criteria", "SearchCriteria", required: true, description: "Search criteria"
+      parameter "maxResults", :int, required: false, description: "Maximum results (default: 10)"
+    end
+    
+    output do
+      parameter "bookList", "BookList", description: "Matching books"
+    end
+    
+    soap_action "http://bookstore.example.com/SearchBooks"
+  end
+  
+  def search_books(%{"criteria" => criteria} = params) do
+    max_results = Map.get(params, "maxResults", "10") |> String.to_integer()
+    
+    case BookDatabase.search_books(criteria, max_results) do
+      {:ok, books, total_count} ->
+        {:ok, %{
+          "bookList" => %{
+            "books" => books,
+            "totalCount" => total_count
+          }
+        }}
+      {:error, reason} ->
+        soap_fault("Server", "Search failed: #{reason}")
+    end
+  end
+  
+  # AddBook operation
+  soap_operation "AddBook" do
+    description "Add a new book to the inventory"
+    
+    input do
+      parameter "book", "Book", required: true, description: "Book information"
+    end
+    
+    output do
+      parameter "bookId", :string, description: "ID of the added book"
+      parameter "success", :boolean, description: "Whether addition was successful"
+    end
+    
+    soap_action "http://bookstore.example.com/AddBook"
+  end
+  
+  def add_book(%{"book" => book_data}) do
+    with {:ok, validated_book} <- validate_book_data(book_data),
+         {:ok, book_id} <- BookDatabase.add_book(validated_book) do
+      {:ok, %{
+        "bookId" => book_id,
+        "success" => true
+      }}
+    else
+      {:error, validation_errors} when is_list(validation_errors) ->
+        soap_fault("Client", "Validation failed", %{errors: validation_errors})
+      {:error, reason} ->
+        soap_fault("Server", "Failed to add book: #{reason}")
+    end
+  end
+  
+  # Helper function for validation
+  defp validate_book_data(book_data) do
+    errors = []
+    
+    errors = if String.length(book_data["title"] || "") >= 1 do
+      errors
+    else
+      ["Title is required" | errors]
+    end
+    
+    errors = if String.length(book_data["author"] || "") >= 1 do
+      errors
+    else
+      ["Author is required" | errors]
+    end
+    
+    errors = if valid_isbn?(book_data["isbn"]) do
+      errors
+    else
+      ["Invalid ISBN format" | errors]
+    end
+    
+    case errors do
+      [] -> {:ok, book_data}
+      errors -> {:error, errors}
+    end
+  end
+  
+  defp valid_isbn?(isbn) do
+    # Simple ISBN validation (just check length and digits)
+    clean_isbn = String.replace(isbn || "", ~r/[-\s]/, "")
+    String.length(clean_isbn) in [10, 13] and String.match?(clean_isbn, ~r/^\d+$/)
+  end
+end
+
+# Mock book database
+defmodule BookDatabase do
+  def get_book("1") do
+    {:ok, %{
+      "id" => "1",
+      "title" => "The Elixir Programming Language",
+      "author" => "Dave Thomas",
+      "isbn" => "978-1-68050-200-8",
+      "price" => "39.99",
+      "inStock" => true,
+      "categories" => ["Programming", "Elixir", "Functional Programming"]
+    }}
+  end
+  
+  def get_book("2") do
+    {:ok, %{
+      "id" => "2",
+      "title" => "Phoenix in Action",
+      "author" => "Geoffrey Lessel",
+      "isbn" => "978-1-61729-294-3",
+      "price" => "49.99",
+      "inStock" => true,
+      "categories" => ["Web Development", "Phoenix", "Elixir"]
+    }}
+  end
+  
+  def get_book(_), do: {:error, :not_found}
+  
+  def search_books(criteria, max_results) do
+    all_books = [
+      %{
+        "id" => "1",
+        "title" => "The Elixir Programming Language",
+        "author" => "Dave Thomas",
+        "isbn" => "978-1-68050-200-8",
+        "price" => "39.99",
+        "inStock" => true,
+        "categories" => ["Programming", "Elixir", "Functional Programming"]
+      },
+      %{
+        "id" => "2",
+        "title" => "Phoenix in Action",
+        "author" => "Geoffrey Lessel",
+        "isbn" => "978-1-61729-294-3",
+        "price" => "49.99",
+        "inStock" => true,
+        "categories" => ["Web Development", "Phoenix", "Elixir"]
+      }
+    ]
+    
+    filtered_books = Enum.filter(all_books, fn book ->
+      matches_criteria?(book, criteria)
+    end)
+    
+    result_books = Enum.take(filtered_books, max_results)
+    {:ok, result_books, length(filtered_books)}
+  end
+  
+  def add_book(book_data) do
+    # Generate a new ID
+    new_id = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    {:ok, new_id}
+  end
+  
+  defp matches_criteria?(book, criteria) do
+    Enum.all?(criteria, fn {field, value} ->
+      case field do
+        "title" -> String.contains?(String.downcase(book["title"]), String.downcase(value))
+        "author" -> String.contains?(String.downcase(book["author"]), String.downcase(value))
+        "category" -> Enum.any?(book["categories"], fn cat -> 
+          String.contains?(String.downcase(cat), String.downcase(value))
+        end)
+        "maxPrice" -> String.to_float(book["price"]) <= String.to_float(value)
+        _ -> true
+      end
+    end)
+  end
+end
+
+IO.puts("📚 Bookstore service defined!")
+```
+
+Let's test the bookstore service:
+
+```elixir
+# Test bookstore operations
+IO.puts("🧪 Testing Bookstore Operations")
+IO.puts("=" |> String.duplicate(40))
+
+# Test GetBook
+IO.puts("\n📖 Testing GetBook operation:")
+result = BookstoreService.get_book(%{"bookId" => "1"})
+IO.inspect(result, label: "GetBook Result", pretty: true)
+
+# Test SearchBooks
+IO.puts("\n🔍 Testing SearchBooks operation:")
+search_criteria = %{
+  "title" => "elixir",
+  "maxPrice" => "50.00"
+}
+result = BookstoreService.search_books(%{"criteria" => search_criteria, "maxResults" => "5"})
+IO.inspect(result, label: "SearchBooks Result", pretty: true)
+
+# Test AddBook
+IO.puts("\n➕ Testing AddBook operation:")
+new_book = %{
+  "title" => "Metaprogramming Elixir",
+  "author" => "Chris McCord",
+  "isbn" => "978-1-68050-041-7",
+  "price" => "24.99",
+  "inStock" => true,
+  "categories" => ["Programming", "Elixir", "Metaprogramming"]
+}
+result = BookstoreService.add_book(%{"book" => new_book})
+IO.inspect(result, label: "AddBook Result", pretty: true)
+
+# Test error case
+IO.puts("\n🚨 Testing GetBook with invalid ID:")
+result = BookstoreService.get_book(%{"bookId" => "999"})
+IO.inspect(result, label: "Error Result", pretty: true)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## SOAP Request/Response Handling
+
+Let's demonstrate how the server handles raw SOAP requests:
+
+```elixir
+defmodule SOAPRequestDemo do
+  def demonstrate_request_parsing do
+    IO.puts("📨 SOAP Request/Response Handling Demo")
+    IO.puts("=" |> String.duplicate(50))
+    
+    # Sample SOAP request XML
+    soap_request = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+      <soap:Body>
+        <Add xmlns="http://calculator.example.com">
+          <a>10.5</a>
+          <b>5.2</b>
+        </Add>
+      </soap:Body>
+    </soap:Envelope>
+    """
+    
+    IO.puts("📥 Sample SOAP Request:")
+    IO.puts(soap_request)
+    
+    # Parse the request
+    case Lather.Server.RequestParser.parse(soap_request) do
+      {:ok, parsed_request} ->
+        IO.puts("\n✅ Parsed Request:")
+        IO.inspect(parsed_request, pretty: true)
+        
+        # Simulate operation dispatch
+        operation = CalculatorService.__soap_operation__(parsed_request.operation)
+        
+        if operation do
+          IO.puts("\n🎯 Found Operation:")
+          IO.inspect(operation, pretty: true)
+          
+          # Call the operation
+          case CalculatorService.add(parsed_request.params) do
+            {:ok, result} ->
+              IO.puts("\n💫 Operation Result:")
+              IO.inspect(result, pretty: true)
+              
+              # Build response
+              response_xml = Lather.Server.ResponseBuilder.build_response(result, operation)
+              IO.puts("\n📤 SOAP Response:")
+              IO.puts(response_xml)
+              
+            error ->
+              IO.puts("\n❌ Operation Error:")
+              IO.inspect(error)
+          end
+        else
+          IO.puts("\n❌ Operation not found: #{parsed_request.operation}")
+        end
+        
+      {:error, reason} ->
+        IO.puts("\n❌ Parse Error:")
+        IO.inspect(reason)
+    end
+  end
+  
+  def demonstrate_fault_handling do
+    IO.puts("\n🚨 SOAP Fault Handling Demo")
+    IO.puts("=" |> String.duplicate(40))
+    
+    # Create a division by zero request
+    soap_request = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+      <soap:Body>
+        <Divide xmlns="http://calculator.example.com">
+          <a>10.0</a>
+          <b>0.0</b>
+        </Divide>
+      </soap:Body>
+    </soap:Envelope>
+    """
+    
+    IO.puts("📥 Division by Zero Request:")
+    IO.puts(soap_request)
+    
+    case Lather.Server.RequestParser.parse(soap_request) do
+      {:ok, parsed_request} ->
+        IO.puts("\n✅ Parsed Request:")
+        IO.inspect(parsed_request, pretty: true)
+        
+        # Call the operation (this will return a fault)
+        case CalculatorService.divide(parsed_request.params) do
+          {:soap_fault, fault} ->
+            IO.puts("\n🚨 SOAP Fault Generated:")
+            IO.inspect(fault, pretty: true)
+            
+            # Build fault response
+            fault_xml = Lather.Server.ResponseBuilder.build_fault(fault)
+            IO.puts("\n📤 SOAP Fault Response:")
+            IO.puts(fault_xml)
+            
+          result ->
+            IO.puts("\n❓ Unexpected result:")
+            IO.inspect(result)
+        end
+    end
+  end
+end
+
+SOAPRequestDemo.demonstrate_request_parsing()
+SOAPRequestDemo.demonstrate_fault_handling()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Authentication and Security
+
+Let's create a service with authentication requirements:
+
+```elixir
+defmodule SecureService do
+  @moduledoc """
+  A SOAP service demonstrating authentication and authorization.
+  """
+  
+  use Lather.Server
+  
+  @namespace "http://secure.example.com"
+  @service_name "SecureService"
+  
+  # Define authentication configuration
+  soap_auth do
+    basic_auth realm: "Secure SOAP Service"
+  end
+  
+  # Protected operation
+  soap_operation "GetSecretData" do
+    description "Retrieves sensitive information (requires authentication)"
+    
+    input do
+      parameter "dataId", :string, required: true, description: "Data identifier"
+    end
+    
+    output do
+      parameter "data", :string, description: "Secret data"
+      parameter "timestamp", :dateTime, description: "Access timestamp"
+    end
+    
+    soap_action "http://secure.example.com/GetSecretData"
+  end
+  
+  def get_secret_data(%{"dataId" => data_id}) do
+    # In a real implementation, you'd check authentication here
+    # For demo purposes, we'll just return mock data
+    
+    {:ok, %{
+      "data" => "This is secret data for ID: #{data_id}",
+      "timestamp" => DateTime.utc_now() |> DateTime.to_iso8601()
+    }}
+  end
+  
+  # Public operation (no auth required)
+  soap_operation "GetPublicInfo" do
+    description "Retrieves public information (no authentication required)"
+    
+    input do
+      parameter "infoType", :string, required: true, description: "Type of information"
+    end
+    
+    output do
+      parameter "info", :string, description: "Public information"
+    end
+    
+    soap_action "http://secure.example.com/GetPublicInfo"
+  end
+  
+  def get_public_info(%{"infoType" => info_type}) do
+    info_map = %{
+      "status" => "Service is operational",
+      "version" => "1.0.0",
+      "uptime" => "99.9%"
+    }
+    
+    info = Map.get(info_map, info_type, "Information not available")
+    {:ok, %{"info" => info}}
+  end
+end
+
+# Custom authentication handler
+defmodule CustomAuthHandler do
+  @moduledoc """
+  Custom authentication handler for demonstration.
+  """
+  
+  def authenticate(conn) do
+    # This is a mock implementation
+    # In real applications, you'd check headers, tokens, etc.
+    
+    case get_authorization_header(conn) do
+      {"Basic", credentials} ->
+        case decode_basic_auth(credentials) do
+          {"admin", "secret"} -> 
+            {:ok, conn}
+          _ -> 
+            {:error, :invalid_credentials}
+        end
+      nil ->
+        {:error, :missing_authorization}
+    end
+  end
+  
+  defp get_authorization_header(conn) do
+    # Mock implementation - in real Plug, you'd check req_headers
+    # For demo, we'll assume auth is present
+    {"Basic", Base.encode64("admin:secret")}
+  end
+  
+  defp decode_basic_auth(encoded) do
+    case Base.decode64(encoded) do
+      {:ok, decoded} ->
+        case String.split(decoded, ":", parts: 2) do
+          [username, password] -> {username, password}
+          _ -> {nil, nil}
+        end
+      _ -> {nil, nil}
+    end
+  end
+end
+
+IO.puts("🔐 Secure service defined!")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Testing with HTTP Handler
+
+Let's demonstrate how to test our services with the HTTP handler:
+
+```elixir
+defmodule SOAPServerTester do
+  def test_http_handler do
+    IO.puts("🌐 Testing HTTP Handler")
+    IO.puts("=" |> String.duplicate(30))
+    
+    # Test WSDL generation
+    IO.puts("\n📄 Testing WSDL Generation:")
+    case Lather.Server.Handler.handle_request(
+      "GET", 
+      "/soap/calculator?wsdl", 
+      [], 
+      "", 
+      CalculatorService,
+      base_url: "http://localhost:4000/soap/calculator"
+    ) do
+      {:ok, status, headers, body} ->
+        IO.puts("Status: #{status}")
+        IO.puts("Headers: #{inspect(headers)}")
+        IO.puts("WSDL Generated: #{String.length(body)} characters")
+        IO.puts("First 200 chars: #{String.slice(body, 0, 200)}...")
+        
+      {:error, status, headers, body} ->
+        IO.puts("Error - Status: #{status}")
+        IO.puts("Error Body: #{body}")
+    end
+    
+    # Test SOAP operation
+    IO.puts("\n🧮 Testing SOAP Operation:")
+    soap_request = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+      <soap:Body>
+        <Multiply xmlns="http://calculator.example.com">
+          <a>7.5</a>
+          <b>4.2</b>
+        </Multiply>
+      </soap:Body>
+    </soap:Envelope>
+    """
+    
+    case Lather.Server.Handler.handle_request(
+      "POST",
+      "/soap/calculator",
+      [{"content-type", "text/xml"}],
+      soap_request,
+      CalculatorService
+    ) do
+      {:ok, status, headers, body} ->
+        IO.puts("Status: #{status}")
+        IO.puts("Headers: #{inspect(headers)}")
+        IO.puts("Response:")
+        IO.puts(body)
+        
+      {:error, status, headers, body} ->
+        IO.puts("Error - Status: #{status}")
+        IO.puts("Error Body: #{body}")
+    end
+    
+    # Test error case
+    IO.puts("\n❌ Testing Error Case:")
+    invalid_request = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+      <soap:Body>
+        <NonExistentOperation>
+          <param>value</param>
+        </NonExistentOperation>
+      </soap:Body>
+    </soap:Envelope>
+    """
+    
+    case Lather.Server.Handler.handle_request(
+      "POST",
+      "/soap/calculator",
+      [{"content-type", "text/xml"}],
+      invalid_request,
+      CalculatorService
+    ) do
+      {:ok, status, headers, body} ->
+        IO.puts("Status: #{status}")
+        IO.puts("Response: #{body}")
+        
+      {:error, status, headers, body} ->
+        IO.puts("Error Status: #{status}")
+        IO.puts("Fault Response:")
+        IO.puts(body)
+    end
+  end
+end
+
+SOAPServerTester.test_http_handler()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Service Introspection and Debugging
+
+Let's create tools to inspect and debug our SOAP services:
+
+```elixir
+defmodule SOAPServiceInspector do
+  def inspect_service(service_module) do
+    IO.puts("🔍 Service Inspection: #{service_module}")
+    IO.puts("=" |> String.duplicate(50))
+    
+    service_info = service_module.__soap_service__()
+    
+    IO.puts("📊 Service Overview:")
+    IO.puts("  Name: #{service_info.name}")
+    IO.puts("  Namespace: #{service_info.namespace}")
+    IO.puts("  Operations: #{length(service_info.operations)}")
+    IO.puts("  Types: #{length(service_info.types)}")
+    
+    IO.puts("\n📋 Operations Details:")
+    Enum.each(service_info.operations, fn operation ->
+      IO.puts("  • #{operation.name}")
+      IO.puts("    Description: #{operation.description || "No description"}")
+      IO.puts("    Function: #{operation.function_name}/1")
+      IO.puts("    SOAP Action: #{operation.soap_action || "None"}")
+      
+      if length(operation.input) > 0 do
+        IO.puts("    Inputs:")
+        Enum.each(operation.input, fn param ->
+          required = if param.required, do: " (required)", else: " (optional)"
+          IO.puts("      - #{param.name}: #{param.type}#{required}")
+        end)
+      end
+      
+      if length(operation.output) > 0 do
+        IO.puts("    Outputs:")
+        Enum.each(operation.output, fn param ->
+          IO.puts("      - #{param.name}: #{param.type}")
+        end)
+      end
+      IO.puts("")
+    end)
+    
+    if length(service_info.types) > 0 do
+      IO.puts("🏗️ Complex Types:")
+      Enum.each(service_info.types, fn type ->
+        IO.puts("  • #{type.name}")
+        IO.puts("    Description: #{type.description || "No description"}")
+        
+        if length(type.elements) > 0 do
+          IO.puts("    Elements:")
+          Enum.each(type.elements, fn element ->
+            required = if element.required, do: " (required)", else: " (optional)"
+            occurs = if element.max_occurs == "unbounded", do: " (array)", else: ""
+            IO.puts("      - #{element.name}: #{element.type}#{required}#{occurs}")
+          end)
+        end
+        IO.puts("")
+      end)
+    end
+  end
+  
+  def validate_service_implementation(service_module) do
+    IO.puts("✅ Service Implementation Validation")
+    IO.puts("=" |> String.duplicate(40))
+    
+    service_info = service_module.__soap_service__()
+    errors = []
+    warnings = []
+    
+    # Check if all operations have corresponding functions
+    Enum.each(service_info.operations, fn operation ->
+      function_name = String.to_atom(operation.function_name)
+      
+      if function_exported?(service_module, function_name, 1) do
+        IO.puts("✅ #{operation.name} -> #{function_name}/1")
+      else
+        error = "❌ Missing function: #{function_name}/1 for operation #{operation.name}"
+        IO.puts(error)
+        errors = [error | errors]
+      end
+    end)
+    
+    # Check for unused functions that might be operations
+    all_functions = service_module.__info__(:functions)
+    operation_functions = Enum.map(service_info.operations, fn op ->
+      String.to_atom(op.function_name)
+    end)
+    
+    potential_operations = Enum.filter(all_functions, fn {name, arity} ->
+      arity == 1 and name not in operation_functions and 
+      name not in [:__soap_service__, :__soap_operations__, :__soap_operation__]
+    end)
+    
+    if length(potential_operations) > 0 do
+      IO.puts("\n⚠️ Potential unused operation functions:")
+      Enum.each(potential_operations, fn {name, arity} ->
+        warning = "  • #{name}/#{arity} - consider adding soap_operation definition"
+        IO.puts(warning)
+        warnings = [warning | warnings]
+      end)
+    end
+    
+    IO.puts("\n📈 Validation Summary:")
+    IO.puts("  Operations: #{length(service_info.operations)}")
+    IO.puts("  Errors: #{length(errors)}")
+    IO.puts("  Warnings: #{length(warnings)}")
+    
+    if length(errors) == 0 do
+      IO.puts("  ✅ Service implementation is valid!")
+    else
+      IO.puts("  ❌ Service has implementation issues")
+    end
+  end
+end
+
+# Inspect our services
+SOAPServiceInspector.inspect_service(CalculatorService)
+SOAPServiceInspector.validate_service_implementation(CalculatorService)
+
+IO.puts("\n" <> String.duplicate("=", 60))
+
+SOAPServiceInspector.inspect_service(BookstoreService)
+SOAPServiceInspector.validate_service_implementation(BookstoreService)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Performance and Monitoring
+
+Let's add some performance monitoring to our services:
+
+```elixir
+defmodule SOAPPerformanceMonitor do
+  def benchmark_operation(service_module, operation_name, params, iterations \\ 100) do
+    IO.puts("⚡ Performance Benchmark")
+    IO.puts("Service: #{service_module}")
+    IO.puts("Operation: #{operation_name}")
+    IO.puts("Iterations: #{iterations}")
+    IO.puts("=" |> String.duplicate(40))
+    
+    function_name = operation_name |> String.downcase() |> String.to_atom()
+    
+    # Warm up
+    apply(service_module, function_name, [params])
+    
+    # Benchmark
+    {total_time, results} = :timer.tc(fn ->
+      Enum.map(1..iterations, fn _i ->
+        {time, result} = :timer.tc(service_module, function_name, [params])
+        {time, result}
+      end)
+    end)
+    
+    times = Enum.map(results, fn {time, _result} -> time end)
+    successes = Enum.count(results, fn {_time, result} -> 
+      match?({:ok, _}, result) or not match?({:soap_fault, _}, result)
+    end)
+    
+    avg_time = Enum.sum(times) / length(times) / 1000  # Convert to milliseconds
+    min_time = Enum.min(times) / 1000
+    max_time = Enum.max(times) / 1000
+    
+    # Calculate percentiles
+    sorted_times = Enum.sort(times)
+    p50 = Enum.at(sorted_times, round(length(sorted_times) * 0.5)) / 1000
+    p95 = Enum.at(sorted_times, round(length(sorted_times) * 0.95)) / 1000
+    p99 = Enum.at(sorted_times, round(length(sorted_times) * 0.99)) / 1000
+    
+    IO.puts("📊 Results:")
+    IO.puts("  Total Time: #{Float.round(total_time / 1_000_000, 2)} seconds")
+    IO.puts("  Success Rate: #{successes}/#{iterations} (#{Float.round(successes/iterations*100, 1)}%)")
+    IO.puts("  Average: #{Float.round(avg_time, 3)} ms")
+    IO.puts("  Min: #{Float.round(min_time, 3)} ms")
+    IO.puts("  Max: #{Float.round(max_time, 3)} ms")
+    IO.puts("  50th percentile: #{Float.round(p50, 3)} ms")
+    IO.puts("  95th percentile: #{Float.round(p95, 3)} ms")
+    IO.puts("  99th percentile: #{Float.round(p99, 3)} ms")
+    
+    # Performance assessment
+    cond do
+      avg_time < 1.0 ->
+        IO.puts("  🚀 Excellent performance!")
+      avg_time < 10.0 ->
+        IO.puts("  ✅ Good performance")
+      avg_time < 100.0 ->
+        IO.puts("  ⚠️ Acceptable performance")
+      true ->
+        IO.puts("  🐌 Performance needs optimization")
+    end
+  end
+  
+  def memory_usage_analysis(service_module) do
+    IO.puts("💾 Memory Usage Analysis")
+    IO.puts("Service: #{service_module}")
+    IO.puts("=" |> String.duplicate(30))
+    
+    # Get service metadata size
+    service_info = service_module.__soap_service__()
+    metadata_size = :erlang.external_size(service_info)
+    
+    IO.puts("📊 Memory Footprint:")
+    IO.puts("  Service metadata: #{format_bytes(metadata_size)}")
+    IO.puts("  Operations: #{length(service_info.operations)}")
+    IO.puts("  Types: #{length(service_info.types)}")
+    
+    # Estimate WSDL size
+    wsdl_content = Lather.Server.WSDLGenerator.generate(service_info, "http://localhost")
+    wsdl_size = byte_size(wsdl_content)
+    
+    IO.puts("  Generated WSDL: #{format_bytes(wsdl_size)}")
+    
+    # Memory efficiency assessment
+    avg_operation_size = if length(service_info.operations) > 0 do
+      metadata_size / length(service_info.operations)
+    else
+      0
+    end
+    
+    IO.puts("  Avg operation overhead: #{format_bytes(round(avg_operation_size))}")
+    
+    if metadata_size > 10_000 do
+      IO.puts("  ⚠️ Large service metadata - consider splitting into smaller services")
+    else
+      IO.puts("  ✅ Reasonable memory footprint")
+    end
+  end
+  
+  defp format_bytes(bytes) when bytes < 1024, do: "#{bytes} B"
+  defp format_bytes(bytes) when bytes < 1024 * 1024, do: "#{Float.round(bytes / 1024, 1)} KB"
+  defp format_bytes(bytes), do: "#{Float.round(bytes / (1024 * 1024), 1)} MB"
+end
+
+# Benchmark our services
+SOAPPerformanceMonitor.benchmark_operation(CalculatorService, "Add", %{"a" => "10.5", "b" => "5.2"}, 50)
+
+IO.puts("\n" <> String.duplicate("-", 50))
+
+SOAPPerformanceMonitor.benchmark_operation(BookstoreService, "GetBook", %{"bookId" => "1"}, 50)
+
+IO.puts("\n" <> String.duplicate("-", 50))
+
+SOAPPerformanceMonitor.memory_usage_analysis(CalculatorService)
+
+IO.puts("\n" <> String.duplicate("-", 50))
+
+SOAPPerformanceMonitor.memory_usage_analysis(BookstoreService)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Production Deployment Patterns
+
+Let's explore different deployment patterns for SOAP servers:
+
+```elixir
+defmodule DeploymentPatterns do
+  def show_phoenix_integration do
+    IO.puts("🔥 Phoenix Integration Pattern")
+    IO.puts("=" |> String.duplicate(40))
+    
+    phoenix_controller = """
+    # In your Phoenix router
+    scope "/soap" do
+      pipe_through :api
+      
+      # Calculator service
+      post "/calculator", SOAPController, :handle_calculator
+      get "/calculator", SOAPController, :handle_calculator  # For WSDL
+      
+      # Bookstore service  
+      post "/bookstore", SOAPController, :handle_bookstore
+      get "/bookstore", SOAPController, :handle_bookstore   # For WSDL
+    end
+    
+    # In your controller
+    defmodule MyAppWeb.SOAPController do
+      use MyAppWeb, :controller
+      
+      def handle_calculator(conn, _params) do
+        handle_soap_service(conn, CalculatorService, "/soap/calculator")
+      end
+      
+      def handle_bookstore(conn, _params) do
+        handle_soap_service(conn, BookstoreService, "/soap/bookstore")
+      end
+      
+      defp handle_soap_service(conn, service, base_path) do
+        {:ok, body, _conn} = read_body(conn)
+        base_url = "\#{conn.scheme}://\#{conn.host}:\#{conn.port}\#{base_path}"
+        
+        case Lather.Server.Handler.handle_request(
+          conn.method,
+          conn.request_path,
+          conn.req_headers,
+          body,
+          service,
+          base_url: base_url
+        ) do
+          {:ok, status, headers, response_body} ->
+            conn
+            |> put_status(status)
+            |> put_headers(headers)
+            |> text(response_body)
+            
+          {:error, status, headers, response_body} ->
+            conn
+            |> put_status(status)
+            |> put_headers(headers)
+            |> text(response_body)
+        end
+      end
+      
+      defp put_headers(conn, headers) do
+        Enum.reduce(headers, conn, fn {key, value}, acc ->
+          put_resp_header(acc, key, value)
+        end)
+      end
+    end
+    """
+    
+    IO.puts(phoenix_controller)
+  end
+  
+  def show_standalone_server do
+    IO.puts("🌐 Standalone Server Pattern")
+    IO.puts("=" |> String.duplicate(40))
+    
+    standalone_server = """
+    # Standalone SOAP server with Bandit
+    defmodule MySOAPServer do
+      def start_link(opts \\\\ []) do
+        port = Keyword.get(opts, :port, 8080)
+        
+        routes = [
+          {"/soap/calculator", CalculatorService},
+          {"/soap/bookstore", BookstoreService}
+        ]
+        
+        Bandit.start_link(
+          plug: {__MODULE__, routes},
+          port: port,
+          options: [
+            read_timeout: 60_000,
+            idle_timeout: 60_000
+          ]
+        )
+      end
+      
+      def init(opts) do
+        opts
+      end
+      
+      def call(conn, routes) do
+        path = conn.request_path
+        
+        case find_service_for_path(path, routes) do
+          {service, base_path} ->
+            {:ok, body, _conn} = Plug.Conn.read_body(conn)
+            base_url = "http://localhost:8080\#{base_path}"
+            
+            case Lather.Server.Handler.handle_request(
+              conn.method,
+              path,
+              conn.req_headers,
+              body,
+              service,
+              base_url: base_url
+            ) do
+              {:ok, status, headers, response_body} ->
+                conn
+                |> Plug.Conn.put_status(status)
+                |> put_headers(headers)
+                |> Plug.Conn.send_resp(response_body)
+                
+              {:error, status, headers, response_body} ->
+                conn
+                |> Plug.Conn.put_status(status)
+                |> put_headers(headers)
+                |> Plug.Conn.send_resp(response_body)
+            end
+            
+          nil ->
+            conn
+            |> Plug.Conn.put_status(404)
+            |> Plug.Conn.send_resp("Not Found")
+        end
+      end
+      
+      defp find_service_for_path(path, routes) do
+        Enum.find_value(routes, fn {route_path, service} ->
+          if String.starts_with?(path, route_path) do
+            {service, route_path}
+          end
+        end)
+      end
+      
+      defp put_headers(conn, headers) do
+        Enum.reduce(headers, conn, fn {key, value}, acc ->
+          Plug.Conn.put_resp_header(acc, key, value)
+        end)
+      end
+    end
+    
+    # Start the server
+    {:ok, _pid} = MySOAPServer.start_link(port: 8080)
+    """
+    
+    IO.puts(standalone_server)
+  end
+  
+  def show_docker_deployment do
+    IO.puts("🐳 Docker Deployment")
+    IO.puts("=" |> String.duplicate(25))
+    
+    dockerfile = """
+    # Dockerfile
+    FROM elixir:1.19-alpine
+    
+    # Install build dependencies
+    RUN apk add --no-cache build-base git
+    
+    # Set working directory
+    WORKDIR /app
+    
+    # Copy mix files
+    COPY mix.exs mix.lock ./
+    
+    # Install hex and rebar
+    RUN mix local.hex --force && \\
+        mix local.rebar --force
+    
+    # Install dependencies
+    RUN mix deps.get
+    
+    # Copy source code
+    COPY . .
+    
+    # Compile application
+    RUN mix compile
+    
+    # Expose SOAP service port
+    EXPOSE 8080
+    
+    # Start the SOAP server
+    CMD ["mix", "run", "--no-halt"]
+    """
+    
+    IO.puts(dockerfile)
+    
+    docker_compose = """
+    
+    # docker-compose.yml
+    version: '3.8'
+    services:
+      soap-server:
+        build: .
+        ports:
+          - "8080:8080"
+        environment:
+          - MIX_ENV=prod
+          - PORT=8080
+        healthcheck:
+          test: ["CMD", "curl", "-f", "http://localhost:8080/soap/calculator?wsdl"]
+          interval: 30s
+          timeout: 10s
+          retries: 3
+    """
+    
+    IO.puts(docker_compose)
+  end
+  
+  def show_kubernetes_deployment do
+    IO.puts("☸️ Kubernetes Deployment")
+    IO.puts("=" |> String.duplicate(30))
+    
+    k8s_deployment = """
+    # soap-server-deployment.yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: soap-server
+      labels:
+        app: soap-server
+    spec:
+      replicas: 3
+      selector:
+        matchLabels:
+          app: soap-server
+      template:
+        metadata:
+          labels:
+            app: soap-server
+        spec:
+          containers:
+          - name: soap-server
+            image: my-soap-server:latest
+            ports:
+            - containerPort: 8080
+            env:
+            - name: PORT
+              value: "8080"
+            - name: MIX_ENV
+              value: "prod"
+            readinessProbe:
+              httpGet:
+                path: /soap/calculator?wsdl
+                port: 8080
+              initialDelaySeconds: 10
+              periodSeconds: 5
+            livenessProbe:
+              httpGet:
+                path: /soap/calculator?wsdl
+                port: 8080
+              initialDelaySeconds: 30
+              periodSeconds: 10
+    ---
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: soap-server-service
+    spec:
+      selector:
+        app: soap-server
+      ports:
+      - protocol: TCP
+        port: 80
+        targetPort: 8080
+      type: LoadBalancer
+    """
+    
+    IO.puts(k8s_deployment)
+  end
+end
+
+DeploymentPatterns.show_phoenix_integration()
+DeploymentPatterns.show_standalone_server()
+DeploymentPatterns.show_docker_deployment()
+DeploymentPatterns.show_kubernetes_deployment()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Summary and Next Steps
+
+Congratulations! You've learned how to build comprehensive SOAP servers with Lather. Here's what you've mastered:
+
+```elixir
+summary = """
+🎯 SOAP SERVER MASTERY SUMMARY
+
+🏗️ Service Development:
+   • Define operations with soap_operation macro
+   • Create complex types with soap_type
+   • Implement business logic in operation functions
+   • Handle errors with soap_fault responses
+
+📄 WSDL Generation:
+   • Automatic WSDL generation from service definitions
+   • Type mapping from Elixir to XSD
+   • Complete service documentation
+   • Standards-compliant WSDL documents
+
+🔧 Request/Response Handling:
+   • Parse incoming SOAP requests
+   • Validate parameters and types
+   • Route operations to handler functions
+   • Build formatted SOAP responses
+
+🔐 Security & Authentication:
+   • HTTP Basic Authentication
+   • WS-Security support
+   • Custom authentication handlers
+   • Authorization patterns
+
+⚡ Performance & Monitoring:
+   • Performance benchmarking
+   • Memory usage optimization
+   • Service introspection tools
+   • Error pattern analysis
+
+🚀 Deployment Options:
+   • Phoenix framework integration
+   • Standalone HTTP servers
+   • Docker containerization
+   • Kubernetes orchestration
+
+🎯 Next Steps:
+   • Build production SOAP services
+   • Implement comprehensive test suites
+   • Set up monitoring and alerting
+   • Create API documentation
+   • Deploy to production environments
+"""
+
+IO.puts(summary)
+```
+
+You're now equipped to build enterprise-grade SOAP web services with Elixir! 🚀📊

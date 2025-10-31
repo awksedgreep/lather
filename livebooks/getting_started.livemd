@@ -1,0 +1,487 @@
+# Getting Started with Lather SOAP Library
+
+```elixir
+Mix.install([
+  {:lather, path: ".."},
+  {:finch, "~> 0.18"},
+  {:kino, "~> 0.12"}
+])
+```
+
+## Introduction
+
+Welcome to the **Lather SOAP Library** interactive tutorial! Lather is a generic SOAP library for Elixir that can work with any SOAP service without requiring service-specific implementations.
+
+In this Livebook, you'll learn:
+- How to connect to SOAP services using WSDL
+- Making SOAP calls with dynamic parameters
+- Handling responses and errors
+- Working with different authentication methods
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Setting Up the Environment
+
+First, let's start the necessary applications and configure our HTTP client:
+
+```elixir
+# Start required applications
+{:ok, _} = Application.ensure_all_started(:lather)
+
+# Configure Finch for HTTP connections
+children = [
+  {Finch, name: Lather.Finch}
+]
+
+{:ok, _supervisor} = Supervisor.start_link(children, strategy: :one_for_one)
+
+IO.puts("✅ Lather environment ready!")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Basic SOAP Service Connection
+
+Let's start with a simple example using a public weather service:
+
+```elixir
+# Define the WSDL URL for a public weather service
+weather_wsdl = "http://www.webservicex.net/globalweather.asmx?WSDL"
+
+# Create a dynamic client
+case Lather.DynamicClient.new(weather_wsdl, timeout: 30_000) do
+  {:ok, weather_client} ->
+    IO.puts("✅ Successfully connected to weather service!")
+    
+    # Store the client for use in other cells
+    Process.put(:weather_client, weather_client)
+    
+    # Show available operations
+    operations = Lather.DynamicClient.list_operations(weather_client)
+    IO.puts("\n📋 Available operations:")
+    Enum.each(operations, fn op -> IO.puts("   • #{op}") end)
+    
+    weather_client
+
+  {:error, error} ->
+    IO.puts("❌ Failed to connect: #{inspect(error)}")
+    nil
+end
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Exploring Service Operations
+
+Let's examine the details of available operations:
+
+```elixir
+weather_client = Process.get(:weather_client)
+
+if weather_client do
+  # Get detailed information about an operation
+  case Lather.DynamicClient.get_operation_info(weather_client, "GetWeather") do
+    {:ok, info} ->
+      IO.puts("🔍 Operation: GetWeather")
+      IO.puts("\n📥 Input Parameters:")
+      
+      Enum.each(info.input_parts, fn part ->
+        required = if part.required, do: " (required)", else: " (optional)"
+        IO.puts("   • #{part.name}: #{part.type}#{required}")
+      end)
+      
+      IO.puts("\n📤 Output:")
+      Enum.each(info.output_parts, fn part ->
+        IO.puts("   • #{part.name}: #{part.type}")
+      end)
+      
+      if info.soap_action do
+        IO.puts("\n🎯 SOAP Action: #{info.soap_action}")
+      end
+
+    {:error, error} ->
+      IO.puts("❌ Error getting operation info: #{inspect(error)}")
+  end
+else
+  IO.puts("⚠️ No weather client available. Run the previous cell first.")
+end
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Making Your First SOAP Call
+
+Now let's make an actual SOAP call to get weather information:
+
+```elixir
+weather_client = Process.get(:weather_client)
+
+if weather_client do
+  # Parameters for the GetWeather operation
+  params = %{
+    "CityName" => "New York",
+    "CountryName" => "United States"
+  }
+  
+  IO.puts("🌤️ Getting weather for New York, United States...")
+  
+  case Lather.DynamicClient.call(weather_client, "GetWeather", params) do
+    {:ok, response} ->
+      IO.puts("✅ Weather data received!")
+      IO.puts("\n📊 Response structure:")
+      IO.inspect(response, pretty: true, limit: :infinity)
+      
+      # Extract and display the weather result
+      case response do
+        %{"GetWeatherResult" => weather_xml} when is_binary(weather_xml) ->
+          if String.contains?(weather_xml, "Data Not Found") do
+            IO.puts("\n⚠️ No weather data available for this location")
+          else
+            IO.puts("\n🌡️ Weather XML (first 300 characters):")
+            IO.puts(String.slice(weather_xml, 0, 300) <> "...")
+          end
+          
+        _ ->
+          IO.puts("\n💡 Raw response data shown above")
+      end
+
+    {:error, error} ->
+      IO.puts("❌ Error calling GetWeather: #{Lather.Error.format_error(error)}")
+  end
+else
+  IO.puts("⚠️ No weather client available. Run the connection cell first.")
+end
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Interactive City Weather Lookup
+
+Let's create an interactive widget to look up weather for different cities:
+
+```elixir
+# Create input widgets for city and country
+city_input = Kino.Input.text("City", default: "London")
+country_input = Kino.Input.text("Country", default: "United Kingdom")
+lookup_button = Kino.Control.button("Get Weather")
+
+# Layout the inputs
+form = Kino.Layout.grid([
+  [city_input, country_input],
+  [lookup_button]
+])
+
+form
+```
+
+```elixir
+# Handle the button click
+weather_client = Process.get(:weather_client)
+
+Kino.Control.stream(lookup_button)
+|> Kino.listen(fn _event ->
+  if weather_client do
+    city = Kino.Input.read(city_input)
+    country = Kino.Input.read(country_input)
+    
+    if city != "" and country != "" do
+      IO.puts("🔍 Looking up weather for #{city}, #{country}...")
+      
+      params = %{
+        "CityName" => city,
+        "CountryName" => country
+      }
+      
+      case Lather.DynamicClient.call(weather_client, "GetWeather", params) do
+        {:ok, response} ->
+          case response do
+            %{"GetWeatherResult" => weather_xml} when is_binary(weather_xml) ->
+              if String.contains?(weather_xml, "Data Not Found") do
+                IO.puts("⚠️ No weather data found for #{city}, #{country}")
+              else
+                IO.puts("✅ Weather data found for #{city}, #{country}")
+                IO.puts("📄 Response: #{String.slice(weather_xml, 0, 200)}...")
+              end
+              
+            _ ->
+              IO.puts("✅ Received response:")
+              IO.inspect(response, pretty: true)
+          end
+
+        {:error, error} ->
+          IO.puts("❌ Error: #{Lather.Error.format_error(error)}")
+      end
+    else
+      IO.puts("⚠️ Please enter both city and country")
+    end
+  else
+    IO.puts("⚠️ Weather client not available")
+  end
+end)
+
+:ok
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Error Handling Examples
+
+Let's explore how Lather handles different types of errors:
+
+```elixir
+weather_client = Process.get(:weather_client)
+
+if weather_client do
+  IO.puts("🧪 Testing different error scenarios...\n")
+  
+  # Test 1: Invalid operation name
+  IO.puts("1️⃣ Testing invalid operation name:")
+  case Lather.DynamicClient.call(weather_client, "NonExistentOperation", %{}) do
+    {:ok, _response} ->
+      IO.puts("   Unexpected success")
+    {:error, error} ->
+      IO.puts("   ❌ Expected error: #{error.type}")
+      IO.puts("   📝 Message: #{error.message}")
+  end
+  
+  # Test 2: Missing required parameters
+  IO.puts("\n2️⃣ Testing missing required parameters:")
+  case Lather.DynamicClient.call(weather_client, "GetWeather", %{}) do
+    {:ok, _response} ->
+      IO.puts("   Unexpected success")
+    {:error, error} ->
+      IO.puts("   ❌ Expected error: #{error.type}")
+      IO.puts("   📝 Details: #{inspect(error.details)}")
+  end
+  
+  # Test 3: Invalid parameter types
+  IO.puts("\n3️⃣ Testing with invalid parameter types:")
+  case Lather.DynamicClient.call(weather_client, "GetWeather", %{
+    "CityName" => 12345,  # Should be string
+    "CountryName" => %{}  # Should be string
+  }) do
+    {:ok, response} ->
+      IO.puts("   ✅ Service accepted the parameters: #{inspect(response)}")
+    {:error, error} ->
+      IO.puts("   ❌ Error: #{error.type}")
+      IO.puts("   📝 Details: #{inspect(error.details)}")
+  end
+  
+else
+  IO.puts("⚠️ No weather client available")
+end
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Working with Complex Parameters
+
+Some SOAP services require complex nested parameters. Let's see how to structure them:
+
+```elixir
+# Example of complex parameter structure for an enterprise service
+complex_params = %{
+  "request" => %{
+    "searchCriteria" => %{
+      "filters" => [
+        %{
+          "field" => "department",
+          "operator" => "equals",
+          "value" => "Engineering"
+        },
+        %{
+          "field" => "active", 
+          "operator" => "equals",
+          "value" => true
+        }
+      ],
+      "sorting" => [
+        %{
+          "field" => "lastName",
+          "direction" => "asc"
+        }
+      ],
+      "pagination" => %{
+        "pageSize" => 25,
+        "pageNumber" => 1
+      }
+    },
+    "options" => %{
+      "includeMetadata" => true,
+      "format" => "detailed"
+    }
+  }
+}
+
+IO.puts("📋 Example complex parameter structure:")
+IO.inspect(complex_params, pretty: true)
+
+IO.puts("\n💡 This shows how to structure nested parameters for enterprise SOAP services")
+IO.puts("   • Use maps for complex objects")
+IO.puts("   • Use lists for arrays")
+IO.puts("   • String keys match XML element names")
+IO.puts("   • Values are automatically converted to appropriate XML types")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Performance: Concurrent Requests
+
+Let's see how Lather handles multiple concurrent requests:
+
+```elixir
+weather_client = Process.get(:weather_client)
+
+if weather_client do
+  # List of cities to query
+  cities = [
+    {"Tokyo", "Japan"},
+    {"London", "United Kingdom"},
+    {"Sydney", "Australia"},
+    {"Toronto", "Canada"},
+    {"Berlin", "Germany"}
+  ]
+  
+  IO.puts("🚀 Making concurrent weather requests for #{length(cities)} cities...")
+  start_time = System.monotonic_time(:millisecond)
+  
+  # Create async tasks for each city
+  tasks = Enum.map(cities, fn {city, country} ->
+    Task.async(fn ->
+      params = %{"CityName" => city, "CountryName" => country}
+      result = Lather.DynamicClient.call(weather_client, "GetWeather", params)
+      {city, result}
+    end)
+  end)
+  
+  # Wait for all tasks to complete
+  results = Task.await_many(tasks, 30_000)
+  end_time = System.monotonic_time(:millisecond)
+  
+  IO.puts("\n📊 Results (completed in #{end_time - start_time}ms):")
+  
+  Enum.each(results, fn {city, result} ->
+    case result do
+      {:ok, _response} ->
+        IO.puts("   ✅ #{city}: Weather data received")
+      {:error, _error} ->
+        IO.puts("   ❌ #{city}: Failed to get weather")
+    end
+  end)
+  
+  success_count = Enum.count(results, fn {_city, result} -> 
+    match?({:ok, _}, result) 
+  end)
+  
+  IO.puts("\n📈 Summary: #{success_count}/#{length(cities)} requests successful")
+else
+  IO.puts("⚠️ No weather client available")
+end
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Service Information Summary
+
+Let's create a comprehensive summary of the SOAP service we've been working with:
+
+```elixir
+weather_client = Process.get(:weather_client)
+
+if weather_client do
+  service_info = weather_client.service_info
+  
+  IO.puts("📋 SOAP Service Summary")
+  IO.puts("=" |> String.duplicate(50))
+  
+  # Service details
+  if service_info.services && length(service_info.services) > 0 do
+    service = hd(service_info.services)
+    IO.puts("🌐 Service Name: #{service[:name] || "N/A"}")
+    IO.puts("🔗 Endpoint: #{service[:endpoint] || "N/A"}")
+  end
+  
+  # Operations
+  IO.puts("\n🔧 Available Operations (#{length(service_info.operations)}):")
+  Enum.each(service_info.operations, fn op ->
+    input_count = length(op.input_parts || [])
+    output_count = length(op.output_parts || [])
+    IO.puts("   • #{op.name} (#{input_count} inputs, #{output_count} outputs)")
+  end)
+  
+  # Namespaces
+  if service_info.namespaces && map_size(service_info.namespaces) > 0 do
+    IO.puts("\n📚 Namespaces:")
+    Enum.each(service_info.namespaces, fn {prefix, uri} ->
+      IO.puts("   • #{prefix}: #{uri}")
+    end)
+  end
+  
+  # Types
+  if service_info.types && map_size(service_info.types) > 0 do
+    IO.puts("\n🏗️ Complex Types (#{map_size(service_info.types)}):")
+    Enum.each(service_info.types, fn {name, _type} ->
+      IO.puts("   • #{name}")
+    end)
+  end
+  
+else
+  IO.puts("⚠️ No service information available")
+end
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Next Steps
+
+Congratulations! You've learned the basics of using the Lather SOAP library. Here's what you can explore next:
+
+1. **Authentication**: Try connecting to services that require authentication
+2. **Complex Data**: Work with enterprise services that have complex data structures
+3. **Error Recovery**: Implement retry logic for production applications
+4. **Type Validation**: Use Lather's type system for safer SOAP interactions
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Quick Reference
+
+Here are the key functions you'll use most often:
+
+```elixir
+# Quick reference card
+reference = """
+🔧 LATHER SOAP LIBRARY - QUICK REFERENCE
+
+📡 Creating Clients:
+   {:ok, client} = Lather.DynamicClient.new(wsdl_url)
+   {:ok, client} = Lather.DynamicClient.new(wsdl_url, options)
+
+🔍 Discovering Services:
+   operations = Lather.DynamicClient.list_operations(client)
+   {:ok, info} = Lather.DynamicClient.get_operation_info(client, "OpName")
+
+📞 Making Calls:
+   {:ok, response} = Lather.DynamicClient.call(client, "OpName", params)
+   {:ok, response} = Lather.DynamicClient.call(client, "OpName", params, options)
+
+🛡️ Error Handling:
+   case result do
+     {:ok, response} -> # Success
+     {:error, %{type: :soap_fault}} -> # SOAP fault
+     {:error, %{type: :http_error}} -> # HTTP error
+     {:error, %{type: :transport_error}} -> # Network error
+   end
+
+⚙️ Common Options:
+   basic_auth: {"username", "password"}
+   timeout: 30_000
+   ssl_options: [verify: :verify_peer]
+   headers: [{"Custom-Header", "value"}]
+"""
+
+IO.puts(reference)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+Happy SOAP-ing with Lather! 🧼✨

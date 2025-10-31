@@ -1,0 +1,583 @@
+# National Weather Service SOAP API with Lather
+
+```elixir
+Mix.install([
+  {:lather, "~> 0.9.0"},
+  {:kino, "~> 0.12.0"},
+  {:jason, "~> 1.4"}
+])
+```
+
+## Introduction
+
+In this Livebook, we'll explore how to use Lather to interact with the **National Weather Service's NDFD XML SOAP server**. This is a real-world, production SOAP service provided by the U.S. National Weather Service that offers detailed weather forecast data.
+
+The service provides:
+- **Current weather conditions**
+- **Detailed forecasts** (temperature, precipitation, wind, etc.)
+- **Weather warnings and alerts**
+- **Historical weather data**
+- **Geographic weather information**
+
+## 🌤️ About the National Weather Service API
+
+The National Digital Forecast Database (NDFD) XML web service provides access to weather forecast data in a structured, machine-readable format. It's completely free and doesn't require authentication, making it perfect for learning SOAP integration.
+
+**Service Details:**
+- **WSDL URL**: https://graphical.weather.gov/xml/SOAP_server/ndfdXMLserver.php?wsdl
+- **Provider**: U.S. National Weather Service
+- **Authentication**: None required
+- **Rate Limits**: Reasonable use policy
+- **Data Format**: XML with weather forecast elements
+
+## 📡 Setting Up the SOAP Client
+
+Let's start by creating a Lather client connected to the National Weather Service SOAP endpoint:
+
+```elixir
+alias Lather.DynamicClient
+
+# National Weather Service NDFD XML SOAP server
+wsdl_url = "https://graphical.weather.gov/xml/SOAP_server/ndfdXMLserver.php?wsdl"
+
+# Create the SOAP client
+{:ok, weather_client} = DynamicClient.new(wsdl_url, timeout: 10_000)
+
+IO.puts("✅ Successfully connected to National Weather Service SOAP API!")
+IO.puts("🌐 WSDL URL: #{wsdl_url}")
+```
+
+## 🔍 Exploring Available Operations
+
+Let's see what operations the National Weather Service provides:
+
+```elixir
+operations = DynamicClient.list_operations(weather_client)
+
+IO.puts("🛠️ Available Weather Service Operations:\n")
+
+operations
+|> Enum.with_index(1)
+|> Enum.each(fn {operation, index} ->
+  IO.puts("#{index}. #{operation.name}")
+  if operation.description do
+    IO.puts("   📄 #{operation.description}")
+  end
+  IO.puts("")
+end)
+
+IO.puts("Total operations available: #{length(operations)}")
+```
+
+## 🗺️ Getting Weather Data for a Location
+
+Let's start with the most common operation - getting weather forecast data for a specific latitude and longitude. We'll use **San Francisco, CA** as our example location.
+
+```elixir
+# San Francisco coordinates
+san_francisco_lat = 37.7749
+san_francisco_lon = -122.4194
+
+# Weather elements we want to retrieve
+weather_elements = [
+  "maxt",    # Maximum temperature
+  "mint",    # Minimum temperature
+  "temp",    # Current temperature
+  "pop12",   # 12-hour probability of precipitation
+  "wspd",    # Wind speed
+  "wdir",    # Wind direction
+  "sky",     # Sky cover
+  "wx"       # Weather conditions
+]
+
+# Time format for the request
+start_time = DateTime.utc_now() |> DateTime.to_iso8601()
+end_time = DateTime.utc_now() |> DateTime.add(7 * 24 * 3600) |> DateTime.to_iso8601()
+
+# Prepare the request parameters
+weather_params = %{
+  "latitude" => san_francisco_lat,
+  "longitude" => san_francisco_lon,
+  "product" => "time-series",
+  "XMLformat" => "1",  # XML format version
+  "startTime" => start_time,
+  "endTime" => end_time,
+  "Unit" => "e",  # English units
+  "weatherParameters" => %{
+    "maxt" => "true",
+    "mint" => "true",
+    "temp" => "true",
+    "pop12" => "true",
+    "wspd" => "true",
+    "wdir" => "true",
+    "sky" => "true",
+    "wx" => "true"
+  }
+}
+
+IO.puts("🌍 Requesting weather data for San Francisco, CA")
+IO.puts("📍 Coordinates: #{san_francisco_lat}, #{san_francisco_lon}")
+IO.puts("📅 Time range: #{String.slice(start_time, 0, 10)} to #{String.slice(end_time, 0, 10)}")
+```
+
+```elixir
+# Make the SOAP request for weather data
+case DynamicClient.call(weather_client, "NDFDgen", weather_params) do
+  {:ok, response} ->
+    IO.puts("✅ Successfully retrieved weather data!")
+    IO.puts("\n📊 Response structure:")
+
+    # The response contains XML data with weather forecasts
+    if response["XMLOut"] do
+      xml_data = response["XMLOut"]
+      IO.puts("📦 Received weather XML data (#{String.length(xml_data)} characters)")
+
+      # Show first 500 characters to see the structure
+      preview = String.slice(xml_data, 0, 500)
+      IO.puts("\n🔍 XML Preview:")
+      IO.puts(preview <> "...")
+    else
+      IO.puts("📋 Response keys: #{inspect(Map.keys(response))}")
+      IO.inspect(response, limit: :infinity)
+    end
+
+  {:error, reason} ->
+    IO.puts("❌ Error retrieving weather data:")
+    IO.inspect(reason)
+end
+```
+
+## 🌡️ Parsing Weather Response
+
+Let's create a helper to parse the weather XML response and extract useful information:
+
+```elixir
+defmodule WeatherParser do
+  @moduledoc """
+  Helper module to parse National Weather Service XML responses.
+  """
+
+  def parse_weather_xml(xml_string) when is_binary(xml_string) do
+    try do
+      case Lather.Xml.Parser.parse(xml_string) do
+        {:ok, parsed} -> extract_weather_data(parsed)
+        {:error, reason} -> {:error, "XML parsing failed: #{inspect(reason)}"}
+      end
+    rescue
+      e -> {:error, "Parsing exception: #{inspect(e)}"}
+    end
+  end
+
+  def parse_weather_xml(_), do: {:error, "Invalid XML data"}
+
+  defp extract_weather_data(parsed) do
+    # The NDFD XML structure is quite complex
+    # Let's extract basic information
+    case get_in(parsed, ["dwml"]) do
+      nil -> {:error, "No DWML data found"}
+      dwml ->
+        location = extract_location(dwml)
+        parameters = extract_parameters(dwml)
+        {:ok, %{location: location, weather_data: parameters}}
+    end
+  end
+
+  defp extract_location(dwml) do
+    case get_in(dwml, ["head", "product", "location"]) do
+      location when is_map(location) ->
+        %{
+          description: get_in(location, ["description"]) || "Unknown",
+          latitude: get_in(location, ["point", "@latitude"]) || "Unknown",
+          longitude: get_in(location, ["point", "@longitude"]) || "Unknown"
+        }
+      _ -> %{description: "Location data unavailable"}
+    end
+  end
+
+  defp extract_parameters(dwml) do
+    case get_in(dwml, ["data", "parameters"]) do
+      nil -> %{}
+      params when is_map(params) ->
+        # Extract temperature data
+        temps = extract_temperatures(params)
+        precipitation = extract_precipitation(params)
+        wind = extract_wind(params)
+
+        %{
+          temperatures: temps,
+          precipitation: precipitation,
+          wind: wind
+        }
+      _ -> %{}
+    end
+  end
+
+  defp extract_temperatures(params) do
+    temps = get_in(params, ["temperature"]) || []
+    case temps do
+      temp when is_map(temp) -> [parse_temperature_element(temp)]
+      temp_list when is_list(temp_list) -> Enum.map(temp_list, &parse_temperature_element/1)
+      _ -> []
+    end
+  end
+
+  defp parse_temperature_element(temp) when is_map(temp) do
+    %{
+      type: get_in(temp, ["@type"]) || "unknown",
+      units: get_in(temp, ["@units"]) || "unknown",
+      values: extract_values(temp)
+    }
+  end
+
+  defp extract_precipitation(params) do
+    pop = get_in(params, ["probability-of-precipitation"])
+    if pop do
+      %{
+        type: "probability-of-precipitation",
+        units: get_in(pop, ["@units"]) || "%",
+        values: extract_values(pop)
+      }
+    else
+      nil
+    end
+  end
+
+  defp extract_wind(params) do
+    wind_speed = get_in(params, ["wind-speed"])
+    wind_direction = get_in(params, ["direction"])
+
+    %{
+      speed: if(wind_speed, do: %{
+        units: get_in(wind_speed, ["@units"]) || "unknown",
+        values: extract_values(wind_speed)
+      }),
+      direction: if(wind_direction, do: %{
+        type: get_in(wind_direction, ["@type"]) || "unknown",
+        units: get_in(wind_direction, ["@units"]) || "degrees",
+        values: extract_values(wind_direction)
+      })
+    }
+  end
+
+  defp extract_values(element) when is_map(element) do
+    case get_in(element, ["value"]) do
+      value when is_binary(value) -> [value]
+      values when is_list(values) -> values
+      values when is_map(values) -> [values]
+      _ -> []
+    end
+  end
+
+  defp extract_values(_), do: []
+end
+
+IO.puts("🔧 WeatherParser module loaded and ready!")
+```
+
+## 🌟 Complete Weather Data Example
+
+Let's make a complete weather request and parse the results:
+
+```elixir
+# Different location - New York City
+nyc_params = %{
+  "latitude" => 40.7128,
+  "longitude" => -74.0060,
+  "product" => "time-series",
+  "XMLformat" => "1",
+  "startTime" => DateTime.utc_now() |> DateTime.to_iso8601(),
+  "endTime" => DateTime.utc_now() |> DateTime.add(3 * 24 * 3600) |> DateTime.to_iso8601(),
+  "Unit" => "e",
+  "weatherParameters" => %{
+    "maxt" => "true",
+    "mint" => "true",
+    "pop12" => "true",
+    "wspd" => "true"
+  }
+}
+
+IO.puts("🗽 Getting weather forecast for New York City...")
+
+case DynamicClient.call(weather_client, "NDFDgen", nyc_params) do
+  {:ok, response} ->
+    if xml_data = response["XMLOut"] do
+      case WeatherParser.parse_weather_xml(xml_data) do
+        {:ok, weather_info} ->
+          IO.puts("✅ Weather data successfully parsed!")
+          IO.puts("\n📍 Location Information:")
+          IO.inspect(weather_info.location, pretty: true)
+
+          IO.puts("\n🌡️ Weather Parameters:")
+          IO.inspect(weather_info.weather_data, pretty: true, limit: :infinity)
+
+        {:error, reason} ->
+          IO.puts("❌ Failed to parse weather data: #{reason}")
+          IO.puts("📄 Raw XML (first 1000 chars):")
+          IO.puts(String.slice(xml_data, 0, 1000))
+      end
+    else
+      IO.puts("📋 No weather XML data in response")
+      IO.inspect(response, limit: :infinity)
+    end
+
+  {:error, reason} ->
+    IO.puts("❌ SOAP request failed:")
+    IO.inspect(reason)
+end
+```
+
+## 🎯 Exploring Other Weather Operations
+
+Let's try a different operation to get available weather elements for a location:
+
+```elixir
+# Try the GmlLatLonList operation to get location information
+location_params = %{
+  "latitude" => 37.7749,  # San Francisco
+  "longitude" => -122.4194
+}
+
+case DynamicClient.call(weather_client, "GmlLatLonList", location_params) do
+  {:ok, response} ->
+    IO.puts("✅ GmlLatLonList operation successful!")
+    IO.puts("📍 Response for San Francisco location data:")
+    IO.inspect(response, pretty: true)
+
+  {:error, reason} ->
+    IO.puts("❌ GmlLatLonList operation failed:")
+    IO.inspect(reason)
+end
+```
+
+## 🌊 Advanced Example: Multiple Locations
+
+Let's request weather data for multiple locations at once:
+
+```elixir
+# Multiple cities with their coordinates
+cities = [
+  {"Los Angeles, CA", 34.0522, -118.2437},
+  {"Chicago, IL", 41.8781, -87.6298},
+  {"Miami, FL", 25.7617, -80.1918}
+]
+
+IO.puts("🌎 Getting weather data for multiple cities...")
+
+cities
+|> Enum.each(fn {city_name, lat, lon} ->
+  params = %{
+    "latitude" => lat,
+    "longitude" => lon,
+    "product" => "time-series",
+    "XMLformat" => "1",
+    "startTime" => DateTime.utc_now() |> DateTime.to_iso8601(),
+    "endTime" => DateTime.utc_now() |> DateTime.add(24 * 3600) |> DateTime.to_iso8601(),
+    "Unit" => "e",
+    "weatherParameters" => %{
+      "maxt" => "true",
+      "mint" => "true",
+      "pop12" => "true"
+    }
+  }
+
+  IO.puts("\n🏙️  #{city_name} (#{lat}, #{lon}):")
+
+  case DynamicClient.call(weather_client, "NDFDgen", params) do
+    {:ok, response} ->
+      if xml_data = response["XMLOut"] do
+        IO.puts("   ✅ Weather data received (#{String.length(xml_data)} chars)")
+
+        # Try to extract some basic info
+        if String.contains?(xml_data, "<temperature") do
+          temp_count = xml_data |> String.split("<temperature") |> length() - 1
+          IO.puts("   🌡️  Found #{temp_count} temperature datasets")
+        end
+
+        if String.contains?(xml_data, "<probability-of-precipitation") do
+          IO.puts("   ☔ Precipitation probability data included")
+        end
+      else
+        IO.puts("   ⚠️  No XML weather data in response")
+      end
+
+    {:error, reason} ->
+      IO.puts("   ❌ Failed: #{inspect(reason)}")
+  end
+
+  # Small delay to be respectful to the API
+  Process.sleep(500)
+end)
+```
+
+## 🛡️ Error Handling and Best Practices
+
+Let's demonstrate proper error handling when working with SOAP services:
+
+```elixir
+defmodule WeatherServiceDemo do
+  @moduledoc """
+  Demonstrates best practices for using the National Weather Service SOAP API.
+  """
+
+  def get_weather_safely(client, latitude, longitude, options \\ []) do
+    # Validate inputs
+    with :ok <- validate_coordinates(latitude, longitude),
+         {:ok, params} <- build_weather_params(latitude, longitude, options),
+         {:ok, response} <- make_soap_request(client, params) do
+
+      process_weather_response(response)
+    else
+      {:error, reason} -> {:error, reason}
+      error -> {:error, "Unexpected error: #{inspect(error)}"}
+    end
+  end
+
+  defp validate_coordinates(lat, lon) do
+    cond do
+      not is_number(lat) or lat < -90 or lat > 90 ->
+        {:error, "Invalid latitude: must be between -90 and 90"}
+
+      not is_number(lon) or lon < -180 or lon > 180 ->
+        {:error, "Invalid longitude: must be between -180 and 180"}
+
+      true -> :ok
+    end
+  end
+
+  defp build_weather_params(lat, lon, options) do
+    start_time = Keyword.get(options, :start_time, DateTime.utc_now())
+    days = Keyword.get(options, :days, 3)
+    end_time = DateTime.add(start_time, days * 24 * 3600)
+
+    params = %{
+      "latitude" => lat,
+      "longitude" => lon,
+      "product" => "time-series",
+      "XMLformat" => "1",
+      "startTime" => DateTime.to_iso8601(start_time),
+      "endTime" => DateTime.to_iso8601(end_time),
+      "Unit" => "e",
+      "weatherParameters" => %{
+        "maxt" => "true",
+        "mint" => "true",
+        "temp" => "true",
+        "pop12" => "true",
+        "wspd" => "true"
+      }
+    }
+
+    {:ok, params}
+  end
+
+  defp make_soap_request(client, params) do
+    case DynamicClient.call(client, "NDFDgen", params) do
+      {:ok, response} -> {:ok, response}
+      {:error, {:soap_fault, fault}} -> {:error, "SOAP fault: #{fault.fault_string}"}
+      {:error, {:http_error, status, _body}} -> {:error, "HTTP error: #{status}"}
+      {:error, reason} -> {:error, "Request failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp process_weather_response(response) do
+    case response do
+      %{"XMLOut" => xml_data} when is_binary(xml_data) ->
+        {:ok, %{
+          status: :success,
+          data_size: String.length(xml_data),
+          has_temperature: String.contains?(xml_data, "<temperature"),
+          has_precipitation: String.contains?(xml_data, "<probability-of-precipitation"),
+          has_wind: String.contains?(xml_data, "<wind-speed")
+        }}
+
+      _ ->
+        {:error, "Unexpected response format: #{inspect(Map.keys(response))}"}
+    end
+  end
+end
+
+# Test the safe weather function
+IO.puts("🧪 Testing safe weather data retrieval...")
+
+# Test with valid coordinates
+case WeatherServiceDemo.get_weather_safely(weather_client, 40.7589, -73.9851) do
+  {:ok, result} ->
+    IO.puts("✅ New York weather data retrieved successfully:")
+    IO.inspect(result, pretty: true)
+  {:error, reason} ->
+    IO.puts("❌ Error: #{reason}")
+end
+
+# Test with invalid coordinates
+case WeatherServiceDemo.get_weather_safely(weather_client, 999, -999) do
+  {:ok, _result} ->
+    IO.puts("⚠️  Unexpected success with invalid coordinates")
+  {:error, reason} ->
+    IO.puts("✅ Properly handled invalid coordinates: #{reason}")
+end
+```
+
+## 📊 Service Information Summary
+
+Let's gather some final information about the National Weather Service API:
+
+```elixir
+service_info = DynamicClient.get_service_info(weather_client)
+
+IO.puts("📋 National Weather Service SOAP API Summary")
+IO.puts("=" |> String.duplicate(50))
+
+IO.puts("🌐 Service Name: #{service_info.service_name}")
+IO.puts("🔗 Endpoint: #{service_info.endpoint}")
+IO.puts("📝 Namespace: #{service_info.target_namespace}")
+IO.puts("⚙️  Operations Count: #{length(service_info.operations)}")
+
+IO.puts("\n🛠️  Key Operations:")
+service_info.operations
+|> Enum.take(5)
+|> Enum.each(fn op ->
+  IO.puts("  • #{op.name}")
+  if op.input && length(op.input.parts) > 0 do
+    input_params = op.input.parts |> Enum.map(& &1.name) |> Enum.join(", ")
+    IO.puts("    📥 Inputs: #{input_params}")
+  end
+end)
+
+IO.puts("\n🎯 Perfect for:")
+IO.puts("  • Weather forecasting applications")
+IO.puts("  • Agricultural planning systems")
+IO.puts("  • Emergency preparedness tools")
+IO.puts("  • Climate research projects")
+IO.puts("  • Mobile weather applications")
+```
+
+## 🎓 Key Takeaways
+
+This example demonstrated several important SOAP integration concepts:
+
+### ✅ **What We Learned**
+
+1. **Real-World SOAP Integration**: Connected to a production government API
+2. **Dynamic Client Creation**: Used Lather to auto-discover SOAP operations
+3. **Complex Parameter Handling**: Built nested parameter structures for weather requests
+4. **XML Response Processing**: Parsed complex XML weather data responses
+5. **Error Handling**: Implemented robust error handling for network and data issues
+6. **Best Practices**: Showed input validation, rate limiting, and graceful degradation
+
+### 🌟 **Lather Features Showcased**
+
+- **Automatic WSDL Discovery**: No manual configuration needed
+- **Dynamic Operation Calling**: Discovered and called operations at runtime
+- **Complex Data Handling**: Managed nested weather parameters seamlessly
+- **Error Management**: Comprehensive error handling for various failure modes
+- **XML Processing**: Built-in XML parsing and generation capabilities
+
+### 🚀 **Next Steps**
+
+You can extend this example by:
+- Adding data visualization with Kino charts
+- Implementing caching for frequently requested locations
+- Creating a simple weather dashboard
+- Adding more sophisticated XML parsing
+- Integrating with other weather services for comparison
+
+The National Weather Service API is an excellent example of how SOAP services can provide rich, structured data that's perfect for programmatic access!

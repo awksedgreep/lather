@@ -1,0 +1,820 @@
+# Enterprise SOAP Integration with Lather
+
+```elixir
+Mix.install([
+  {:lather, path: ".."},
+  {:finch, "~> 0.18"},
+  {:kino, "~> 0.12"},
+  {:jason, "~> 1.4"}
+])
+```
+
+## Introduction
+
+This Livebook demonstrates how to integrate with enterprise SOAP services using the Lather library. We'll cover:
+
+- Authentication strategies (Basic Auth, WS-Security)
+- SSL/TLS configuration for secure connections
+- Complex parameter structures and data mapping
+- Error handling and retry strategies
+- Performance optimization techniques
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Environment Setup
+
+```elixir
+# Start applications
+{:ok, _} = Application.ensure_all_started(:lather)
+
+# Configure Finch with enterprise-grade connection pooling
+children = [
+  {Finch, 
+   name: Lather.Finch,
+   pools: %{
+     # High-traffic enterprise endpoints
+     "https://enterprise.example.com" => [
+       size: 25,
+       count: 4,
+       protocols: [:http2, :http1]
+     ],
+     # Default pool for other endpoints
+     :default => [size: 10, count: 2]
+   }
+  }
+]
+
+{:ok, _supervisor} = Supervisor.start_link(children, strategy: :one_for_one)
+
+IO.puts("🏢 Enterprise Lather environment ready!")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Configuration Panel
+
+Let's create an interactive panel to configure our enterprise SOAP connection:
+
+```elixir
+# Enterprise service configuration inputs
+wsdl_input = Kino.Input.text("WSDL URL", default: "https://enterprise.example.com/services/UserService?wsdl")
+username_input = Kino.Input.text("Username", default: "demo_user")
+password_input = Kino.Input.password("Password")
+timeout_input = Kino.Input.number("Timeout (ms)", default: 60000)
+ssl_verify_input = Kino.Input.checkbox("Verify SSL", default: true)
+
+# Layout the configuration
+config_form = Kino.Layout.grid([
+  [wsdl_input],
+  [username_input, password_input],
+  [timeout_input, ssl_verify_input]
+], columns: 2)
+
+config_form
+```
+
+```elixir
+# Build configuration from inputs
+enterprise_config = %{
+  wsdl_url: Kino.Input.read(wsdl_input),
+  username: Kino.Input.read(username_input),
+  password: Kino.Input.read(password_input),
+  timeout: Kino.Input.read(timeout_input),
+  ssl_verify: Kino.Input.read(ssl_verify_input)
+}
+
+IO.puts("🔧 Enterprise Configuration:")
+IO.inspect(Map.drop(enterprise_config, [:password]), pretty: true)
+IO.puts("Password: #{"*" |> String.duplicate(String.length(enterprise_config.password))}")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## SSL/TLS Configuration
+
+For enterprise services, proper SSL configuration is crucial:
+
+```elixir
+defmodule EnterpriseSSL do
+  def ssl_options(verify \\ true) do
+    base_options = [
+      versions: [:"tlsv1.2", :"tlsv1.3"],
+      ciphers: :ssl.cipher_suites(:default, :"tlsv1.2")
+    ]
+    
+    if verify do
+      [
+        verify: :verify_peer,
+        cacerts: :public_key.cacerts_get(),
+        customize_hostname_check: [
+          match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+        ]
+      ] ++ base_options
+    else
+      [
+        verify: :verify_none
+      ] ++ base_options
+    end
+  end
+  
+  def client_options(config) do
+    [
+      basic_auth: {config.username, config.password},
+      timeout: config.timeout,
+      pool_timeout: 10_000,
+      ssl_options: ssl_options(config.ssl_verify),
+      headers: [
+        {"User-Agent", "LatherDemo/1.0"},
+        {"Accept", "text/xml"},
+        {"X-API-Version", "2.0"}
+      ]
+    ]
+  end
+end
+
+# Display the SSL configuration
+ssl_config = EnterpriseSSL.ssl_options(enterprise_config.ssl_verify)
+IO.puts("🔒 SSL Configuration:")
+IO.inspect(ssl_config, pretty: true)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Enterprise Client Connection
+
+Now let's attempt to connect to an enterprise SOAP service:
+
+```elixir
+# Create enterprise client with full configuration
+enterprise_client_result = 
+  case Lather.DynamicClient.new(
+    enterprise_config.wsdl_url, 
+    EnterpriseSSL.client_options(enterprise_config)
+  ) do
+    {:ok, client} ->
+      IO.puts("✅ Successfully connected to enterprise service!")
+      
+      # Store for use in other cells
+      Process.put(:enterprise_client, client)
+      
+      # Show service capabilities
+      operations = Lather.DynamicClient.list_operations(client)
+      IO.puts("\n📋 Available Operations (#{length(operations)}):")
+      Enum.each(operations, fn op -> IO.puts("   • #{op}") end)
+      
+      {:ok, client}
+      
+    {:error, error} ->
+      IO.puts("❌ Failed to connect to enterprise service:")
+      IO.puts("   Type: #{error.type}")
+      IO.puts("   Details: #{Lather.Error.format_error(error)}")
+      
+      # Check if the error is recoverable
+      if Lather.Error.recoverable?(error) do
+        IO.puts("\n🔄 This error might be recoverable - you could retry the connection")
+      end
+      
+      {:error, error}
+  end
+
+enterprise_client_result
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Mock Enterprise Service Demo
+
+Since we may not have access to a real enterprise service, let's create a mock demonstration of enterprise SOAP operations:
+
+```elixir
+defmodule MockEnterpriseDemo do
+  def simulate_user_search do
+    # Simulate complex enterprise search parameters
+    %{
+      "searchRequest" => %{
+        "criteria" => %{
+          "filters" => [
+            %{
+              "field" => "department",
+              "operator" => "equals",
+              "value" => "Engineering"
+            },
+            %{
+              "field" => "active",
+              "operator" => "equals", 
+              "value" => true
+            },
+            %{
+              "field" => "hireDate",
+              "operator" => "greaterThan",
+              "value" => "2023-01-01"
+            }
+          ],
+          "sorting" => [
+            %{
+              "field" => "lastName",
+              "direction" => "asc"
+            },
+            %{
+              "field" => "firstName", 
+              "direction" => "asc"
+            }
+          ],
+          "pagination" => %{
+            "pageSize" => 25,
+            "pageNumber" => 1
+          }
+        },
+        "includeFields" => [
+          "personalInfo",
+          "workInfo",
+          "permissions",
+          "projects"
+        ],
+        "options" => %{
+          "includeMetadata" => true,
+          "auditTrail" => true,
+          "securityContext" => %{
+            "requesterId" => "api_user_123",
+            "reason" => "System Integration",
+            "ipAddress" => "10.0.1.100"
+          }
+        }
+      }
+    }
+  end
+  
+  def simulate_user_creation do
+    %{
+      "createUserRequest" => %{
+        "user" => %{
+          "personalInfo" => %{
+            "firstName" => "John",
+            "lastName" => "Doe",
+            "email" => "john.doe@company.com",
+            "phone" => "+1-555-0123",
+            "title" => "Mr.",
+            "dateOfBirth" => "1985-03-15"
+          },
+          "workInfo" => %{
+            "employeeId" => "EMP2024001",
+            "department" => "Engineering",
+            "title" => "Senior Software Engineer",
+            "manager" => "jane.smith@company.com",
+            "startDate" => "2024-02-01",
+            "location" => %{
+              "office" => "New York HQ",
+              "floor" => "15",
+              "desk" => "15-A-042"
+            },
+            "costCenter" => "CC-ENG-001"
+          },
+          "permissions" => [
+            "access_development_tools",
+            "read_project_data",
+            "write_code_repositories",
+            "access_staging_environment"
+          ],
+          "roles" => [
+            "Developer",
+            "CodeReviewer"
+          ],
+          "metadata" => %{
+            "source" => "HR_SYSTEM",
+            "requestId" => generate_request_id(),
+            "createdBy" => "hr_admin",
+            "businessJustification" => "New hire onboarding"
+          }
+        },
+        "options" => %{
+          "sendWelcomeEmail" => true,
+          "provisionAccounts" => true,
+          "assignDefaultPermissions" => true,
+          "notifyManager" => true
+        }
+      }
+    }
+  end
+  
+  def simulate_batch_operation do
+    %{
+      "batchRequest" => %{
+        "operations" => [
+          %{
+            "type" => "update",
+            "userId" => "EMP001",
+            "changes" => %{
+              "workInfo" => %{
+                "title" => "Principal Software Engineer",
+                "department" => "Platform Engineering"
+              }
+            }
+          },
+          %{
+            "type" => "update",
+            "userId" => "EMP002", 
+            "changes" => %{
+              "permissions" => [
+                "access_development_tools",
+                "read_project_data",
+                "write_code_repositories",
+                "access_production_logs"
+              ]
+            }
+          },
+          %{
+            "type" => "create",
+            "user" => %{
+              "personalInfo" => %{
+                "firstName" => "Alice",
+                "lastName" => "Johnson",
+                "email" => "alice.johnson@company.com"
+              },
+              "workInfo" => %{
+                "department" => "Marketing",
+                "title" => "Marketing Specialist"
+              }
+            }
+          }
+        ],
+        "options" => %{
+          "continueOnError" => true,
+          "transactional" => false,
+          "auditLevel" => "detailed"
+        }
+      }
+    }
+  end
+  
+  defp generate_request_id do
+    :crypto.strong_rand_bytes(16)
+    |> Base.encode16(case: :lower)
+  end
+end
+
+# Display example enterprise parameters
+IO.puts("👥 Example: User Search Parameters")
+IO.inspect(MockEnterpriseDemo.simulate_user_search(), pretty: true, limit: :infinity)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Parameter Validation Demo
+
+Let's demonstrate how Lather validates complex parameters:
+
+```elixir
+# Create sample operation info for validation demo
+sample_operation_info = %{
+  name: "SearchUsers",
+  input_parts: [
+    %{
+      name: "searchRequest",
+      type: "SearchRequest",
+      required: true
+    }
+  ],
+  output_parts: [
+    %{
+      name: "searchResponse",
+      type: "SearchResponse"
+    }
+  ]
+}
+
+# Test parameter validation
+search_params = MockEnterpriseDemo.simulate_user_search()
+
+IO.puts("🔍 Parameter Validation Demo")
+IO.puts("=" |> String.duplicate(40))
+
+# Simulate validation (in real usage, this happens automatically)
+case Lather.Operation.Builder.validate_parameters(sample_operation_info, search_params) do
+  :ok ->
+    IO.puts("✅ Parameters passed validation")
+    
+    # Show parameter structure analysis
+    IO.puts("\n📊 Parameter Analysis:")
+    IO.puts("   • Root elements: #{map_size(search_params)}")
+    
+    search_request = search_params["searchRequest"]
+    if search_request do
+      criteria = search_request["criteria"]
+      if criteria do
+        filters = criteria["filters"] || []
+        IO.puts("   • Search filters: #{length(filters)}")
+        IO.puts("   • Sorting rules: #{length(criteria["sorting"] || [])}")
+        IO.puts("   • Include fields: #{length(search_request["includeFields"] || [])}")
+      end
+    end
+    
+  {:error, error} ->
+    IO.puts("❌ Parameter validation failed:")
+    IO.puts("   #{Lather.Error.format_error(error)}")
+end
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Error Handling Strategies
+
+Enterprise applications need robust error handling. Let's explore different error scenarios:
+
+```elixir
+defmodule EnterpriseErrorHandling do
+  def handle_soap_error(error) do
+    case error do
+      %{type: :soap_fault, fault_code: "Client", fault_string: message} ->
+        {
+          :client_error,
+          "Client Error: #{message}",
+          "Check your request parameters and try again"
+        }
+        
+      %{type: :soap_fault, fault_code: "Server", fault_string: message} ->
+        {
+          :server_error,
+          "Server Error: #{message}",
+          "The service encountered an error. Retry may help"
+        }
+        
+      %{type: :http_error, status: 401} ->
+        {
+          :authentication_error,
+          "Authentication failed",
+          "Check your credentials and authentication method"
+        }
+        
+      %{type: :http_error, status: 403} ->
+        {
+          :authorization_error,
+          "Access denied",
+          "Your account may not have permission for this operation"
+        }
+        
+      %{type: :http_error, status: 500} ->
+        {
+          :server_error,
+          "Internal server error",
+          "The service is experiencing issues. Try again later"
+        }
+        
+      %{type: :transport_error, reason: :timeout} ->
+        {
+          :timeout_error,
+          "Request timed out",
+          "The service didn't respond in time. Consider increasing timeout or retry"
+        }
+        
+      %{type: :transport_error, reason: :nxdomain} ->
+        {
+          :connection_error,
+          "Service not found",
+          "Check the service URL and network connectivity"
+        }
+        
+      _ ->
+        {
+          :unknown_error,
+          "Unknown error occurred",
+          "Check logs for more details"
+        }
+    end
+  end
+  
+  def retry_strategy(error, attempt) do
+    max_retries = 3
+    base_delay = 1000  # 1 second
+    
+    cond do
+      attempt >= max_retries ->
+        {:stop, "Maximum retries exceeded"}
+        
+      Lather.Error.recoverable?(error) ->
+        delay = base_delay * :math.pow(2, attempt)  # Exponential backoff
+        {:retry, round(delay)}
+        
+      true ->
+        {:stop, "Error is not recoverable"}
+    end
+  end
+  
+  def execute_with_retry(client, operation, params, attempt \\ 0) do
+    case Lather.DynamicClient.call(client, operation, params) do
+      {:ok, response} ->
+        if attempt > 0 do
+          IO.puts("✅ Operation succeeded after #{attempt} retries")
+        end
+        {:ok, response}
+        
+      {:error, error} ->
+        {error_type, message, suggestion} = handle_soap_error(error)
+        IO.puts("❌ #{error_type}: #{message}")
+        IO.puts("💡 Suggestion: #{suggestion}")
+        
+        case retry_strategy(error, attempt) do
+          {:retry, delay} ->
+            IO.puts("🔄 Retrying in #{delay}ms (attempt #{attempt + 1})...")
+            Process.sleep(delay)
+            execute_with_retry(client, operation, params, attempt + 1)
+            
+          {:stop, reason} ->
+            IO.puts("🛑 Stopping retries: #{reason}")
+            {:error, error}
+        end
+    end
+  end
+end
+
+# Demonstrate error categorization
+sample_errors = [
+  %{type: :soap_fault, fault_code: "Client", fault_string: "Invalid parameter"},
+  %{type: :http_error, status: 401},
+  %{type: :transport_error, reason: :timeout},
+  %{type: :transport_error, reason: :nxdomain}
+]
+
+IO.puts("🚨 Error Handling Examples:")
+Enum.each(sample_errors, fn error ->
+  {error_type, message, suggestion} = EnterpriseErrorHandling.handle_soap_error(error)
+  IO.puts("\n#{error_type}:")
+  IO.puts("  Message: #{message}")
+  IO.puts("  Suggestion: #{suggestion}")
+end)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## WS-Security Authentication Demo
+
+For services requiring WS-Security, here's how to set it up:
+
+```elixir
+defmodule WSSecurityDemo do
+  def create_username_token(username, password) do
+    # Create WS-Security username token
+    Lather.Auth.WSSecurity.username_token(
+      username,
+      password,
+      timestamp: true,
+      nonce: true
+    )
+  end
+  
+  def create_security_header(username, password) do
+    username_token = create_username_token(username, password)
+    Lather.Auth.WSSecurity.security_header(username_token, [])
+  end
+  
+  def wssecurity_client_options(username, password, base_options) do
+    security_header = create_security_header(username, password)
+    
+    base_options ++ [
+      soap_headers: [security_header]
+    ]
+  end
+end
+
+# Example WS-Security configuration
+wssecurity_config = WSSecurityDemo.wssecurity_client_options(
+  enterprise_config.username,
+  enterprise_config.password,
+  EnterpriseSSL.client_options(enterprise_config)
+)
+
+IO.puts("🔐 WS-Security Configuration Example:")
+IO.puts("   ✓ Username token with timestamp")
+IO.puts("   ✓ Nonce for replay protection") 
+IO.puts("   ✓ Password digest (when supported)")
+IO.puts("   ✓ Security header in SOAP envelope")
+
+# Show the security header structure (without sensitive data)
+sample_header = WSSecurityDemo.create_security_header("demo_user", "hidden")
+IO.puts("\n📋 Security Header Structure:")
+IO.inspect(sample_header, pretty: true)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Performance Monitoring
+
+Let's create a performance monitoring dashboard for SOAP operations:
+
+```elixir
+defmodule PerformanceMonitor do
+  def track_operation(operation_name, fun) do
+    start_time = System.monotonic_time(:millisecond)
+    
+    result = fun.()
+    
+    end_time = System.monotonic_time(:millisecond)
+    duration = end_time - start_time
+    
+    status = case result do
+      {:ok, _} -> :success
+      {:error, _} -> :error
+    end
+    
+    %{
+      operation: operation_name,
+      duration_ms: duration,
+      status: status,
+      timestamp: DateTime.utc_now()
+    }
+  end
+  
+  def simulate_performance_data do
+    # Simulate various operation performance metrics
+    operations = ["SearchUsers", "CreateUser", "UpdateUser", "DeleteUser", "GetUserDetails"]
+    
+    Enum.map(1..20, fn _ ->
+      operation = Enum.random(operations)
+      duration = Enum.random(100..5000)  # 100ms to 5s
+      status = if :rand.uniform() > 0.1, do: :success, else: :error
+      
+      %{
+        operation: operation,
+        duration_ms: duration,
+        status: status,
+        timestamp: DateTime.utc_now()
+      }
+    end)
+  end
+  
+  def analyze_performance(metrics) do
+    total_operations = length(metrics)
+    successful_ops = Enum.count(metrics, fn m -> m.status == :success end)
+    error_rate = (total_operations - successful_ops) / total_operations * 100
+    
+    successful_metrics = Enum.filter(metrics, fn m -> m.status == :success end)
+    durations = Enum.map(successful_metrics, fn m -> m.duration_ms end)
+    
+    avg_duration = if length(durations) > 0 do
+      Enum.sum(durations) / length(durations)
+    else
+      0
+    end
+    
+    max_duration = if length(durations) > 0, do: Enum.max(durations), else: 0
+    min_duration = if length(durations) > 0, do: Enum.min(durations), else: 0
+    
+    %{
+      total_operations: total_operations,
+      success_rate: 100 - error_rate,
+      error_rate: error_rate,
+      avg_duration_ms: round(avg_duration),
+      max_duration_ms: max_duration,
+      min_duration_ms: min_duration
+    }
+  end
+end
+
+# Generate and analyze performance data
+performance_data = PerformanceMonitor.simulate_performance_data()
+analysis = PerformanceMonitor.analyze_performance(performance_data)
+
+IO.puts("📊 SOAP Operations Performance Analysis")
+IO.puts("=" |> String.duplicate(45))
+IO.puts("Total Operations:     #{analysis.total_operations}")
+IO.puts("Success Rate:         #{Float.round(analysis.success_rate, 1)}%")
+IO.puts("Error Rate:           #{Float.round(analysis.error_rate, 1)}%")
+IO.puts("Average Duration:     #{analysis.avg_duration_ms}ms")
+IO.puts("Fastest Operation:    #{analysis.min_duration_ms}ms")
+IO.puts("Slowest Operation:    #{analysis.max_duration_ms}ms")
+
+# Show recent operations
+IO.puts("\n📈 Recent Operations:")
+performance_data
+|> Enum.take(5)
+|> Enum.each(fn metric ->
+  status_icon = if metric.status == :success, do: "✅", else: "❌"
+  IO.puts("   #{status_icon} #{metric.operation}: #{metric.duration_ms}ms")
+end)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Enterprise Integration Checklist
+
+Let's create an interactive checklist for enterprise SOAP integration:
+
+```elixir
+# Enterprise integration checklist
+checklist_items = [
+  "📋 WSDL Analysis Complete",
+  "🔐 Authentication Configured", 
+  "🔒 SSL/TLS Security Verified",
+  "⚡ Connection Pooling Optimized",
+  "🛡️ Error Handling Implemented",
+  "🔄 Retry Strategy Defined",
+  "📊 Performance Monitoring Setup",
+  "🧪 Integration Testing Complete",
+  "📚 Documentation Updated",
+  "🚀 Production Deployment Ready"
+]
+
+# Create checkboxes for each item
+checklist_widgets = Enum.map(checklist_items, fn item ->
+  Kino.Input.checkbox(item, default: false)
+end)
+
+# Layout the checklist
+checklist_form = Kino.Layout.grid(
+  Enum.map(checklist_widgets, fn widget -> [widget] end),
+  columns: 1
+)
+
+IO.puts("✅ Enterprise SOAP Integration Checklist")
+checklist_form
+```
+
+```elixir
+# Check completion status
+completed_items = Enum.count(checklist_widgets, fn widget ->
+  Kino.Input.read(widget)
+end)
+
+total_items = length(checklist_items)
+completion_percentage = completed_items / total_items * 100
+
+IO.puts("📊 Integration Progress: #{completed_items}/#{total_items} (#{Float.round(completion_percentage, 1)}%)")
+
+if completion_percentage == 100.0 do
+  IO.puts("🎉 Congratulations! Your enterprise SOAP integration is ready for production!")
+elsif completion_percentage >= 80.0 do
+  IO.puts("🚀 Almost there! Just a few more items to complete.")
+elsif completion_percentage >= 50.0 do
+  IO.puts("⚡ Good progress! You're halfway to production readiness.")
+else
+  IO.puts("🏗️ Keep going! There's still work to be done for a production-ready integration.")
+end
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Best Practices Summary
+
+Here are the key best practices for enterprise SOAP integration with Lather:
+
+```elixir
+best_practices = """
+🏢 ENTERPRISE SOAP INTEGRATION BEST PRACTICES
+
+🔧 Configuration:
+   • Use environment variables for credentials
+   • Configure appropriate timeouts (60s+ for enterprise)
+   • Enable SSL verification in production
+   • Set up connection pooling for high traffic
+
+🛡️ Security:
+   • Always use HTTPS in production
+   • Implement proper certificate validation
+   • Use WS-Security for enhanced authentication
+   • Log security events but not sensitive data
+
+🚨 Error Handling:
+   • Distinguish between client and server errors
+   • Implement exponential backoff for retries
+   • Set maximum retry limits
+   • Log errors with correlation IDs
+
+⚡ Performance:
+   • Reuse client instances across requests
+   • Use connection pooling effectively
+   • Monitor response times and error rates
+   • Implement circuit breakers for failing services
+
+🧪 Testing:
+   • Test with mock services first
+   • Validate complex parameter structures
+   • Test error scenarios and recovery
+   • Load test with realistic traffic patterns
+
+📊 Monitoring:
+   • Track operation success rates
+   • Monitor response times and timeouts
+   • Set up alerting for service degradation
+   • Use correlation IDs for request tracing
+
+🔄 Deployment:
+   • Use feature flags for gradual rollouts
+   • Keep WSDL versions synchronized
+   • Plan for service versioning
+   • Document API changes and dependencies
+"""
+
+IO.puts(best_practices)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Next Steps
+
+You've now seen how to build robust enterprise SOAP integrations with Lather! Here's what to explore next:
+
+1. **Custom Authentication**: Implement custom authentication schemes for your specific enterprise requirements
+2. **Service Mesh Integration**: Integrate with service mesh technologies for enhanced observability
+3. **Advanced Error Recovery**: Build sophisticated error recovery and circuit breaker patterns
+4. **Performance Optimization**: Fine-tune connection pools and caching strategies for your workload
+
+Happy enterprise SOAP integration! 🏢✨

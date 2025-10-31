@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:tns="http://acs.coxauto.com/services"
+             xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+             targetNamespace="http://acs.coxauto.com/services"
+             name="ACSService">
+
+  <!-- Types Section -->
+  <types>
+    <xsd:schema targetNamespace="http://acs.coxauto.com/services" elementFormDefault="qualified">
+      
+      <!-- User Management Types -->
+      <xsd:complexType name="User">
+        <xsd:sequence>
+          <xsd:element name="userId" type="xsd:string"/>
+          <xsd:element name="username" type="xsd:string"/>
+          <xsd:element name="email" type="xsd:string"/>
+          <xsd:element name="firstName" type="xsd:string"/>
+          <xsd:element name="lastName" type="xsd:string"/>
+          <xsd:element name="role" type="xsd:string"/>
+          <xsd:element name="status" type="xsd:string"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <!-- Session Management Types -->
+      <xsd:complexType name="Session">
+        <xsd:sequence>
+          <xsd:element name="sessionId" type="xsd:string"/>
+          <xsd:element name="userId" type="xsd:string"/>
+          <xsd:element name="createdAt" type="xsd:dateTime"/>
+          <xsd:element name="expiresAt" type="xsd:dateTime"/>
+          <xsd:element name="ipAddress" type="xsd:string"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <!-- Authentication Types -->
+      <xsd:complexType name="Credentials">
+        <xsd:sequence>
+          <xsd:element name="username" type="xsd:string"/>
+          <xsd:element name="password" type="xsd:string"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <!-- Request/Response Elements -->
+      <xsd:element name="AuthenticateRequest">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="credentials" type="tns:Credentials"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="AuthenticateResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="session" type="tns:Session"/>
+            <xsd:element name="user" type="tns:User"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="GetUserRequest">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="userId" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="GetUserResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="user" type="tns:User"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="LogoutRequest">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="sessionId" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="LogoutResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="success" type="xsd:boolean"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+    </xsd:schema>
+  </types>
+
+  <!-- Messages -->
+  <message name="AuthenticateRequest">
+    <part name="parameters" element="tns:AuthenticateRequest"/>
+  </message>
+  <message name="AuthenticateResponse">
+    <part name="parameters" element="tns:AuthenticateResponse"/>
+  </message>
+
+  <message name="GetUserRequest">
+    <part name="parameters" element="tns:GetUserRequest"/>
+  </message>
+  <message name="GetUserResponse">
+    <part name="parameters" element="tns:GetUserResponse"/>
+  </message>
+
+  <message name="LogoutRequest">
+    <part name="parameters" element="tns:LogoutRequest"/>
+  </message>
+  <message name="LogoutResponse">
+    <part name="parameters" element="tns:LogoutResponse"/>
+  </message>
+
+  <!-- Port Type -->
+  <portType name="ACSPortType">
+    <operation name="Authenticate">
+      <input message="tns:AuthenticateRequest"/>
+      <output message="tns:AuthenticateResponse"/>
+    </operation>
+    <operation name="GetUser">
+      <input message="tns:GetUserRequest"/>
+      <output message="tns:GetUserResponse"/>
+    </operation>
+    <operation name="Logout">
+      <input message="tns:LogoutRequest"/>
+      <output message="tns:LogoutResponse"/>
+    </operation>
+  </portType>
+
+  <!-- Binding -->
+  <binding name="ACSBinding" type="tns:ACSPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    
+    <operation name="Authenticate">
+      <soap:operation soapAction="http://acs.coxauto.com/services/Authenticate"/>
+      <input>
+        <soap:body use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+
+    <operation name="GetUser">
+      <soap:operation soapAction="http://acs.coxauto.com/services/GetUser"/>
+      <input>
+        <soap:body use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+
+    <operation name="Logout">
+      <soap:operation soapAction="http://acs.coxauto.com/services/Logout"/>
+      <input>
+        <soap:body use="literal"/>
+      </input>
+      <output>
+        <soap:body use="literal"/>
+      </output>
+    </operation>
+  </binding>
+
+  <!-- Service -->
+  <service name="ACSService">
+    <port name="ACSPort" binding="tns:ACSBinding">
+      <soap:address location="https://acs.coxauto.com/soap"/>
+    </port>
+  </service>
+
+</definitions>
