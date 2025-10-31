@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2025-01-15
+
+### Changed
+- Updated documentation to reflect current v1.0.0 status rather than treating it as "next release"
+- Enhanced README with comprehensive livebooks section and detailed descriptions of all 7 interactive tutorials
+- Updated USAGE.md with current API examples, multi-protocol capabilities, and production-ready patterns
+- Updated all livebooks to reference correct version numbers and include hex package installation options
+- Improved overall documentation consistency and confidence about current capabilities
+- Updated roadmap to focus on v1.1.0, v1.2.0, and future releases
+
 ## [1.0.0] - 2025-01-15
 
 ### 🚀 **Production Release - Enhanced Multi-Protocol SOAP Library**

@@ -2,7 +2,8 @@
 
 ```elixir
 Mix.install([
-  {:lather, path: ".."},
+  {:lather, path: ".."}, # For local development
+  # {:lather, "~> 1.0"}, # Use this for hex package
   {:finch, "~> 0.18"},
   {:kino, "~> 0.12"},
   {:jason, "~> 1.4"}
@@ -29,7 +30,7 @@ This Livebook demonstrates how to integrate with enterprise SOAP services using 
 
 # Configure Finch with enterprise-grade connection pooling
 children = [
-  {Finch, 
+  {Finch,
    name: Lather.Finch,
    pools: %{
      # High-traffic enterprise endpoints
@@ -101,7 +102,7 @@ defmodule EnterpriseSSL do
       versions: [:"tlsv1.2", :"tlsv1.3"],
       ciphers: :ssl.cipher_suites(:default, :"tlsv1.2")
     ]
-    
+
     if verify do
       [
         verify: :verify_peer,
@@ -116,7 +117,7 @@ defmodule EnterpriseSSL do
       ] ++ base_options
     end
   end
-  
+
   def client_options(config) do
     [
       basic_auth: {config.username, config.password},
@@ -146,34 +147,34 @@ Now let's attempt to connect to an enterprise SOAP service:
 
 ```elixir
 # Create enterprise client with full configuration
-enterprise_client_result = 
+enterprise_client_result =
   case Lather.DynamicClient.new(
-    enterprise_config.wsdl_url, 
+    enterprise_config.wsdl_url,
     EnterpriseSSL.client_options(enterprise_config)
   ) do
     {:ok, client} ->
       IO.puts("✅ Successfully connected to enterprise service!")
-      
+
       # Store for use in other cells
       Process.put(:enterprise_client, client)
-      
+
       # Show service capabilities
       operations = Lather.DynamicClient.list_operations(client)
       IO.puts("\n📋 Available Operations (#{length(operations)}):")
       Enum.each(operations, fn op -> IO.puts("   • #{op}") end)
-      
+
       {:ok, client}
-      
+
     {:error, error} ->
       IO.puts("❌ Failed to connect to enterprise service:")
       IO.puts("   Type: #{error.type}")
       IO.puts("   Details: #{Lather.Error.format_error(error)}")
-      
+
       # Check if the error is recoverable
       if Lather.Error.recoverable?(error) do
         IO.puts("\n🔄 This error might be recoverable - you could retry the connection")
       end
-      
+
       {:error, error}
   end
 
@@ -201,7 +202,7 @@ defmodule MockEnterpriseDemo do
             },
             %{
               "field" => "active",
-              "operator" => "equals", 
+              "operator" => "equals",
               "value" => true
             },
             %{
@@ -216,7 +217,7 @@ defmodule MockEnterpriseDemo do
               "direction" => "asc"
             },
             %{
-              "field" => "firstName", 
+              "field" => "firstName",
               "direction" => "asc"
             }
           ],
@@ -243,7 +244,7 @@ defmodule MockEnterpriseDemo do
       }
     }
   end
-  
+
   def simulate_user_creation do
     %{
       "createUserRequest" => %{
@@ -295,7 +296,7 @@ defmodule MockEnterpriseDemo do
       }
     }
   end
-  
+
   def simulate_batch_operation do
     %{
       "batchRequest" => %{
@@ -312,7 +313,7 @@ defmodule MockEnterpriseDemo do
           },
           %{
             "type" => "update",
-            "userId" => "EMP002", 
+            "userId" => "EMP002",
             "changes" => %{
               "permissions" => [
                 "access_development_tools",
@@ -345,7 +346,7 @@ defmodule MockEnterpriseDemo do
       }
     }
   end
-  
+
   defp generate_request_id do
     :crypto.strong_rand_bytes(16)
     |> Base.encode16(case: :lower)
@@ -392,11 +393,11 @@ IO.puts("=" |> String.duplicate(40))
 case Lather.Operation.Builder.validate_parameters(sample_operation_info, search_params) do
   :ok ->
     IO.puts("✅ Parameters passed validation")
-    
+
     # Show parameter structure analysis
     IO.puts("\n📊 Parameter Analysis:")
     IO.puts("   • Root elements: #{map_size(search_params)}")
-    
+
     search_request = search_params["searchRequest"]
     if search_request do
       criteria = search_request["criteria"]
@@ -407,7 +408,7 @@ case Lather.Operation.Builder.validate_parameters(sample_operation_info, search_
         IO.puts("   • Include fields: #{length(search_request["includeFields"] || [])}")
       end
     end
-    
+
   {:error, error} ->
     IO.puts("❌ Parameter validation failed:")
     IO.puts("   #{Lather.Error.format_error(error)}")
@@ -430,49 +431,49 @@ defmodule EnterpriseErrorHandling do
           "Client Error: #{message}",
           "Check your request parameters and try again"
         }
-        
+
       %{type: :soap_fault, fault_code: "Server", fault_string: message} ->
         {
           :server_error,
           "Server Error: #{message}",
           "The service encountered an error. Retry may help"
         }
-        
+
       %{type: :http_error, status: 401} ->
         {
           :authentication_error,
           "Authentication failed",
           "Check your credentials and authentication method"
         }
-        
+
       %{type: :http_error, status: 403} ->
         {
           :authorization_error,
           "Access denied",
           "Your account may not have permission for this operation"
         }
-        
+
       %{type: :http_error, status: 500} ->
         {
           :server_error,
           "Internal server error",
           "The service is experiencing issues. Try again later"
         }
-        
+
       %{type: :transport_error, reason: :timeout} ->
         {
           :timeout_error,
           "Request timed out",
           "The service didn't respond in time. Consider increasing timeout or retry"
         }
-        
+
       %{type: :transport_error, reason: :nxdomain} ->
         {
           :connection_error,
           "Service not found",
           "Check the service URL and network connectivity"
         }
-        
+
       _ ->
         {
           :unknown_error,
@@ -481,24 +482,24 @@ defmodule EnterpriseErrorHandling do
         }
     end
   end
-  
+
   def retry_strategy(error, attempt) do
     max_retries = 3
     base_delay = 1000  # 1 second
-    
+
     cond do
       attempt >= max_retries ->
         {:stop, "Maximum retries exceeded"}
-        
+
       Lather.Error.recoverable?(error) ->
         delay = base_delay * :math.pow(2, attempt)  # Exponential backoff
         {:retry, round(delay)}
-        
+
       true ->
         {:stop, "Error is not recoverable"}
     end
   end
-  
+
   def execute_with_retry(client, operation, params, attempt \\ 0) do
     case Lather.DynamicClient.call(client, operation, params) do
       {:ok, response} ->
@@ -506,18 +507,18 @@ defmodule EnterpriseErrorHandling do
           IO.puts("✅ Operation succeeded after #{attempt} retries")
         end
         {:ok, response}
-        
+
       {:error, error} ->
         {error_type, message, suggestion} = handle_soap_error(error)
         IO.puts("❌ #{error_type}: #{message}")
         IO.puts("💡 Suggestion: #{suggestion}")
-        
+
         case retry_strategy(error, attempt) do
           {:retry, delay} ->
             IO.puts("🔄 Retrying in #{delay}ms (attempt #{attempt + 1})...")
             Process.sleep(delay)
             execute_with_retry(client, operation, params, attempt + 1)
-            
+
           {:stop, reason} ->
             IO.puts("🛑 Stopping retries: #{reason}")
             {:error, error}
@@ -560,15 +561,15 @@ defmodule WSSecurityDemo do
       nonce: true
     )
   end
-  
+
   def create_security_header(username, password) do
     username_token = create_username_token(username, password)
     Lather.Auth.WSSecurity.security_header(username_token, [])
   end
-  
+
   def wssecurity_client_options(username, password, base_options) do
     security_header = create_security_header(username, password)
-    
+
     base_options ++ [
       soap_headers: [security_header]
     ]
@@ -584,7 +585,7 @@ wssecurity_config = WSSecurityDemo.wssecurity_client_options(
 
 IO.puts("🔐 WS-Security Configuration Example:")
 IO.puts("   ✓ Username token with timestamp")
-IO.puts("   ✓ Nonce for replay protection") 
+IO.puts("   ✓ Nonce for replay protection")
 IO.puts("   ✓ Password digest (when supported)")
 IO.puts("   ✓ Security header in SOAP envelope")
 
@@ -604,17 +605,17 @@ Let's create a performance monitoring dashboard for SOAP operations:
 defmodule PerformanceMonitor do
   def track_operation(operation_name, fun) do
     start_time = System.monotonic_time(:millisecond)
-    
+
     result = fun.()
-    
+
     end_time = System.monotonic_time(:millisecond)
     duration = end_time - start_time
-    
+
     status = case result do
       {:ok, _} -> :success
       {:error, _} -> :error
     end
-    
+
     %{
       operation: operation_name,
       duration_ms: duration,
@@ -622,16 +623,16 @@ defmodule PerformanceMonitor do
       timestamp: DateTime.utc_now()
     }
   end
-  
+
   def simulate_performance_data do
     # Simulate various operation performance metrics
     operations = ["SearchUsers", "CreateUser", "UpdateUser", "DeleteUser", "GetUserDetails"]
-    
+
     Enum.map(1..20, fn _ ->
       operation = Enum.random(operations)
       duration = Enum.random(100..5000)  # 100ms to 5s
       status = if :rand.uniform() > 0.1, do: :success, else: :error
-      
+
       %{
         operation: operation,
         duration_ms: duration,
@@ -640,24 +641,24 @@ defmodule PerformanceMonitor do
       }
     end)
   end
-  
+
   def analyze_performance(metrics) do
     total_operations = length(metrics)
     successful_ops = Enum.count(metrics, fn m -> m.status == :success end)
     error_rate = (total_operations - successful_ops) / total_operations * 100
-    
+
     successful_metrics = Enum.filter(metrics, fn m -> m.status == :success end)
     durations = Enum.map(successful_metrics, fn m -> m.duration_ms end)
-    
+
     avg_duration = if length(durations) > 0 do
       Enum.sum(durations) / length(durations)
     else
       0
     end
-    
+
     max_duration = if length(durations) > 0, do: Enum.max(durations), else: 0
     min_duration = if length(durations) > 0, do: Enum.min(durations), else: 0
-    
+
     %{
       total_operations: total_operations,
       success_rate: 100 - error_rate,
@@ -702,7 +703,7 @@ Let's create an interactive checklist for enterprise SOAP integration:
 # Enterprise integration checklist
 checklist_items = [
   "📋 WSDL Analysis Complete",
-  "🔐 Authentication Configured", 
+  "🔐 Authentication Configured",
   "🔒 SSL/TLS Security Verified",
   "⚡ Connection Pooling Optimized",
   "🛡️ Error Handling Implemented",

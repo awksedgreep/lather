@@ -2,7 +2,8 @@
 
 ```elixir
 Mix.install([
-  {:lather, path: ".."},
+  {:lather, path: ".."}, # For local development
+  # {:lather, "~> 1.0"}, # Use this for hex package
   {:finch, "~> 0.18"},
   {:kino, "~> 0.12"}
 ])
@@ -52,15 +53,15 @@ weather_wsdl = "http://www.webservicex.net/globalweather.asmx?WSDL"
 case Lather.DynamicClient.new(weather_wsdl, timeout: 30_000) do
   {:ok, weather_client} ->
     IO.puts("✅ Successfully connected to weather service!")
-    
+
     # Store the client for use in other cells
     Process.put(:weather_client, weather_client)
-    
+
     # Show available operations
     operations = Lather.DynamicClient.list_operations(weather_client)
     IO.puts("\n📋 Available operations:")
     Enum.each(operations, fn op -> IO.puts("   • #{op}") end)
-    
+
     weather_client
 
   {:error, error} ->
@@ -84,17 +85,17 @@ if weather_client do
     {:ok, info} ->
       IO.puts("🔍 Operation: GetWeather")
       IO.puts("\n📥 Input Parameters:")
-      
+
       Enum.each(info.input_parts, fn part ->
         required = if part.required, do: " (required)", else: " (optional)"
         IO.puts("   • #{part.name}: #{part.type}#{required}")
       end)
-      
+
       IO.puts("\n📤 Output:")
       Enum.each(info.output_parts, fn part ->
         IO.puts("   • #{part.name}: #{part.type}")
       end)
-      
+
       if info.soap_action do
         IO.puts("\n🎯 SOAP Action: #{info.soap_action}")
       end
@@ -122,15 +123,15 @@ if weather_client do
     "CityName" => "New York",
     "CountryName" => "United States"
   }
-  
+
   IO.puts("🌤️ Getting weather for New York, United States...")
-  
+
   case Lather.DynamicClient.call(weather_client, "GetWeather", params) do
     {:ok, response} ->
       IO.puts("✅ Weather data received!")
       IO.puts("\n📊 Response structure:")
       IO.inspect(response, pretty: true, limit: :infinity)
-      
+
       # Extract and display the weather result
       case response do
         %{"GetWeatherResult" => weather_xml} when is_binary(weather_xml) ->
@@ -140,7 +141,7 @@ if weather_client do
             IO.puts("\n🌡️ Weather XML (first 300 characters):")
             IO.puts(String.slice(weather_xml, 0, 300) <> "...")
           end
-          
+
         _ ->
           IO.puts("\n💡 Raw response data shown above")
       end
@@ -183,15 +184,15 @@ Kino.Control.stream(lookup_button)
   if weather_client do
     city = Kino.Input.read(city_input)
     country = Kino.Input.read(country_input)
-    
+
     if city != "" and country != "" do
       IO.puts("🔍 Looking up weather for #{city}, #{country}...")
-      
+
       params = %{
         "CityName" => city,
         "CountryName" => country
       }
-      
+
       case Lather.DynamicClient.call(weather_client, "GetWeather", params) do
         {:ok, response} ->
           case response do
@@ -202,7 +203,7 @@ Kino.Control.stream(lookup_button)
                 IO.puts("✅ Weather data found for #{city}, #{country}")
                 IO.puts("📄 Response: #{String.slice(weather_xml, 0, 200)}...")
               end
-              
+
             _ ->
               IO.puts("✅ Received response:")
               IO.inspect(response, pretty: true)
@@ -233,7 +234,7 @@ weather_client = Process.get(:weather_client)
 
 if weather_client do
   IO.puts("🧪 Testing different error scenarios...\n")
-  
+
   # Test 1: Invalid operation name
   IO.puts("1️⃣ Testing invalid operation name:")
   case Lather.DynamicClient.call(weather_client, "NonExistentOperation", %{}) do
@@ -243,7 +244,7 @@ if weather_client do
       IO.puts("   ❌ Expected error: #{error.type}")
       IO.puts("   📝 Message: #{error.message}")
   end
-  
+
   # Test 2: Missing required parameters
   IO.puts("\n2️⃣ Testing missing required parameters:")
   case Lather.DynamicClient.call(weather_client, "GetWeather", %{}) do
@@ -253,7 +254,7 @@ if weather_client do
       IO.puts("   ❌ Expected error: #{error.type}")
       IO.puts("   📝 Details: #{inspect(error.details)}")
   end
-  
+
   # Test 3: Invalid parameter types
   IO.puts("\n3️⃣ Testing with invalid parameter types:")
   case Lather.DynamicClient.call(weather_client, "GetWeather", %{
@@ -266,7 +267,7 @@ if weather_client do
       IO.puts("   ❌ Error: #{error.type}")
       IO.puts("   📝 Details: #{inspect(error.details)}")
   end
-  
+
 else
   IO.puts("⚠️ No weather client available")
 end
@@ -290,7 +291,7 @@ complex_params = %{
           "value" => "Engineering"
         },
         %{
-          "field" => "active", 
+          "field" => "active",
           "operator" => "equals",
           "value" => true
         }
@@ -341,10 +342,10 @@ if weather_client do
     {"Toronto", "Canada"},
     {"Berlin", "Germany"}
   ]
-  
+
   IO.puts("🚀 Making concurrent weather requests for #{length(cities)} cities...")
   start_time = System.monotonic_time(:millisecond)
-  
+
   # Create async tasks for each city
   tasks = Enum.map(cities, fn {city, country} ->
     Task.async(fn ->
@@ -353,13 +354,13 @@ if weather_client do
       {city, result}
     end)
   end)
-  
+
   # Wait for all tasks to complete
   results = Task.await_many(tasks, 30_000)
   end_time = System.monotonic_time(:millisecond)
-  
+
   IO.puts("\n📊 Results (completed in #{end_time - start_time}ms):")
-  
+
   Enum.each(results, fn {city, result} ->
     case result do
       {:ok, _response} ->
@@ -368,11 +369,11 @@ if weather_client do
         IO.puts("   ❌ #{city}: Failed to get weather")
     end
   end)
-  
-  success_count = Enum.count(results, fn {_city, result} -> 
-    match?({:ok, _}, result) 
+
+  success_count = Enum.count(results, fn {_city, result} ->
+    match?({:ok, _}, result)
   end)
-  
+
   IO.puts("\n📈 Summary: #{success_count}/#{length(cities)} requests successful")
 else
   IO.puts("⚠️ No weather client available")
@@ -390,17 +391,17 @@ weather_client = Process.get(:weather_client)
 
 if weather_client do
   service_info = weather_client.service_info
-  
+
   IO.puts("📋 SOAP Service Summary")
   IO.puts("=" |> String.duplicate(50))
-  
+
   # Service details
   if service_info.services && length(service_info.services) > 0 do
     service = hd(service_info.services)
     IO.puts("🌐 Service Name: #{service[:name] || "N/A"}")
     IO.puts("🔗 Endpoint: #{service[:endpoint] || "N/A"}")
   end
-  
+
   # Operations
   IO.puts("\n🔧 Available Operations (#{length(service_info.operations)}):")
   Enum.each(service_info.operations, fn op ->
@@ -408,7 +409,7 @@ if weather_client do
     output_count = length(op.output_parts || [])
     IO.puts("   • #{op.name} (#{input_count} inputs, #{output_count} outputs)")
   end)
-  
+
   # Namespaces
   if service_info.namespaces && map_size(service_info.namespaces) > 0 do
     IO.puts("\n📚 Namespaces:")
@@ -416,7 +417,7 @@ if weather_client do
       IO.puts("   • #{prefix}: #{uri}")
     end)
   end
-  
+
   # Types
   if service_info.types && map_size(service_info.types) > 0 do
     IO.puts("\n🏗️ Complex Types (#{map_size(service_info.types)}):")
@@ -424,7 +425,7 @@ if weather_client do
       IO.puts("   • #{name}")
     end)
   end
-  
+
 else
   IO.puts("⚠️ No service information available")
 end

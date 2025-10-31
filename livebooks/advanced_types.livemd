@@ -2,7 +2,8 @@
 
 ```elixir
 Mix.install([
-  {:lather, path: ".."},
+  {:lather, path: ".."}, # For local development
+  # {:lather, "~> 1.0"}, # Use this for hex package
   {:finch, "~> 0.18"},
   {:kino, "~> 0.12"},
   {:jason, "~> 1.4"}
@@ -54,7 +55,7 @@ defmodule SampleTypes do
           "metadata" => %{type: "Metadata", required: false}
         }
       },
-      
+
       "PersonalInfo" => %{
         type: :complex,
         elements: %{
@@ -66,7 +67,7 @@ defmodule SampleTypes do
           "address" => %{type: "Address", required: false}
         }
       },
-      
+
       "WorkInfo" => %{
         type: :complex,
         elements: %{
@@ -79,7 +80,7 @@ defmodule SampleTypes do
           "location" => %{type: "Location", required: false}
         }
       },
-      
+
       "Address" => %{
         type: :complex,
         elements: %{
@@ -90,7 +91,7 @@ defmodule SampleTypes do
           "country" => %{type: :string, required: true, default: "USA"}
         }
       },
-      
+
       "Location" => %{
         type: :complex,
         elements: %{
@@ -100,7 +101,7 @@ defmodule SampleTypes do
           "coordinates" => %{type: "Coordinates", required: false}
         }
       },
-      
+
       "Coordinates" => %{
         type: :complex,
         elements: %{
@@ -108,7 +109,7 @@ defmodule SampleTypes do
           "longitude" => %{type: :decimal, required: true, min: -180, max: 180}
         }
       },
-      
+
       "Metadata" => %{
         type: :complex,
         elements: %{
@@ -119,7 +120,7 @@ defmodule SampleTypes do
           "customFields" => %{type: "CustomField", array: true, required: false}
         }
       },
-      
+
       "CustomField" => %{
         type: :complex,
         elements: %{
@@ -130,7 +131,7 @@ defmodule SampleTypes do
       }
     }
   end
-  
+
   def sample_data do
     %{
       "id" => "USR001",
@@ -211,7 +212,7 @@ Let's demonstrate how Lather validates data against type definitions:
 defmodule TypeValidationDemo do
   def validate_user_data(data, types) do
     user_type = types["User"]
-    
+
     case Lather.Types.Mapper.validate_type(data, user_type, types: types) do
       :ok ->
         {:valid, "Data passes all validations"}
@@ -219,7 +220,7 @@ defmodule TypeValidationDemo do
         {:invalid, Lather.Error.format_error(error)}
     end
   end
-  
+
   def create_test_cases do
     [
       {
@@ -227,7 +228,7 @@ defmodule TypeValidationDemo do
         SampleTypes.sample_data()
       },
       {
-        "❌ Missing Required Field", 
+        "❌ Missing Required Field",
         SampleTypes.sample_data() |> Map.drop(["personalInfo"])
       },
       {
@@ -336,22 +337,22 @@ Kino.Control.stream(validate_button)
       "version" => 1
     }
   }
-  
+
   IO.puts("🔍 Validating user data...")
   IO.puts("Data structure:")
   IO.inspect(user_data, pretty: true)
-  
+
   case TypeValidationDemo.validate_user_data(user_data, types) do
     {:valid, message} ->
       IO.puts("\n✅ #{message}")
       IO.puts("🎉 User data is ready for SOAP submission!")
-      
+
     {:invalid, error} ->
       IO.puts("\n❌ Validation failed:")
       IO.puts("   #{error}")
       IO.puts("💡 Please correct the errors and try again")
   end
-  
+
   IO.puts("\n" <> String.duplicate("=", 60))
 end)
 
@@ -369,7 +370,7 @@ defmodule CustomTypeParsers do
   def phone_number_parser(value) when is_binary(value) do
     # Remove common phone number formatting
     cleaned = String.replace(value, ~r/[\s\-\(\)]/, "")
-    
+
     cond do
       Regex.match?(~r/^\+\d{10,15}$/, cleaned) ->
         {:ok, cleaned}
@@ -380,8 +381,8 @@ defmodule CustomTypeParsers do
     end
   end
   def phone_number_parser(_), do: {:error, :invalid_type}
-  
-  def coordinate_parser(%{"latitude" => lat, "longitude" => lng}) 
+
+  def coordinate_parser(%{"latitude" => lat, "longitude" => lng})
       when is_number(lat) and is_number(lng) do
     cond do
       lat < -90 or lat > 90 ->
@@ -393,20 +394,20 @@ defmodule CustomTypeParsers do
     end
   end
   def coordinate_parser(_), do: {:error, :invalid_coordinates}
-  
+
   def skill_list_parser(value) when is_binary(value) do
-    skills = 
+    skills =
       value
       |> String.split([",", ";", "|"])
       |> Enum.map(&String.trim/1)
       |> Enum.reject(&(&1 == ""))
       |> Enum.map(&String.downcase/1)
-    
+
     {:ok, skills}
   end
   def skill_list_parser(value) when is_list(value), do: {:ok, value}
   def skill_list_parser(_), do: {:error, :invalid_skill_format}
-  
+
   def date_range_parser(value) when is_binary(value) do
     case String.split(value, "/") do
       [start_str, end_str] ->
@@ -425,28 +426,28 @@ defmodule CustomTypeParsers do
     end
   end
   def date_range_parser(_), do: {:error, :invalid_type}
-  
+
   def currency_parser(value) when is_binary(value) do
     # Parse currency strings like "$50,000", "€45.50", "¥1000"
     cleaned = String.replace(value, ~r/[,\s]/, "")
-    
+
     cond do
       Regex.match?(~r/^\$[\d.]+$/, cleaned) ->
         amount = String.slice(cleaned, 1..-1) |> String.to_float()
         {:ok, %{amount: amount, currency: "USD"}}
-        
+
       Regex.match?(~r/^€[\d.]+$/, cleaned) ->
         amount = String.slice(cleaned, 1..-1) |> String.to_float()
         {:ok, %{amount: amount, currency: "EUR"}}
-        
+
       Regex.match?(~r/^¥[\d.]+$/, cleaned) ->
         amount = String.slice(cleaned, 1..-1) |> String.to_float()
         {:ok, %{amount: amount, currency: "JPY"}}
-        
+
       Regex.match?(~r/^[\d.]+$/, cleaned) ->
         amount = String.to_float(cleaned)
         {:ok, %{amount: amount, currency: "USD"}}  # Default to USD
-        
+
       true ->
         {:error, :invalid_currency_format}
     end
@@ -495,46 +496,46 @@ defmodule XMLConversionDemo do
     # Sample user data
     user_data = SampleTypes.sample_data()
     types = SampleTypes.enterprise_types()
-    
+
     IO.puts("🔄 XML Conversion Demonstration")
     IO.puts("=" |> String.duplicate(45))
-    
+
     # Convert Elixir data to XML structure
     IO.puts("1️⃣ Converting Elixir data to XML...")
-    
+
     case Lather.Types.Mapper.elixir_to_xml(user_data, types["User"], types: types) do
       {:ok, xml_structure} ->
         IO.puts("✅ Conversion successful!")
-        
+
         # Build actual XML string
         xml_string = Lather.XML.Builder.build(xml_structure)
-        
+
         IO.puts("\n📄 Generated XML (first 500 characters):")
         IO.puts(String.slice(xml_string, 0, 500) <> "...")
-        
+
         # Parse it back to verify round-trip
         IO.puts("\n2️⃣ Parsing XML back to Elixir...")
-        
+
         case Lather.XML.Parser.parse(xml_string) do
           {:ok, parsed_data} ->
             IO.puts("✅ Parse successful!")
-            
+
             # Convert back to Elixir types
             case Lather.Types.Mapper.xml_to_elixir(parsed_data, types["User"], types: types) do
               {:ok, elixir_data} ->
                 IO.puts("✅ Round-trip conversion successful!")
-                
+
                 # Compare original and round-trip data
                 original_keys = get_all_keys(user_data)
                 roundtrip_keys = get_all_keys(elixir_data)
-                
+
                 IO.puts("\n📊 Round-trip Analysis:")
                 IO.puts("   Original data keys: #{length(original_keys)}")
                 IO.puts("   Round-trip keys: #{length(roundtrip_keys)}")
-                
+
                 missing_keys = original_keys -- roundtrip_keys
                 extra_keys = roundtrip_keys -- original_keys
-                
+
                 if length(missing_keys) == 0 and length(extra_keys) == 0 do
                   IO.puts("   ✅ Perfect round-trip - all keys preserved!")
                 else
@@ -545,25 +546,25 @@ defmodule XMLConversionDemo do
                     IO.puts("   ⚠️ Extra keys: #{inspect(extra_keys)}")
                   end
                 end
-                
+
                 {:ok, xml_string, elixir_data}
-                
+
               {:error, error} ->
                 IO.puts("❌ XML to Elixir conversion failed: #{inspect(error)}")
                 {:error, error}
             end
-            
+
           {:error, error} ->
             IO.puts("❌ XML parsing failed: #{inspect(error)}")
             {:error, error}
         end
-        
+
       {:error, error} ->
         IO.puts("❌ Elixir to XML conversion failed: #{inspect(error)}")
         {:error, error}
     end
   end
-  
+
   defp get_all_keys(data, prefix \\ "") do
     case data do
       map when is_map(map) ->
@@ -571,7 +572,7 @@ defmodule XMLConversionDemo do
           current_key = if prefix == "", do: key, else: "#{prefix}.#{key}"
           [current_key | get_all_keys(value, current_key)]
         end)
-      
+
       list when is_list(list) ->
         list
         |> Enum.with_index()
@@ -579,7 +580,7 @@ defmodule XMLConversionDemo do
           current_key = "#{prefix}[#{index}]"
           [current_key | get_all_keys(item, current_key)]
         end)
-      
+
       _ ->
         []
     end
@@ -600,34 +601,34 @@ Let's see how Lather can generate Elixir struct modules from WSDL types:
 defmodule StructGenerationDemo do
   def generate_enterprise_structs do
     types = SampleTypes.enterprise_types()
-    
+
     IO.puts("🏗️ Generating Elixir Structs from WSDL Types")
     IO.puts("=" |> String.duplicate(50))
-    
+
     case Lather.Types.Generator.generate_structs(types, "MyApp.Types") do
       {:ok, modules} ->
         IO.puts("✅ Successfully generated #{length(modules)} struct modules!")
-        
+
         Enum.each(modules, fn module ->
           IO.puts("   📦 #{inspect(module)}")
         end)
-        
+
         # Demonstrate struct usage
         IO.puts("\n🧪 Testing Generated Structs:")
         test_generated_structs(modules)
-        
+
         {:ok, modules}
-        
+
       {:error, error} ->
         IO.puts("❌ Struct generation failed: #{inspect(error)}")
         {:error, error}
     end
   end
-  
+
   defp test_generated_structs(modules) do
     # This would work with actually generated modules
     # For demo purposes, we'll simulate the struct creation
-    
+
     sample_structs = %{
       "User" => %{
         id: "USR001",
@@ -638,7 +639,7 @@ defmodule StructGenerationDemo do
       },
       "PersonalInfo" => %{
         first_name: "John",
-        last_name: "Doe", 
+        last_name: "Doe",
         email: "john@example.com",
         phone: "+1-555-0123",
         birth_date: ~D[1985-03-15],
@@ -654,15 +655,15 @@ defmodule StructGenerationDemo do
         location: %{}
       }
     }
-    
+
     Enum.each(sample_structs, fn {struct_name, fields} ->
       IO.puts("   🎯 #{struct_name}:")
       IO.puts("      Fields: #{map_size(fields)}")
-      
+
       field_list = Map.keys(fields) |> Enum.take(3) |> Enum.join(", ")
       IO.puts("      Sample: #{field_list}...")
     end)
-    
+
     IO.puts("\n💡 Generated structs provide:")
     IO.puts("   • Type safety for SOAP parameters")
     IO.puts("   • IDE autocompletion support")
@@ -698,7 +699,7 @@ defmodule RealWorldScenarios do
           "metadata" => %{type: "TransactionMetadata", required: false}
         }
       },
-      
+
       "Money" => %{
         type: :complex,
         elements: %{
@@ -707,7 +708,7 @@ defmodule RealWorldScenarios do
           "precision" => %{type: :integer, required: false, default: 2}
         }
       },
-      
+
       "TransactionMetadata" => %{
         type: :complex,
         elements: %{
@@ -720,7 +721,7 @@ defmodule RealWorldScenarios do
       }
     }
   end
-  
+
   def healthcare_data_types do
     %{
       "Patient" => %{
@@ -734,7 +735,7 @@ defmodule RealWorldScenarios do
           "medications" => %{type: "Medication", array: true, required: false}
         }
       },
-      
+
       "Demographics" => %{
         type: :complex,
         elements: %{
@@ -747,7 +748,7 @@ defmodule RealWorldScenarios do
           "email" => %{type: :string, required: false, format: :email}
         }
       },
-      
+
       "Insurance" => %{
         type: :complex,
         elements: %{
@@ -760,7 +761,7 @@ defmodule RealWorldScenarios do
       }
     }
   end
-  
+
   def inventory_data_types do
     %{
       "Product" => %{
@@ -775,7 +776,7 @@ defmodule RealWorldScenarios do
           "attributes" => %{type: "ProductAttribute", array: true, required: false}
         }
       },
-      
+
       "Category" => %{
         type: :complex,
         elements: %{
@@ -785,7 +786,7 @@ defmodule RealWorldScenarios do
           "level" => %{type: :integer, required: true, min: 1, max: 10}
         }
       },
-      
+
       "Inventory" => %{
         type: :complex,
         elements: %{
@@ -797,18 +798,18 @@ defmodule RealWorldScenarios do
       }
     }
   end
-  
+
   def test_domain_types(domain_name, types) do
     IO.puts("🏢 #{domain_name} Domain Types:")
     IO.puts("   Types: #{map_size(types)}")
-    
+
     Enum.each(types, fn {type_name, type_def} ->
       element_count = map_size(type_def.elements)
       required_count = Enum.count(type_def.elements, fn {_, elem} -> elem.required end)
-      
+
       IO.puts("   • #{type_name}: #{element_count} fields (#{required_count} required)")
     end)
-    
+
     IO.puts("")
   end
 end
@@ -838,78 +839,78 @@ defmodule PerformanceAnalysis do
   def benchmark_type_operations do
     types = SampleTypes.enterprise_types()
     sample_data = SampleTypes.sample_data()
-    
+
     IO.puts("⚡ Type Operation Performance Analysis")
     IO.puts("=" |> String.duplicate(45))
-    
+
     # Benchmark validation
     validation_time = benchmark_operation("Type Validation", 1000, fn ->
       Lather.Types.Mapper.validate_type(sample_data, types["User"], types: types)
     end)
-    
+
     # Benchmark Elixir to XML conversion
     xml_conversion_time = benchmark_operation("Elixir → XML", 1000, fn ->
       Lather.Types.Mapper.elixir_to_xml(sample_data, types["User"], types: types)
     end)
-    
+
     # Create XML for reverse benchmark
     {:ok, xml_structure} = Lather.Types.Mapper.elixir_to_xml(sample_data, types["User"], types: types)
     xml_string = Lather.XML.Builder.build(xml_structure)
     {:ok, parsed_xml} = Lather.XML.Parser.parse(xml_string)
-    
+
     # Benchmark XML to Elixir conversion
     elixir_conversion_time = benchmark_operation("XML → Elixir", 1000, fn ->
       Lather.Types.Mapper.xml_to_elixir(parsed_xml, types["User"], types: types)
     end)
-    
+
     # Analyze performance
     total_round_trip = xml_conversion_time + elixir_conversion_time
-    
+
     IO.puts("\n📊 Performance Summary:")
     IO.puts("   Validation:          #{validation_time}μs per operation")
     IO.puts("   Elixir → XML:        #{xml_conversion_time}μs per operation")
     IO.puts("   XML → Elixir:        #{elixir_conversion_time}μs per operation")
     IO.puts("   Round-trip total:    #{total_round_trip}μs per operation")
-    
+
     # Calculate throughput
     validation_throughput = round(1_000_000 / validation_time)
     conversion_throughput = round(1_000_000 / total_round_trip)
-    
+
     IO.puts("\n🚀 Throughput Estimates:")
     IO.puts("   Validations/second:  #{validation_throughput |> format_number()}")
     IO.puts("   Conversions/second:  #{conversion_throughput |> format_number()}")
-    
+
     # Memory usage estimation
     data_size = :erlang.external_size(sample_data)
     xml_size = byte_size(xml_string)
-    
+
     IO.puts("\n💾 Memory Usage:")
     IO.puts("   Elixir data size:    #{data_size} bytes")
     IO.puts("   XML string size:     #{xml_size} bytes")
     IO.puts("   Size ratio (XML/Elixir): #{Float.round(xml_size / data_size, 2)}x")
   end
-  
+
   defp benchmark_operation(name, iterations, fun) do
     IO.puts("🔧 Benchmarking #{name} (#{iterations} iterations)...")
-    
+
     # Warm up
     Enum.each(1..10, fn _ -> fun.() end)
-    
+
     # Actual benchmark
     start_time = System.monotonic_time(:microsecond)
-    
+
     Enum.each(1..iterations, fn _ ->
       fun.()
     end)
-    
+
     end_time = System.monotonic_time(:microsecond)
     total_time = end_time - start_time
     avg_time = div(total_time, iterations)
-    
+
     IO.puts("   Average time: #{avg_time}μs")
     avg_time
   end
-  
+
   defp format_number(num) when num >= 1_000_000 do
     "#{Float.round(num / 1_000_000, 1)}M"
   end

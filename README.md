@@ -17,11 +17,11 @@
 - 📝 **Type Safety**: Dynamic type mapping and validation with struct generation
 - 🚨 **Robust Error Handling**: Structured error types with SOAP fault parsing
 
-## 🌟 Enhanced Features (v1.0.0+)
+## 🌟 Enhanced Features (v1.0.0)
 
 ### Multi-Protocol SOAP & REST Support
 
-Lather v1.0 introduces a **three-layer API architecture** that serves multiple protocol types from a single service:
+Lather v1.0.0 features a **three-layer API architecture** that serves multiple protocol types from a single service:
 
 ```
 ┌─ SOAP 1.1 (Top - Maximum Compatibility)    │ Legacy systems, .NET Framework
@@ -73,7 +73,7 @@ Add `lather` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:lather, "~> 1.0.0"},
+    {:lather, "~> 1.0"},
     # Optional: for JSON/REST endpoints in enhanced features
     {:jason, "~> 1.4"}
   ]
@@ -125,7 +125,7 @@ pipe_through :api
 post "/soap/user", Lather.Server.Plug, service: MyApp.UserService
 ```
 
-### Enhanced Multi-Protocol Server (v1.0.0+)
+### Enhanced Multi-Protocol Server
 
 ```elixir
 # Define a service that supports SOAP 1.1, SOAP 1.2, and JSON/REST
@@ -208,17 +208,90 @@ curl -X POST "https://myapp.com/api/users/api" \
   -d '{"operation": "GetUser", "parameters": {"userId": "123"}}'
 ```
 
-## 📚 Documentation & Examples
+## 📚 Interactive Learning with Livebooks
 
-Lather includes comprehensive interactive documentation via Livebooks:
+Lather includes comprehensive interactive documentation via **Livebooks** that you can run directly in your development environment. These tutorials provide hands-on experience with real SOAP services and practical examples.
 
-- **Client Tutorial** - Complete guide to using SOAP clients
-- **Server Tutorial** - Building SOAP services step-by-step  
-- **Type System Guide** - Working with complex types and validation
-- **Debugging Guide** - Troubleshooting SOAP integration issues
-- **Enterprise Patterns** - Authentication, error handling, monitoring
+### Available Livebooks
 
-[View all tutorials →](examples/)
+#### 🌱 **Getting Started** (`livebooks/getting_started.livemd`)
+Perfect introduction to Lather with step-by-step examples:
+- Creating your first SOAP client
+- Making basic SOAP calls
+- Handling responses and errors
+- Authentication basics
+
+#### 🌤️ **Weather Service Example** (`livebooks/weather_service_example.livemd`)
+Real-world example using the National Weather Service API:
+- Working with document/encoded SOAP services
+- Complex parameter handling
+- Response parsing and data extraction
+- Error handling with external services
+
+#### 🌍 **Country Info Service Example** (`livebooks/country_info_service_example.livemd`)
+Demonstrates document/literal SOAP style:
+- Different SOAP encoding styles
+- Namespace handling
+- Complex data structures
+- Service discovery
+
+#### 🖥️ **SOAP Server Development** (`livebooks/soap_server_development.livemd`)
+Complete server development tutorial:
+- Building SOAP services with Lather.Server
+- Multi-protocol endpoint configuration
+- Interactive web interfaces
+- Testing your services
+
+#### 🔧 **Advanced Types** (`livebooks/advanced_types.livemd`)
+Master complex data structures:
+- Working with complex types
+- Arrays and nested objects
+- Type validation and conversion
+- Custom type mappings
+
+#### 🏢 **Enterprise Integration** (`livebooks/enterprise_integration.livemd`)
+Production-ready patterns and practices:
+- WS-Security implementation
+- SSL/TLS configuration
+- Performance optimization
+- Monitoring and logging
+
+#### 🐛 **Debugging & Troubleshooting** (`livebooks/debugging_troubleshooting.livemd`)
+Essential debugging techniques:
+- SOAP message inspection
+- Common error patterns
+- Network troubleshooting
+- Performance analysis
+
+### Running Livebooks
+
+To use the interactive tutorials:
+
+```bash
+# Install Livebook if you haven't already
+mix escript.install hex livebook
+
+# Navigate to your project directory
+cd your_project
+
+# Start Livebook
+livebook server
+
+# Open any of the tutorial files from the livebooks/ directory
+```
+
+Or run individual livebooks directly:
+
+```bash
+# Run a specific livebook
+livebook server livebooks/getting_started.livemd
+```
+
+The livebooks are self-contained and include all necessary dependencies. They're perfect for:
+- **Learning**: Step-by-step tutorials with explanations
+- **Testing**: Try different SOAP services interactively  
+- **Development**: Use as templates for your own implementations
+- **Troubleshooting**: Debug issues with real examples
 
 ## 🏗️ Architecture
 
@@ -393,20 +466,26 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🗺️ Roadmap
 
-### v1.0.0 (Next Release)
-- [ ] SOAP 1.2 support  
-- [ ] Performance optimizations and benchmarking
+### v1.1.0 (Next Release)
+- [ ] MTOM/XOP binary attachments
 - [ ] Enhanced WS-Security features (XML Signature, Encryption)
+- [ ] Performance optimizations and benchmarking
 - [ ] Additional server examples and templates
 
-### Future Releases  
-- [ ] MTOM/XOP binary attachments
+### v1.2.0 
 - [ ] WS-Addressing and WS-ReliableMessaging
 - [ ] OpenAPI 3.0 SOAP extension support
 - [ ] GraphQL-style query interface for SOAP
+- [ ] Advanced caching strategies
+
+### Future Releases  
 - [ ] Service mesh integration patterns
+- [ ] gRPC interoperability layer
+- [ ] Kubernetes-native deployment tools
+- [ ] Advanced monitoring and observability
 
 ---
 
-**Lather** - Making SOAP integration in Elixir as smooth as possible! 🧼✨
+**Lather v1.0.1** - Making SOAP integration in Elixir as smooth as possible! 🧼✨
 
+*Released January 2025 with complete SOAP 1.2 support and multi-protocol capabilities.*
