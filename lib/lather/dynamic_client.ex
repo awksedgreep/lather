@@ -34,6 +34,7 @@ defmodule Lather.DynamicClient do
     * `:default_headers` - Default headers to include in all requests
     * `:authentication` - Authentication configuration
     * `:timeout` - Default request timeout
+    * `:soap_version` - SOAP protocol version (`:v1_1` or `:v1_2`, auto-detected if not specified)
 
   ## Examples
 
@@ -50,10 +51,18 @@ defmodule Lather.DynamicClient do
     with {:ok, service_info} <- Analyzer.load_and_analyze(wsdl_source, options),
          {:ok, base_client} <-
            create_base_client(service_info, options ++ [wsdl_source: wsdl_source]) do
+      # Determine SOAP version - use explicit option or detect from WSDL
+      soap_version =
+        Keyword.get(options, :soap_version) ||
+          Map.get(service_info, :soap_version, :v1_1)
+
+      # Add soap_version to default options
+      enhanced_options = Keyword.put(options, :soap_version, soap_version)
+
       dynamic_client = %__MODULE__{
         base_client: base_client,
         service_info: service_info,
-        default_options: options
+        default_options: enhanced_options
       }
 
       {:ok, dynamic_client}
@@ -150,7 +159,8 @@ defmodule Lather.DynamicClient do
 
     with {:ok, operation_info} <- find_operation(service_info, operation_name),
          :ok <- maybe_validate_parameters(operation_info, parameters, options),
-         {:ok, soap_envelope} <- build_request(operation_info, parameters, service_info, options),
+         {:ok, soap_envelope} <-
+           build_request(operation_info, parameters, service_info, default_opts ++ options),
          {:ok, response} <-
            send_request(base_client, soap_envelope, operation_info, default_opts, options),
          {:ok, parsed_response} <- parse_response(operation_info, response, options) do
@@ -315,12 +325,14 @@ defmodule Lather.DynamicClient do
 
   defp build_request(operation_info, parameters, service_info, options) do
     headers = Keyword.get(options, :headers, [])
+    soap_version = Keyword.get(options, :soap_version, :v1_1)
 
     request_options = [
       namespace: service_info.target_namespace,
       headers: headers,
       style: get_operation_style(operation_info),
-      use: get_operation_use(operation_info)
+      use: get_operation_use(operation_info),
+      version: soap_version
     ]
 
     Builder.build_request(operation_info, parameters, request_options)
@@ -334,13 +346,17 @@ defmodule Lather.DynamicClient do
     soap_action = operation_info.soap_action || ""
     timeout = Keyword.get(call_opts, :timeout) || Keyword.get(default_opts, :timeout, 30_000)
 
-    # Combine client options with call options, pass soap_action separately
+    # Get SOAP version from default options
+    soap_version = Keyword.get(default_opts, :soap_version, :v1_1)
+
+    # Combine client options with call options, pass soap_action and version
     transport_options =
       base_client.options ++
         call_opts ++
         [
           timeout: timeout,
-          soap_action: soap_action
+          soap_action: soap_action,
+          soap_version: soap_version
         ]
 
     # Send the pre-built envelope directly

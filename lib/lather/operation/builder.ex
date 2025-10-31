@@ -24,6 +24,7 @@ defmodule Lather.Operation.Builder do
     * `:use` - SOAP use (:literal or :encoded, default: :literal)
     * `:namespace` - Target namespace for the operation
     * `:headers` - Additional SOAP headers
+    * `:version` - SOAP version (`:v1_1` or `:v1_2`, default: `:v1_1`)
 
   ## Examples
 
@@ -47,6 +48,7 @@ defmodule Lather.Operation.Builder do
   @spec build_request(map(), map(), keyword()) :: {:ok, String.t()} | {:error, term()}
   def build_request(operation_info, parameters, options \\ []) do
     style = Keyword.get(options, :style, :document)
+    version = Keyword.get(options, :version, :v1_1)
     # Extract use type from operation_info first, then options, then default
     use_type =
       get_in(operation_info, [:input, :use]) ||
@@ -70,7 +72,8 @@ defmodule Lather.Operation.Builder do
       # Build envelope with proper parameters
       envelope_options = [
         namespace: namespace,
-        headers: headers
+        headers: headers,
+        version: version
       ]
 
       Envelope.build(operation_name, processed_params, envelope_options)

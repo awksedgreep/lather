@@ -239,6 +239,75 @@ defmodule Lather.Soap.EnvelopeTest do
       assert fault.detail["AuthError"] == "Invalid credentials"
     end
 
+    test "parses SOAP 1.2 fault with proper nested structure" do
+      response = %{
+        status: 500,
+        body: """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:m="http://example.com/timeout">
+          <soap:Body>
+            <soap:Fault>
+              <soap:Code>
+                <soap:Value>soap:Sender</soap:Value>
+                <soap:Subcode>
+                  <soap:Value>m:MessageTimeout</soap:Value>
+                </soap:Subcode>
+              </soap:Code>
+              <soap:Reason>
+                <soap:Text xml:lang="en">Message processing timeout</soap:Text>
+              </soap:Reason>
+              <soap:Detail>
+                <m:MaxTime>60</m:MaxTime>
+              </soap:Detail>
+            </soap:Fault>
+          </soap:Body>
+        </soap:Envelope>
+        """
+      }
+
+      {:error, {:soap_fault, fault}} = Envelope.parse_response(response)
+
+      assert fault.code == "soap:Sender"
+      assert fault.subcode == "m:MessageTimeout"
+      assert fault.string == "Message processing timeout"
+      assert fault.detail["m:MaxTime"] == "60"
+      assert fault.soap_version == :v1_2
+    end
+
+    test "parses SOAP 1.2 fault with multiple language reasons" do
+      response = %{
+        status: 500,
+        body: """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+          <soap:Body>
+            <soap:Fault>
+              <soap:Code>
+                <soap:Value>soap:Client</soap:Value>
+              </soap:Code>
+              <soap:Reason>
+                <soap:Text xml:lang="en">Invalid request format</soap:Text>
+                <soap:Text xml:lang="de">Ungültiges Anforderungsformat</soap:Text>
+                <soap:Text xml:lang="fr">Format de demande non valide</soap:Text>
+              </soap:Reason>
+              <soap:Detail>
+                <ErrorCode>ERR_001</ErrorCode>
+              </soap:Detail>
+            </soap:Fault>
+          </soap:Body>
+        </soap:Envelope>
+        """
+      }
+
+      {:error, {:soap_fault, fault}} = Envelope.parse_response(response)
+
+      assert fault.code == "soap:Client"
+      # Should prefer English text
+      assert fault.string == "Invalid request format"
+      assert fault.detail["ErrorCode"] == "ERR_001"
+      assert fault.soap_version == :v1_2
+    end
+
     test "parses fault without namespace prefix" do
       response = %{
         status: 500,
@@ -468,6 +537,186 @@ defmodule Lather.Soap.EnvelopeTest do
       assert product["name"] == "Smartphone"
       assert product["price"]["@currency"] == "USD"
       assert product["price"]["#text"] == "299.99"
+    end
+  end
+
+  describe "SOAP version detection and fault parsing" do
+    test "detects SOAP 1.2 version from namespace" do
+      response = %{
+        status: 200,
+        body: """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+          <soap:Body>
+            <GetDataResponse>
+              <result>success</result>
+            </GetDataResponse>
+          </soap:Body>
+        </soap:Envelope>
+        """
+      }
+
+      {:ok, result} = Envelope.parse_response(response)
+      assert result["result"] == "success"
+    end
+
+    test "detects SOAP 1.1 version from namespace" do
+      response = %{
+        status: 200,
+        body: """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+          <soap:Body>
+            <GetDataResponse>
+              <result>success</result>
+            </GetDataResponse>
+          </soap:Body>
+        </soap:Envelope>
+        """
+      }
+
+      {:ok, result} = Envelope.parse_response(response)
+      assert result["result"] == "success"
+    end
+
+    test "parses SOAP 1.1 fault with version info" do
+      response = %{
+        status: 500,
+        body: """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+          <soap:Body>
+            <soap:Fault>
+              <faultcode>Client</faultcode>
+              <faultstring>Invalid user ID</faultstring>
+              <detail>
+                <error>User ID must be numeric</error>
+              </detail>
+            </soap:Fault>
+          </soap:Body>
+        </soap:Envelope>
+        """
+      }
+
+      {:error, {:soap_fault, fault}} = Envelope.parse_response(response)
+
+      assert fault.code == "Client"
+      assert fault.string == "Invalid user ID"
+      assert fault.detail["error"] == "User ID must be numeric"
+      assert fault.soap_version == :v1_1
+    end
+
+    test "handles SOAP 1.2 fault without subcode" do
+      response = %{
+        status: 500,
+        body: """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+          <soap:Body>
+            <soap:Fault>
+              <soap:Code>
+                <soap:Value>soap:Server</soap:Value>
+              </soap:Code>
+              <soap:Reason>
+                <soap:Text xml:lang="en">Internal server error</soap:Text>
+              </soap:Reason>
+            </soap:Fault>
+          </soap:Body>
+        </soap:Envelope>
+        """
+      }
+
+      {:error, {:soap_fault, fault}} = Envelope.parse_response(response)
+
+      assert fault.code == "soap:Server"
+      assert fault.subcode == nil
+      assert fault.string == "Internal server error"
+      assert fault.detail == nil
+      assert fault.soap_version == :v1_2
+    end
+
+    test "handles SOAP 1.2 fault with non-English default language" do
+      response = %{
+        status: 500,
+        body: """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+          <soap:Body>
+            <soap:Fault>
+              <soap:Code>
+                <soap:Value>soap:Client</soap:Value>
+              </soap:Code>
+              <soap:Reason>
+                <soap:Text xml:lang="fr">Erreur de format</soap:Text>
+                <soap:Text xml:lang="de">Format fehler</soap:Text>
+              </soap:Reason>
+            </soap:Fault>
+          </soap:Body>
+        </soap:Envelope>
+        """
+      }
+
+      {:error, {:soap_fault, fault}} = Envelope.parse_response(response)
+
+      assert fault.code == "soap:Client"
+      # Should return first available text when no English available
+      assert fault.string == "Erreur de format"
+      assert fault.soap_version == :v1_2
+    end
+
+    test "handles SOAP 1.2 fault with single text without language" do
+      response = %{
+        status: 500,
+        body: """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+          <soap:Body>
+            <soap:Fault>
+              <soap:Code>
+                <soap:Value>soap:Client</soap:Value>
+              </soap:Code>
+              <soap:Reason>
+                <soap:Text>Simple error message</soap:Text>
+              </soap:Reason>
+            </soap:Fault>
+          </soap:Body>
+        </soap:Envelope>
+        """
+      }
+
+      {:error, {:soap_fault, fault}} = Envelope.parse_response(response)
+
+      assert fault.code == "soap:Client"
+      assert fault.string == "Simple error message"
+      assert fault.soap_version == :v1_2
+    end
+
+    test "detects SOAP version from fault structure" do
+      # SOAP 1.2 structure should be detected even without namespace declaration
+      response = %{
+        status: 500,
+        body: """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Envelope>
+          <Body>
+            <Fault>
+              <Code>
+                <Value>soap:Client</Value>
+              </Code>
+              <Reason>
+                <Text>Error message</Text>
+              </Reason>
+            </Fault>
+          </Body>
+        </Envelope>
+        """
+      }
+
+      {:error, {:soap_fault, fault}} = Envelope.parse_response(response)
+
+      assert fault.code == "soap:Client"
+      assert fault.string == "Error message"
+      assert fault.soap_version == :v1_2
     end
   end
 

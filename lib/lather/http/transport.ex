@@ -10,10 +10,17 @@ defmodule Lather.Http.Transport do
   alias Lather.Auth.Basic
   alias Lather.Error
 
-  @default_headers [
+  # SOAP 1.1 headers
+  @soap_1_1_headers [
     {"content-type", "text/xml; charset=utf-8"},
     {"accept", "text/xml"},
     {"soapaction", ""}
+  ]
+
+  # SOAP 1.2 headers (no SOAPAction header - embedded in Content-Type)
+  @soap_1_2_headers [
+    {"content-type", "application/soap+xml; charset=utf-8"},
+    {"accept", "application/soap+xml, text/xml"}
   ]
 
   @default_timeout 30_000
@@ -32,6 +39,7 @@ defmodule Lather.Http.Transport do
   * `:timeout` - Request timeout in milliseconds
   * `:headers` - Additional headers to include
   * `:soap_action` - SOAPAction header value
+  * `:soap_version` - SOAP protocol version (`:v1_1` or `:v1_2`, default: `:v1_1`)
   * `:ssl_options` - SSL/TLS options for HTTPS connections
   * `:pool_timeout` - Connection pool timeout in milliseconds
   * `:basic_auth` - Basic authentication credentials `{username, password}`
@@ -127,24 +135,40 @@ defmodule Lather.Http.Transport do
 
   @doc """
   Builds HTTP headers for SOAP requests.
+
+  ## Parameters
+
+  * `options` - Request options including SOAP version and action
+
+  ## Options
+
+  * `:soap_version` - SOAP protocol version (`:v1_1` or `:v1_2`, default: `:v1_1`)
+  * `:soap_action` - SOAPAction header value or action to embed in Content-Type
+  * `:headers` - Additional custom headers
+  * `:basic_auth` - Basic authentication credentials
+
   """
   @spec build_headers(keyword()) :: [{String.t(), String.t()}]
   def build_headers(options) do
+    soap_version = Keyword.get(options, :soap_version, :v1_1)
     soap_action = Keyword.get(options, :soap_action, "")
     custom_headers = Keyword.get(options, :headers, [])
     basic_auth = Keyword.get(options, :basic_auth)
+
+    # Get version-specific default headers
+    default_headers = default_headers_for_version(soap_version)
 
     # Filter out default headers that are overridden by custom headers
     custom_header_names = Enum.map(custom_headers, fn {name, _} -> String.downcase(name) end)
 
     filtered_defaults =
-      Enum.reject(@default_headers, fn {name, _} ->
+      Enum.reject(default_headers, fn {name, _} ->
         String.downcase(name) in custom_header_names
       end)
 
     base_headers =
       filtered_defaults
-      |> update_soap_action(soap_action)
+      |> update_soap_action(soap_action, soap_version)
       |> Kernel.++(custom_headers)
 
     # Add Basic authentication header if provided
@@ -212,12 +236,32 @@ defmodule Lather.Http.Transport do
     Keyword.merge(default_ssl_options, options)
   end
 
-  defp update_soap_action(headers, soap_action) do
-    Enum.map(headers, fn
-      {"soapaction", _} -> {"soapaction", soap_action}
-      header -> header
-    end)
+  defp update_soap_action(headers, soap_action, soap_version) do
+    case soap_version do
+      :v1_1 ->
+        # SOAP 1.1: Use SOAPAction header
+        Enum.map(headers, fn
+          {"soapaction", _} -> {"soapaction", soap_action}
+          header -> header
+        end)
+
+      :v1_2 ->
+        # SOAP 1.2: Embed action in Content-Type header
+        Enum.map(headers, fn
+          {"content-type", content_type} when soap_action != "" ->
+            {"content-type", content_type <> "; action=\"" <> soap_action <> "\""}
+
+          {"content-type", content_type} ->
+            {"content-type", content_type}
+
+          header ->
+            header
+        end)
+    end
   end
+
+  defp default_headers_for_version(:v1_1), do: @soap_1_1_headers
+  defp default_headers_for_version(:v1_2), do: @soap_1_2_headers
 
   defp handle_response(%Finch.Response{status: status, body: body, headers: headers})
        when status in 200..299 do

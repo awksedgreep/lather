@@ -146,7 +146,8 @@ defmodule Lather.Wsdl.Analyzer do
       bindings: extract_bindings(parsed_wsdl),
       port_types: extract_port_types(parsed_wsdl),
       authentication: detect_authentication(parsed_wsdl),
-      namespaces: extract_namespaces(parsed_wsdl)
+      namespaces: extract_namespaces(parsed_wsdl),
+      soap_version: detect_soap_version(parsed_wsdl)
     }
 
     {:ok, service_info}
@@ -970,4 +971,32 @@ defmodule Lather.Wsdl.Analyzer do
       :element -> "- **#{type.name}** (Element): #{type.type}"
     end
   end
+
+  defp detect_soap_version(parsed_wsdl) do
+    # Check for SOAP 1.2 indicators in the raw WSDL structure
+    if has_soap_1_2_elements?(parsed_wsdl) do
+      :v1_2
+    else
+      :v1_1
+    end
+  end
+
+  defp has_soap_1_2_elements?(data) when is_map(data) do
+    # Check for soap12: prefixed keys or xmlns declarations
+    # Check values for soap12 namespace URLs
+    Enum.any?(Map.keys(data), fn key ->
+      String.contains?(key, "soap12:") ||
+        (String.contains?(key, "xmlns") && String.contains?(key, "soap12"))
+    end) ||
+      Enum.any?(Map.values(data), fn value ->
+        (is_binary(value) && String.contains?(value, "soap12")) ||
+          has_soap_1_2_elements?(value)
+      end)
+  end
+
+  defp has_soap_1_2_elements?(data) when is_list(data) do
+    Enum.any?(data, &has_soap_1_2_elements?/1)
+  end
+
+  defp has_soap_1_2_elements?(_), do: false
 end
