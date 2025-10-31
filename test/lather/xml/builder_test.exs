@@ -521,8 +521,7 @@ defmodule Lather.Xml.BuilderTest do
       # Test that exceptions are caught and returned as errors
       result = Builder.build(%{"root" => %{"nested" => :bad_value}})
       # Should either succeed or return error tuple
-      assert is_tuple(result) and tuple_size(result) == 2
-      is_tuple(result) and tuple_size(result) == 2
+      assert is_tuple(result) and elem(result, 0) in [:ok, :error]
     end
   end
 

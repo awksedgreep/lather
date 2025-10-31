@@ -374,7 +374,7 @@ defmodule Lather.Integration.WsdlParsingEdgeCasesTest do
 
       # Should detect some form of authentication requirement
       # (The specific detection logic would depend on implementation)
-      assert service_info.authentication != nil
+      assert not is_nil(service_info.authentication)
     end
 
     test "handles malformed WSDL gracefully" do

@@ -53,18 +53,3 @@ defmodule Lather.PhoenixIntegrationTest do
     end
   end
 end
-
-# Simple mock service module without using macros
-defmodule MockTestService do
-  def __soap_service__ do
-    %{
-      service_name: "TestService",
-      target_namespace: "http://test.com/",
-      operations: []
-    }
-  end
-
-  def __soap_operations__, do: []
-
-  def __soap_operation__(_name), do: nil
-end

@@ -277,7 +277,7 @@ defmodule Lather.Operation.Builder do
     end
   end
 
-  defp build_document_style_body(operation_info, parameters, :encoded, namespace) do
+  defp build_document_style_body(operation_info, parameters, :encoded, _namespace) do
     # For document/encoded, build similar to literal but with encoded semantics
     operation_name = operation_info.name
     input_parts = operation_info.input.parts || []

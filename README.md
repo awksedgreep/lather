@@ -4,7 +4,7 @@
 [![Documentation](https://img.shields.io/badge/docs-hexdocs-blue.svg)](https://hexdocs.pm/lather)
 [![License](https://img.shields.io/hexpm/l/lather.svg)](https://github.com/markcotner/lather/blob/main/LICENSE)
 
-**A comprehensive SOAP library for Elixir** that provides both client and server capabilities. Lather can work with any SOAP service without requiring service-specific implementations, using dynamic WSDL analysis and runtime operation building.
+**A comprehensive SOAP library for Elixir** that provides both client and server capabilities with modern web interfaces. Lather can work with any SOAP service without requiring service-specific implementations, using dynamic WSDL analysis and runtime operation building.
 
 ## ✨ Key Features
 
@@ -17,6 +17,53 @@
 - 📝 **Type Safety**: Dynamic type mapping and validation with struct generation
 - 🚨 **Robust Error Handling**: Structured error types with SOAP fault parsing
 
+## 🌟 Enhanced Features (v1.0.0+)
+
+### Multi-Protocol SOAP & REST Support
+
+Lather v1.0 introduces a **three-layer API architecture** that serves multiple protocol types from a single service:
+
+```
+┌─ SOAP 1.1 (Top - Maximum Compatibility)    │ Legacy systems, .NET Framework
+├─ SOAP 1.2 (Middle - Enhanced Features)     │ Modern SOAP, better error handling  
+└─ REST/JSON (Bottom - Modern Applications)  │ Web apps, mobile, JavaScript
+```
+
+### Interactive Web Interface
+
+Professional HTML5 testing interface similar to .NET Web Services:
+
+- 📝 **Interactive Forms**: Test operations directly in your browser
+- 🌐 **Multi-Protocol Examples**: See SOAP 1.1, SOAP 1.2, and JSON formats
+- 📱 **Responsive Design**: Works on desktop and mobile
+- 🌙 **Dark Mode Support**: Automatically respects browser dark mode preference
+- ⚡ **Real-time Validation**: Type-aware parameter validation
+
+### Enhanced WSDL Generation
+
+Generate comprehensive WSDL documents with multiple protocol bindings:
+
+```elixir
+# Standard WSDL (SOAP 1.1 only)  
+wsdl = Lather.Server.WsdlGenerator.generate(service_info, base_url)
+
+# Enhanced WSDL (multi-protocol)
+enhanced_wsdl = Lather.Server.EnhancedWSDLGenerator.generate(service_info, base_url)
+
+# Interactive web forms
+forms = Lather.Server.FormGenerator.generate_service_overview(service_info, base_url)
+```
+
+### Flexible URL Structure
+
+- `GET  /service` → Interactive service overview with testing forms
+- `GET  /service?wsdl` → Standard WSDL download
+- `GET  /service?wsdl&enhanced=true` → Multi-protocol WSDL  
+- `GET  /service?op=OperationName` → Interactive operation testing form
+- `POST /service` → SOAP 1.1 endpoint (maximum compatibility)
+- `POST /service/v1.2` → SOAP 1.2 endpoint (enhanced features)
+- `POST /service/api` → JSON/REST endpoint (modern applications)
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -26,7 +73,9 @@ Add `lather` to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:lather, "~> 0.9.0"}
+    {:lather, "~> 1.0.0"},
+    # Optional: for JSON/REST endpoints in enhanced features
+    {:jason, "~> 1.4"}
   ]
 end
 ```
@@ -74,6 +123,89 @@ end
 # Add to your Phoenix router
 pipe_through :api
 post "/soap/user", Lather.Server.Plug, service: MyApp.UserService
+```
+
+### Enhanced Multi-Protocol Server (v1.0.0+)
+
+```elixir
+# Define a service that supports SOAP 1.1, SOAP 1.2, and JSON/REST
+defmodule MyApp.UserService do
+  use Lather.Server
+
+  @namespace "http://myapp.com/users"
+  @service_name "UserManagementService"
+
+  soap_operation "GetUser" do
+    description "Retrieve user information by ID"
+    
+    input do
+      parameter "userId", :string, required: true, description: "User identifier"
+      parameter "includeProfile", :boolean, required: false, description: "Include full profile"
+    end
+    
+    output do
+      parameter "user", "tns:User", description: "User information"
+    end
+    
+    soap_action "#{@namespace}/GetUser"
+  end
+
+  def get_user(%{"userId" => user_id} = params) do
+    include_profile = Map.get(params, "includeProfile", false)
+    # Your business logic here
+    {:ok, %{"user" => %{"id" => user_id, "name" => "John Doe"}}}
+  end
+end
+
+# Phoenix router with enhanced features
+scope "/api/users" do
+  pipe_through :api
+  
+  # Multi-protocol endpoints
+  match :*, "/", Lather.Server.EnhancedPlug, service: MyApp.UserService
+  match :*, "/*path", Lather.Server.EnhancedPlug, service: MyApp.UserService
+end
+
+# Generate enhanced WSDL with multiple protocols
+service_info = MyApp.UserService.__service_info__()
+enhanced_wsdl = Lather.Server.EnhancedWSDLGenerator.generate(service_info, "https://myapp.com/api/users")
+
+# Generate interactive web forms
+overview_page = Lather.Server.FormGenerator.generate_service_overview(service_info, "https://myapp.com/api/users")
+```
+
+### Access Multiple Protocol Endpoints
+
+Your service automatically exposes multiple endpoints:
+
+```bash
+# Interactive web interface
+curl -X GET "https://myapp.com/api/users"
+
+# Standard WSDL (SOAP 1.1)
+curl -X GET "https://myapp.com/api/users?wsdl"
+
+# Enhanced WSDL (multi-protocol)
+curl -X GET "https://myapp.com/api/users?wsdl&enhanced=true"
+
+# Interactive operation form
+curl -X GET "https://myapp.com/api/users?op=GetUser"
+
+# SOAP 1.1 request
+curl -X POST "https://myapp.com/api/users" \
+  -H "Content-Type: text/xml; charset=utf-8" \
+  -H "SOAPAction: http://myapp.com/users/GetUser" \
+  -d '<soap:Envelope>...</soap:Envelope>'
+
+# SOAP 1.2 request
+curl -X POST "https://myapp.com/api/users/v1.2" \
+  -H "Content-Type: application/soap+xml; charset=utf-8; action=\"http://myapp.com/users/GetUser\"" \
+  -d '<soap:Envelope>...</soap:Envelope>'
+
+# JSON/REST request
+curl -X POST "https://myapp.com/api/users/api" \
+  -H "Content-Type: application/json" \
+  -d '{"operation": "GetUser", "parameters": {"userId": "123"}}'
 ```
 
 ## 📚 Documentation & Examples

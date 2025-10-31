@@ -227,7 +227,7 @@ defmodule Lather.DynamicClient do
 
   defp create_base_client(service_info, options) do
     endpoint = determine_endpoint(service_info, options)
-    service_name = Keyword.get(options, :service_name, service_info.service_name)
+    _service_name = Keyword.get(options, :service_name, service_info.service_name)
 
     base_client = Client.new(endpoint, options)
 
@@ -340,7 +340,7 @@ defmodule Lather.DynamicClient do
 
   defp send_request(base_client, soap_envelope, operation_info, default_opts, call_opts) do
     alias Lather.Http.Transport
-    alias Lather.Soap.Envelope
+
     alias Lather.Xml.Parser
 
     soap_action = operation_info.soap_action || ""

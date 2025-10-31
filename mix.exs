@@ -4,10 +4,11 @@ defmodule Lather.MixProject do
   def project do
     [
       app: :lather,
-      version: "0.9.0",
+      version: "1.0.0",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
-      description: "A comprehensive SOAP library for Elixir with client and server support, WSDL parsing, and Phoenix integration",
+      description:
+        "A comprehensive SOAP library for Elixir with client and server support, WSDL parsing, and Phoenix integration",
       package: package(),
       deps: deps(),
       docs: docs()
@@ -29,6 +30,7 @@ defmodule Lather.MixProject do
       {:sweet_xml, "~> 0.7"},
       {:xml_builder, "~> 2.2"},
       {:telemetry, "~> 1.2"},
+      {:jason, "~> 1.4", optional: true},
       {:plug, "~> 1.14", optional: true},
       {:ex_doc, "~> 0.30", only: :dev, runtime: false}
     ]

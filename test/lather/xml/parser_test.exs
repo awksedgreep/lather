@@ -442,7 +442,7 @@ defmodule Lather.Xml.ParserTest do
       xml = "<?xml version=\"1.0\"?><element id=\"123\" name=\"test\">content</element>"
       {:ok, parsed} = Parser.parse(xml)
 
-      element = parsed["element"]
+      _element = parsed["element"]
       # Note: extract_attributes expects raw XML element, not parsed data
       # This test verifies the parsing already extracted attributes
       assert String.contains?(inspect(parsed["element"]), "@id") or

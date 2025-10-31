@@ -1,7 +1,6 @@
 defmodule Lather.Integration.Soap12IntegrationTest do
   use ExUnit.Case, async: true
 
-  alias Lather.DynamicClient
   alias Lather.Http.Transport
   alias Lather.Soap.Envelope
   alias Lather.Xml.Parser
@@ -398,7 +397,7 @@ defmodule Lather.Integration.Soap12IntegrationTest do
       # DynamicClient -> Builder -> Envelope -> Transport
 
       # Mock operation info
-      operation_info = %{
+      _operation_info = %{
         name: "TestOperation",
         soap_action: "http://example.com/TestOp",
         input: %{
@@ -408,7 +407,7 @@ defmodule Lather.Integration.Soap12IntegrationTest do
       }
 
       # Mock service info
-      service_info = %{
+      _service_info = %{
         target_namespace: "http://example.com",
         soap_version: :v1_2
       }

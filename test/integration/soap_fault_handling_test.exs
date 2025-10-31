@@ -1,9 +1,7 @@
 defmodule Lather.Integration.SoapFaultHandlingTest do
   use ExUnit.Case, async: true
 
-  alias Lather.DynamicClient
   alias Lather.Xml.Parser
-  alias Lather.Http.Transport
 
   describe "SOAP Fault Handling" do
     test "parses SOAP 1.1 faults with text nodes and attributes" do

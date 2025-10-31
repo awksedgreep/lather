@@ -1,7 +1,6 @@
 defmodule Lather.Integration.RealWorldScenariosTest do
   use ExUnit.Case, async: true
 
-  alias Lather.DynamicClient
   alias Lather.Operation.Builder
   alias Lather.Xml.Parser
   alias Lather.Http.Transport

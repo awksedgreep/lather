@@ -11,9 +11,9 @@ defmodule Lather.Client do
   defstruct [:endpoint, :options]
 
   @type t :: %__MODULE__{
-    endpoint: String.t(),
-    options: keyword()
-  }
+          endpoint: String.t(),
+          options: keyword()
+        }
 
   @doc """
   Creates a new SOAP client for the given endpoint.
@@ -26,7 +26,7 @@ defmodule Lather.Client do
 
   ## Examples
 
-      iex> client = Lather.Client.new("https://example.com/soap")
+      iex> _client = Lather.Client.new("https://example.com/soap")
       %Lather.Client{endpoint: "https://example.com/soap", options: []}
 
   """
@@ -50,7 +50,7 @@ defmodule Lather.Client do
 
   ## Examples
 
-      iex> client = Lather.Client.new("https://example.com/soap")
+      iex> _client = Lather.Client.new("https://example.com/soap")
       iex> # This would make an actual HTTP request:
       iex> # Lather.Client.call(client, :get_user, %{id: 123})
 
