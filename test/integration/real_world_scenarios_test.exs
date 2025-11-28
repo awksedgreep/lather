@@ -530,6 +530,145 @@ defmodule Lather.Integration.RealWorldScenariosTest do
     end
   end
 
+  describe "SOAP response parsing with different namespace prefixes" do
+    test "parses response with SOAP-ENV: prefix" do
+      operation_info = %{
+        name: "GetWeather",
+        style: "document",
+        input: %{message: "GetWeatherRequest", parts: [], use: "literal"},
+        output: %{
+          message: "GetWeatherResponse",
+          parts: [%{name: "result", type: "xsd:string"}],
+          use: "literal"
+        }
+      }
+
+      # Response with SOAP-ENV: prefix (common in enterprise SOAP services)
+      response_envelope = %{
+        "SOAP-ENV:Envelope" => %{
+          "@xmlns:SOAP-ENV" => "http://schemas.xmlsoap.org/soap/envelope/",
+          "SOAP-ENV:Body" => %{
+            "ns:GetWeather_Output" => %{
+              "@xmlns:ns" => "http://example.com/weather",
+              "Temperature" => "22",
+              "Condition" => "Sunny"
+            }
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_envelope)
+
+      # When response element has namespace prefix, it returns the full body
+      assert result["ns:GetWeather_Output"]["Temperature"] == "22"
+      assert result["ns:GetWeather_Output"]["Condition"] == "Sunny"
+    end
+
+    test "parses response with soap: prefix" do
+      operation_info = %{
+        name: "GetData",
+        style: "document",
+        input: %{message: "GetDataRequest", parts: [], use: "literal"},
+        output: %{
+          message: "GetDataResponse",
+          parts: [%{name: "result", type: "xsd:string"}],
+          use: "literal"
+        }
+      }
+
+      response_envelope = %{
+        "soap:Envelope" => %{
+          "@xmlns:soap" => "http://schemas.xmlsoap.org/soap/envelope/",
+          "soap:Body" => %{
+            "GetDataResponse" => %{
+              "value" => "test_data"
+            }
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_envelope)
+
+      assert result["value"] == "test_data"
+    end
+
+    test "parses response with no namespace prefix on envelope" do
+      operation_info = %{
+        name: "SimpleOp",
+        style: "document",
+        input: %{message: "SimpleRequest", parts: [], use: "literal"},
+        output: %{
+          message: "SimpleResponse",
+          parts: [%{name: "result", type: "xsd:string"}],
+          use: "literal"
+        }
+      }
+
+      response_envelope = %{
+        "Envelope" => %{
+          "Body" => %{
+            "SimpleResponse" => %{
+              "status" => "ok"
+            }
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_envelope)
+
+      assert result["status"] == "ok"
+    end
+
+    test "parses response with custom namespace prefix" do
+      operation_info = %{
+        name: "CustomOp",
+        style: "document",
+        input: %{message: "CustomRequest", parts: [], use: "literal"},
+        output: %{
+          message: "CustomResponse",
+          parts: [%{name: "result", type: "xsd:string"}],
+          use: "literal"
+        }
+      }
+
+      # Some services use custom prefixes like "soapenv:" or "env:"
+      response_envelope = %{
+        "soapenv:Envelope" => %{
+          "@xmlns:soapenv" => "http://schemas.xmlsoap.org/soap/envelope/",
+          "soapenv:Body" => %{
+            "CustomResponse" => %{
+              "result" => "success"
+            }
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_envelope)
+
+      assert result["result"] == "success"
+    end
+
+    test "returns error for invalid envelope structure" do
+      operation_info = %{
+        name: "TestOp",
+        style: "document",
+        input: %{message: "TestRequest", parts: [], use: "literal"},
+        output: %{message: "TestResponse", parts: [], use: "literal"}
+      }
+
+      invalid_response = %{
+        "NotAnEnvelope" => %{
+          "SomeContent" => "value"
+        }
+      }
+
+      {:error, error} = Builder.parse_response(operation_info, invalid_response)
+
+      assert error.reason == :invalid_soap_response
+      assert error.type == :validation_error
+    end
+  end
+
   # Note: Endpoint resolution testing is done through integration tests
   # with the public DynamicClient API rather than testing private functions
 end
