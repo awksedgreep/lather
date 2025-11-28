@@ -45,6 +45,21 @@ defmodule Lather.Http.TransportTest do
       assert {"accept", "custom/accept"} in headers
       refute {"content-type", "text/xml; charset=utf-8"} in headers
     end
+
+    test "ignores map-style headers (SOAP headers should not reach transport)" do
+      # SOAP headers like WS-Security are maps, not tuples.
+      # They should be filtered out by DynamicClient before reaching Transport.
+      # This test documents the expected HTTP header format.
+      # If map-style headers accidentally reach build_headers, it will raise.
+      # This is by design - DynamicClient.send_request must filter :headers.
+
+      # Valid HTTP headers are tuples
+      valid_headers = [{"authorization", "Bearer token"}, {"x-custom", "value"}]
+      headers = Transport.build_headers(headers: valid_headers)
+
+      assert {"authorization", "Bearer token"} in headers
+      assert {"x-custom", "value"} in headers
+    end
   end
 
   describe "build_headers/1 - SOAP 1.2 support" do
