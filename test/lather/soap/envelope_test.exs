@@ -45,6 +45,38 @@ defmodule Lather.Soap.EnvelopeTest do
       assert String.contains?(xml, "<MessageID>uuid:12345</MessageID>")
     end
 
+    test "includes SOAP headers when provided as list of maps" do
+      # This format is used by WS-Security and other complex headers
+      headers = [
+        %{"wsse:Security" => %{
+          "@xmlns:wsse" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
+          "wsse:UsernameToken" => %{
+            "wsse:Username" => "testuser",
+            "wsse:Password" => "testpass"
+          }
+        }}
+      ]
+
+      {:ok, xml} = Envelope.build(:GetUser, %{id: "123"}, headers: headers)
+
+      assert String.contains?(xml, "<soap:Header>")
+      assert String.contains?(xml, "<wsse:Security")
+      assert String.contains?(xml, "<wsse:Username>testuser</wsse:Username>")
+      assert String.contains?(xml, "<wsse:Password>testpass</wsse:Password>")
+    end
+
+    test "merges multiple map headers together" do
+      headers = [
+        %{"Header1" => "Value1"},
+        %{"Header2" => "Value2"}
+      ]
+
+      {:ok, xml} = Envelope.build(:GetUser, %{id: "123"}, headers: headers)
+
+      assert String.contains?(xml, "<Header1>Value1</Header1>")
+      assert String.contains?(xml, "<Header2>Value2</Header2>")
+    end
+
     test "includes empty header element when no headers provided" do
       {:ok, xml} = Envelope.build(:GetUser, %{id: "123"})
 

@@ -101,7 +101,14 @@ defmodule Lather.Soap.Envelope do
   defp build_header([]), do: nil
 
   defp build_header(headers) when is_list(headers) do
-    Enum.into(headers, %{})
+    # Headers can be:
+    # 1. List of tuples: [{"Key", "Value"}, {"Key2", "Value2"}]
+    # 2. List of maps: [%{"wsse:Security" => %{...}}, %{"Header2" => "Value"}]
+    # We need to handle both formats and merge them into a single map
+    Enum.reduce(headers, %{}, fn
+      {key, value}, acc -> Map.put(acc, key, value)
+      header_map, acc when is_map(header_map) -> Map.merge(acc, header_map)
+    end)
   end
 
   defp build_body(operation, params, namespace) do
