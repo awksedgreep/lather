@@ -47,7 +47,11 @@ defmodule Lather.Operation.Builder do
   """
   @spec build_request(map(), map(), keyword()) :: {:ok, String.t()} | {:error, term()}
   def build_request(operation_info, parameters, options \\ []) do
-    style = Keyword.get(options, :style, :document)
+    # Style: prefer operation_info.style, then options, then default to :document
+    style =
+      operation_info[:style] ||
+        Keyword.get(options, :style, :document)
+
     version = Keyword.get(options, :version, :v1_1)
     # Extract use type from operation_info first, then options, then default
     use_type =
@@ -57,23 +61,39 @@ defmodule Lather.Operation.Builder do
     namespace = Keyword.get(options, :namespace, "")
     headers = Keyword.get(options, :headers, [])
 
+    # Check if this is element-based document/literal (body is already properly structured)
+    input_parts = operation_info.input.parts || []
+    element_based = Enum.any?(input_parts, fn part -> part[:element] != nil end)
+
     with {:ok, body_content} <-
            build_operation_body(operation_info, parameters, style, use_type, namespace) do
       # Extract operation name and parameters from body content
       operation_name = operation_info.name
 
-      # Get the parameters from the body content
-      processed_params =
-        case body_content do
-          %{^operation_name => params} -> params
-          _ -> body_content
+      # For element-based document/literal, the body_content is already the correct
+      # structure (e.g., %{"LeadCotizadorOper_Input" => ...}) and should NOT be
+      # wrapped again in the operation name.
+      {processed_params, raw_body} =
+        if element_based and style in [:document, "document"] do
+          # Use body_content directly as raw body
+          {body_content, true}
+        else
+          # Traditional wrapping - extract params from operation wrapper if present
+          params =
+            case body_content do
+              %{^operation_name => inner_params} -> inner_params
+              _ -> body_content
+            end
+
+          {params, false}
         end
 
       # Build envelope with proper parameters
       envelope_options = [
         namespace: namespace,
         headers: headers,
-        version: version
+        version: version,
+        raw_body: raw_body
       ]
 
       Envelope.build(operation_name, processed_params, envelope_options)

@@ -146,6 +146,59 @@ defmodule Lather.Soap.EnvelopeTest do
           assert true
       end
     end
+
+    test "raw_body option uses params directly as body without wrapping in operation" do
+      # For document/literal with element-based parts, the body should contain
+      # the element directly (e.g., GetWeather_Input), not wrapped in operation name
+      params = %{
+        "GetWeather_Input" => %{
+          "@xmlns" => "http://example.com/weather",
+          "WeatherRequest" => %{
+            "Location" => %{
+              "City" => "London"
+            }
+          }
+        }
+      }
+
+      {:ok, xml} = Envelope.build(:GetWeather, params, raw_body: true)
+
+      # Should contain the element directly in body, NOT wrapped in <GetWeather>
+      assert String.contains?(xml, "<soap:Body>")
+      assert String.contains?(xml, "<GetWeather_Input")
+      assert String.contains?(xml, "xmlns=\"http://example.com/weather\"")
+      assert String.contains?(xml, "<WeatherRequest>")
+      # Should NOT contain the operation name as a wrapper
+      refute String.contains?(xml, "<GetWeather>")
+      refute String.contains?(xml, "<GetWeather ")
+    end
+
+    test "raw_body: false (default) wraps params in operation name" do
+      params = %{
+        "SomeElement" => %{"value" => "test"}
+      }
+
+      {:ok, xml} = Envelope.build(:MyOperation, params, raw_body: false)
+
+      # Should wrap in operation name
+      assert String.contains?(xml, "<MyOperation>")
+      assert String.contains?(xml, "<SomeElement>")
+    end
+
+    test "raw_body with namespace preserves namespace in element" do
+      params = %{
+        "InputElement" => %{
+          "@xmlns" => "http://example.com/ns",
+          "data" => "value"
+        }
+      }
+
+      {:ok, xml} = Envelope.build(:Operation, params, raw_body: true)
+
+      assert String.contains?(xml, "<InputElement")
+      assert String.contains?(xml, "xmlns=\"http://example.com/ns\"")
+      assert String.contains?(xml, "<data>value</data>")
+    end
   end
 
   describe "parse_response/1 - SOAP response parsing" do

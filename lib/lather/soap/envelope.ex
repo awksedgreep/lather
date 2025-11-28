@@ -38,12 +38,22 @@ defmodule Lather.Soap.Envelope do
     version = Keyword.get(options, :version, :v1_1)
     headers = Keyword.get(options, :headers, [])
     namespace = Keyword.get(options, :namespace, "")
+    # raw_body: when true, params are used directly as body content without wrapping
+    # in operation element (used for document/literal with element-based parts)
+    raw_body = Keyword.get(options, :raw_body, false)
+
+    body_content =
+      if raw_body do
+        params
+      else
+        build_body(operation, params, namespace)
+      end
 
     envelope = %{
       "soap:Envelope" => %{
         "@xmlns:soap" => namespace_for_version(version),
         "soap:Header" => build_header(headers),
-        "soap:Body" => build_body(operation, params, namespace)
+        "soap:Body" => body_content
       }
     }
 
