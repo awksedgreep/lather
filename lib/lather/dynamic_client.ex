@@ -136,7 +136,6 @@ defmodule Lather.DynamicClient do
     * `:headers` - Additional SOAP headers
     * `:timeout` - Request timeout override
     * `:validate` - Whether to validate parameters (default: true)
-    * `:soap_action` - Override SOAPAction header (useful for services requiring specific formats)
 
   ## Examples
 
@@ -344,12 +343,7 @@ defmodule Lather.DynamicClient do
 
     alias Lather.Xml.Parser
 
-    # Allow overriding soap_action via call options, fall back to operation_info
-    soap_action =
-      Keyword.get(call_opts, :soap_action) ||
-        operation_info.soap_action ||
-        ""
-
+    soap_action = operation_info.soap_action || ""
     timeout = Keyword.get(call_opts, :timeout) || Keyword.get(default_opts, :timeout, 30_000)
 
     # Get SOAP version from default options
@@ -357,11 +351,7 @@ defmodule Lather.DynamicClient do
 
     # Remove :headers from call_opts since those are SOAP headers (already consumed by build_request),
     # not HTTP headers. Transport.build_headers expects HTTP headers as tuples {name, value}.
-    # Also remove :soap_action as it's handled above.
-    http_call_opts =
-      call_opts
-      |> Keyword.delete(:headers)
-      |> Keyword.delete(:soap_action)
+    http_call_opts = Keyword.delete(call_opts, :headers)
 
     # Combine client options with call options, pass soap_action and version
     transport_options =
