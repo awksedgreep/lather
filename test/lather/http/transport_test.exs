@@ -10,13 +10,15 @@ defmodule Lather.Http.TransportTest do
 
       assert {"content-type", "text/xml; charset=utf-8"} in headers
       assert {"accept", "text/xml"} in headers
-      assert {"soapaction", ""} in headers
+      # SOAPAction value is quoted per SOAP 1.1 spec (empty string becomes "")
+      assert {"soapaction", "\"\""} in headers
     end
 
     test "includes custom SOAPAction" do
       headers = Transport.build_headers(soap_action: "http://example.com/action")
 
-      assert {"soapaction", "http://example.com/action"} in headers
+      # SOAPAction value MUST be quoted per SOAP 1.1 spec
+      assert {"soapaction", "\"http://example.com/action\""} in headers
     end
 
     test "includes custom headers" do
@@ -98,14 +100,16 @@ defmodule Lather.Http.TransportTest do
 
       assert {"content-type", "text/xml; charset=utf-8"} in headers
       assert {"accept", "text/xml"} in headers
-      assert {"soapaction", ""} in headers
+      # SOAPAction value is quoted per SOAP 1.1 spec (empty string becomes "")
+      assert {"soapaction", "\"\""} in headers
     end
 
     test "SOAP 1.1 still uses SOAPAction header" do
       headers =
         Transport.build_headers(soap_version: :v1_1, soap_action: "http://example.com/action")
 
-      assert {"soapaction", "http://example.com/action"} in headers
+      # SOAPAction value MUST be quoted per SOAP 1.1 spec
+      assert {"soapaction", "\"http://example.com/action\""} in headers
       content_type_header = Enum.find(headers, fn {name, _} -> name == "content-type" end)
       {_, content_type} = content_type_header
       # Should not embed action in Content-Type for SOAP 1.1
