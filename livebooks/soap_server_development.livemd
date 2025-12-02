@@ -201,6 +201,35 @@ IO.puts(wsdl_content)
 
 <!-- livebook:{"break_markdown":true} -->
 
+## Enhanced Multi-Protocol Support (v1.0+)
+
+Lather v1.0.0 introduced enhanced server features with multi-protocol support. Your SOAP services can now expose:
+- SOAP 1.1 endpoints (maximum compatibility)
+- SOAP 1.2 endpoints (enhanced features)
+- JSON/REST endpoints (modern applications)
+- Interactive web forms for testing
+
+```elixir
+# Generate enhanced WSDL with multi-protocol support
+enhanced_wsdl = Lather.Server.EnhancedWSDLGenerator.generate(service_info, base_url)
+
+IO.puts("🌟 Enhanced WSDL (first 500 chars):")
+IO.puts(String.slice(enhanced_wsdl, 0, 500) <> "...")
+
+# Generate interactive web forms
+overview_html = Lather.Server.FormGenerator.generate_service_overview(service_info, base_url)
+
+IO.puts("\n🌐 Interactive web interface also generated!")
+IO.puts("   • GET  #{base_url}           → Service overview with forms")
+IO.puts("   • GET  #{base_url}?wsdl      → Standard WSDL")
+IO.puts("   • GET  #{base_url}?wsdl&enhanced=true → Enhanced multi-protocol WSDL")
+IO.puts("   • POST #{base_url}           → SOAP 1.1 endpoint")
+IO.puts("   • POST #{base_url}/v1.2      → SOAP 1.2 endpoint")
+IO.puts("   • POST #{base_url}/api       → JSON/REST endpoint")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
 ## Testing SOAP Operations
 
 Let's test our calculator service operations directly:
@@ -1126,19 +1155,43 @@ defmodule DeploymentPatterns do
     IO.puts("🔥 Phoenix Integration Pattern")
     IO.puts("=" |> String.duplicate(40))
 
-    phoenix_controller = """
-    # In your Phoenix router
+    phoenix_router_basic = """
+    # Basic Phoenix Router (Traditional)
     scope "/soap" do
       pipe_through :api
 
       # Calculator service
-      post "/calculator", SOAPController, :handle_calculator
-      get "/calculator", SOAPController, :handle_calculator  # For WSDL
-
-      # Bookstore service
-      post "/bookstore", SOAPController, :handle_bookstore
-      get "/bookstore", SOAPController, :handle_bookstore   # For WSDL
+      post "/calculator", Lather.Server.Plug, service: CalculatorService
+      get "/calculator", Lather.Server.Plug, service: CalculatorService  # For WSDL
     end
+    """
+
+    phoenix_router_enhanced = """
+    # Enhanced Phoenix Router (v1.0+) - Multi-Protocol Support
+    scope "/api" do
+      pipe_through :api
+
+      # Multi-protocol endpoints - supports SOAP 1.1, SOAP 1.2, JSON/REST, and web forms
+      match :*, "/calculator", Lather.Server.EnhancedPlug, service: CalculatorService
+      match :*, "/calculator/*path", Lather.Server.EnhancedPlug, service: CalculatorService
+      
+      match :*, "/bookstore", Lather.Server.EnhancedPlug, service: BookstoreService
+      match :*, "/bookstore/*path", Lather.Server.EnhancedPlug, service: BookstoreService
+    end
+
+    # This automatically provides:
+    # - GET  /api/calculator              → Interactive web interface
+    # - GET  /api/calculator?wsdl         → Standard WSDL
+    # - GET  /api/calculator?wsdl&enhanced=true → Enhanced WSDL
+    # - POST /api/calculator              → SOAP 1.1 endpoint
+    # - POST /api/calculator/v1.2         → SOAP 1.2 endpoint
+    # - POST /api/calculator/api          → JSON/REST endpoint
+    """
+
+    IO.puts(phoenix_router_basic)
+    IO.puts("\n" <> String.duplicate("-", 50))
+    IO.puts("\nEnhanced Pattern (Recommended):\n")
+    IO.puts(phoenix_router_enhanced)
 
     # In your controller
     defmodule MyAppWeb.SOAPController do
@@ -1424,9 +1477,16 @@ summary = """
 
 📄 WSDL Generation:
    • Automatic WSDL generation from service definitions
+   • Enhanced multi-protocol WSDL (v1.0+)
    • Type mapping from Elixir to XSD
    • Complete service documentation
    • Standards-compliant WSDL documents
+
+🌐 Multi-Protocol Support (v1.0+):
+   • SOAP 1.1 and SOAP 1.2 endpoints
+   • JSON/REST API generation
+   • Interactive web forms for testing
+   • Automatic protocol negotiation
 
 🔧 Request/Response Handling:
    • Parse incoming SOAP requests
@@ -1447,13 +1507,14 @@ summary = """
    • Error pattern analysis
 
 🚀 Deployment Options:
-   • Phoenix framework integration
+   • Phoenix framework integration (basic and enhanced)
    • Standalone HTTP servers
    • Docker containerization
    • Kubernetes orchestration
 
 🎯 Next Steps:
    • Build production SOAP services
+   • Use EnhancedPlug for multi-protocol support
    • Implement comprehensive test suites
    • Set up monitoring and alerting
    • Create API documentation

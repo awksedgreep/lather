@@ -768,4 +768,4 @@ Contributions are welcome! Please open an issue or pull request on GitHub.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT License - see the LICENSE file in the repository for details.
