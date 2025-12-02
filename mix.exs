@@ -4,7 +4,7 @@ defmodule Lather.MixProject do
   def project do
     [
       app: :lather,
-      version: "1.0.1",
+      version: "1.0.2",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       description:
@@ -72,8 +72,8 @@ defmodule Lather.MixProject do
     [
       main: "readme",
       name: "Lather SOAP Library",
-      source_ref: "v1.0.1",
-      source_url: "https://github.com/markcotner/lather",
+      source_ref: "v1.0.2",
+      source_url: "https://github.com/awksedgreep/lather",
       extras: [
         "README.md",
         "CHANGELOG.md",
