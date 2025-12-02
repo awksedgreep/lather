@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2025-12-02
+
+### Added
+- Enhanced multi-protocol support documentation in soap_server_development livebook
+- Examples of EnhancedPlug and EnhancedWSDLGenerator usage
+- Phoenix router patterns for multi-protocol endpoints
+
+### Changed
+- Updated livebook documentation to highlight v1.0+ enhanced features
+- Improved deployment patterns section with basic and enhanced examples
+
 ## [1.0.3] - 2025-12-02
 
 ### Fixed
