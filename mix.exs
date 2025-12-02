@@ -4,14 +4,14 @@ defmodule Lather.MixProject do
   def project do
     [
       app: :lather,
-      version: "1.0.2",
+      version: "1.0.3",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       description:
         "Production-ready SOAP library for Elixir featuring SOAP 1.1/1.2 support, dynamic WSDL parsing, " <>
           "interactive web forms, MTOM attachments, Phoenix integration, and multi-protocol API generation",
-      source_url: "https://github.com/markcotner/lather",
-      homepage_url: "https://github.com/markcotner/lather",
+      source_url: "https://github.com/awksedgreep/lather",
+      homepage_url: "https://github.com/awksedgreep/lather",
       package: package(),
       deps: deps(),
       docs: docs()
@@ -44,9 +44,9 @@ defmodule Lather.MixProject do
       maintainers: ["Mark Cotner"],
       licenses: ["MIT"],
       links: %{
-        "GitHub" => "https://github.com/markcotner/lather",
+        "GitHub" => "https://github.com/awksedgreep/lather",
         "Documentation" => "https://hexdocs.pm/lather",
-        "Changelog" => "https://github.com/markcotner/lather/blob/main/CHANGELOG.md"
+        "Changelog" => "https://github.com/awksedgreep/lather/blob/main/CHANGELOG.md"
       },
       files:
         ~w(lib priv mix.exs README.md LICENSE CHANGELOG.md USAGE.md TESTING.md API.md RELEASE_NOTES_1.0.0.md TODO.md),
@@ -72,7 +72,7 @@ defmodule Lather.MixProject do
     [
       main: "readme",
       name: "Lather SOAP Library",
-      source_ref: "v1.0.2",
+      source_ref: "v1.0.3",
       source_url: "https://github.com/awksedgreep/lather",
       extras: [
         "README.md",

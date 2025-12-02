@@ -223,9 +223,9 @@ This release represents a significant advancement in Elixir's SOAP capabilities,
 ## 📞 **Support & Resources**
 
 - **Documentation**: [https://hexdocs.pm/lather](https://hexdocs.pm/lather)
-- **Repository**: [https://github.com/markcotner/lather](https://github.com/markcotner/lather)
-- **Issues**: [GitHub Issues](https://github.com/markcotner/lather/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/markcotner/lather/discussions)
+- **Repository**: [https://github.com/awksedgreep/lather](https://github.com/awksedgreep/lather)
+- **Issues**: [GitHub Issues](https://github.com/awksedgreep/lather/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/awksedgreep/lather/discussions)
 
 ---
 

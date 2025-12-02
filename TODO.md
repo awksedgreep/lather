@@ -210,7 +210,7 @@ This document outlines planned features, improvements, and enhancements for futu
 
 ## 🤝 Contributing
 
-See our [Contributing Guide](CONTRIBUTING.md) for information on how to help with any of these items.
+Contributions are welcome for any of these items! Please open an issue or pull request on GitHub.
 
 For questions or suggestions about this roadmap, please open an issue on GitHub.
 

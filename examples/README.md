@@ -319,4 +319,4 @@ To add new examples:
 4. Add error handling examples
 5. Include both simple and complex scenarios
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines.
+Contributions are welcome! Please open an issue or pull request on GitHub.

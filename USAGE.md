@@ -764,7 +764,7 @@ Run with: `livebook server livebooks/getting_started.livemd`
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to contribute to Lather.
+Contributions are welcome! Please open an issue or pull request on GitHub.
 
 ## License
 

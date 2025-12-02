@@ -2,7 +2,7 @@
 
 [![Hex.pm](https://img.shields.io/hexpm/v/lather.svg)](https://hex.pm/packages/lather)
 [![Documentation](https://img.shields.io/badge/docs-hexdocs-blue.svg)](https://hexdocs.pm/lather)
-[![License](https://img.shields.io/hexpm/l/lather.svg)](https://github.com/markcotner/lather/blob/main/LICENSE)
+[![License](https://img.shields.io/hexpm/l/lather.svg)](https://github.com/awksedgreep/lather/blob/main/LICENSE)
 
 **A comprehensive SOAP library for Elixir** that provides both client and server capabilities with modern web interfaces. Lather can work with any SOAP service without requiring service-specific implementations, using dynamic WSDL analysis and runtime operation building.
 
@@ -438,7 +438,7 @@ config :lather, :finch,
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions!
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -461,8 +461,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📞 Support
 
 - 📖 [Documentation](https://hexdocs.pm/lather)
-- 🐛 [Issues](https://github.com/markcotner/lather/issues)
-- 💬 [Discussions](https://github.com/markcotner/lather/discussions)
+- 🐛 [Issues](https://github.com/awksedgreep/lather/issues)
+- 💬 [Discussions](https://github.com/awksedgreep/lather/discussions)
 
 ## 🗺️ Roadmap
 
