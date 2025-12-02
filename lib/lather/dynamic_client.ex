@@ -349,10 +349,14 @@ defmodule Lather.DynamicClient do
     # Get SOAP version from default options
     soap_version = Keyword.get(default_opts, :soap_version, :v1_1)
 
+    # Remove :headers from call_opts since those are SOAP headers (already consumed by build_request),
+    # not HTTP headers. Transport.build_headers expects HTTP headers as tuples {name, value}.
+    http_call_opts = Keyword.delete(call_opts, :headers)
+
     # Combine client options with call options, pass soap_action and version
     transport_options =
       base_client.options ++
-        call_opts ++
+        http_call_opts ++
         [
           timeout: timeout,
           soap_action: soap_action,

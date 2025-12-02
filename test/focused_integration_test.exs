@@ -108,7 +108,8 @@ defmodule Lather.FocusedIntegrationTest do
 
       headers = Lather.Http.Transport.build_headers(options)
       assert {"user-agent", "Lather-Test/1.0"} in headers
-      assert {"soapaction", "TestAction"} in headers
+      # SOAPAction value MUST be quoted per SOAP 1.1 spec
+      assert {"soapaction", "\"TestAction\""} in headers
     end
   end
 end

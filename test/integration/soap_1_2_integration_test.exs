@@ -456,7 +456,7 @@ defmodule Lather.Integration.Soap12IntegrationTest do
       soap_1_1_headers = Transport.build_headers(soap_version: :v1_1, soap_action: soap_action)
       soap_1_2_headers = Transport.build_headers(soap_version: :v1_2, soap_action: soap_action)
 
-      # SOAP 1.1 should have separate SOAPAction header
+      # SOAP 1.1 should have separate SOAPAction header (quoted per SOAP 1.1 spec)
       soap_1_1_soap_action =
         Enum.find(soap_1_1_headers, fn {name, _} ->
           String.downcase(name) == "soapaction"
@@ -464,7 +464,8 @@ defmodule Lather.Integration.Soap12IntegrationTest do
 
       assert soap_1_1_soap_action != nil
       {_, soap_1_1_action_value} = soap_1_1_soap_action
-      assert soap_1_1_action_value == soap_action
+      # SOAPAction value MUST be quoted per SOAP 1.1 spec
+      assert soap_1_1_action_value == "\"#{soap_action}\""
 
       # SOAP 1.1 should use text/xml content type
       soap_1_1_content_type =

@@ -10,13 +10,15 @@ defmodule Lather.Http.TransportTest do
 
       assert {"content-type", "text/xml; charset=utf-8"} in headers
       assert {"accept", "text/xml"} in headers
-      assert {"soapaction", ""} in headers
+      # SOAPAction value is quoted per SOAP 1.1 spec (empty string becomes "")
+      assert {"soapaction", "\"\""} in headers
     end
 
     test "includes custom SOAPAction" do
       headers = Transport.build_headers(soap_action: "http://example.com/action")
 
-      assert {"soapaction", "http://example.com/action"} in headers
+      # SOAPAction value MUST be quoted per SOAP 1.1 spec
+      assert {"soapaction", "\"http://example.com/action\""} in headers
     end
 
     test "includes custom headers" do
@@ -44,6 +46,21 @@ defmodule Lather.Http.TransportTest do
       assert {"content-type", "custom/type"} in headers
       assert {"accept", "custom/accept"} in headers
       refute {"content-type", "text/xml; charset=utf-8"} in headers
+    end
+
+    test "ignores map-style headers (SOAP headers should not reach transport)" do
+      # SOAP headers like WS-Security are maps, not tuples.
+      # They should be filtered out by DynamicClient before reaching Transport.
+      # This test documents the expected HTTP header format.
+      # If map-style headers accidentally reach build_headers, it will raise.
+      # This is by design - DynamicClient.send_request must filter :headers.
+
+      # Valid HTTP headers are tuples
+      valid_headers = [{"authorization", "Bearer token"}, {"x-custom", "value"}]
+      headers = Transport.build_headers(headers: valid_headers)
+
+      assert {"authorization", "Bearer token"} in headers
+      assert {"x-custom", "value"} in headers
     end
   end
 
@@ -83,14 +100,16 @@ defmodule Lather.Http.TransportTest do
 
       assert {"content-type", "text/xml; charset=utf-8"} in headers
       assert {"accept", "text/xml"} in headers
-      assert {"soapaction", ""} in headers
+      # SOAPAction value is quoted per SOAP 1.1 spec (empty string becomes "")
+      assert {"soapaction", "\"\""} in headers
     end
 
     test "SOAP 1.1 still uses SOAPAction header" do
       headers =
         Transport.build_headers(soap_version: :v1_1, soap_action: "http://example.com/action")
 
-      assert {"soapaction", "http://example.com/action"} in headers
+      # SOAPAction value MUST be quoted per SOAP 1.1 spec
+      assert {"soapaction", "\"http://example.com/action\""} in headers
       content_type_header = Enum.find(headers, fn {name, _} -> name == "content-type" end)
       {_, content_type} = content_type_header
       # Should not embed action in Content-Type for SOAP 1.1

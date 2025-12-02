@@ -239,9 +239,12 @@ defmodule Lather.Http.Transport do
   defp update_soap_action(headers, soap_action, soap_version) do
     case soap_version do
       :v1_1 ->
-        # SOAP 1.1: Use SOAPAction header
+        # SOAP 1.1: Use SOAPAction header (value MUST be quoted per SOAP 1.1 spec)
+        # See: https://www.w3.org/TR/2000/NOTE-SOAP-20000508/#_Toc478383528
+        quoted_action = "\"" <> soap_action <> "\""
+
         Enum.map(headers, fn
-          {"soapaction", _} -> {"soapaction", soap_action}
+          {"soapaction", _} -> {"soapaction", quoted_action}
           header -> header
         end)
 

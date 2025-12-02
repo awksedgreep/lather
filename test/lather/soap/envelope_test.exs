@@ -45,6 +45,38 @@ defmodule Lather.Soap.EnvelopeTest do
       assert String.contains?(xml, "<MessageID>uuid:12345</MessageID>")
     end
 
+    test "includes SOAP headers when provided as list of maps" do
+      # This format is used by WS-Security and other complex headers
+      headers = [
+        %{"wsse:Security" => %{
+          "@xmlns:wsse" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
+          "wsse:UsernameToken" => %{
+            "wsse:Username" => "testuser",
+            "wsse:Password" => "testpass"
+          }
+        }}
+      ]
+
+      {:ok, xml} = Envelope.build(:GetUser, %{id: "123"}, headers: headers)
+
+      assert String.contains?(xml, "<soap:Header>")
+      assert String.contains?(xml, "<wsse:Security")
+      assert String.contains?(xml, "<wsse:Username>testuser</wsse:Username>")
+      assert String.contains?(xml, "<wsse:Password>testpass</wsse:Password>")
+    end
+
+    test "merges multiple map headers together" do
+      headers = [
+        %{"Header1" => "Value1"},
+        %{"Header2" => "Value2"}
+      ]
+
+      {:ok, xml} = Envelope.build(:GetUser, %{id: "123"}, headers: headers)
+
+      assert String.contains?(xml, "<Header1>Value1</Header1>")
+      assert String.contains?(xml, "<Header2>Value2</Header2>")
+    end
+
     test "includes empty header element when no headers provided" do
       {:ok, xml} = Envelope.build(:GetUser, %{id: "123"})
 
@@ -113,6 +145,59 @@ defmodule Lather.Soap.EnvelopeTest do
           # If it doesn't fail, that's also fine - the test is about error handling
           assert true
       end
+    end
+
+    test "raw_body option uses params directly as body without wrapping in operation" do
+      # For document/literal with element-based parts, the body should contain
+      # the element directly (e.g., GetWeather_Input), not wrapped in operation name
+      params = %{
+        "GetWeather_Input" => %{
+          "@xmlns" => "http://example.com/weather",
+          "WeatherRequest" => %{
+            "Location" => %{
+              "City" => "London"
+            }
+          }
+        }
+      }
+
+      {:ok, xml} = Envelope.build(:GetWeather, params, raw_body: true)
+
+      # Should contain the element directly in body, NOT wrapped in <GetWeather>
+      assert String.contains?(xml, "<soap:Body>")
+      assert String.contains?(xml, "<GetWeather_Input")
+      assert String.contains?(xml, "xmlns=\"http://example.com/weather\"")
+      assert String.contains?(xml, "<WeatherRequest>")
+      # Should NOT contain the operation name as a wrapper
+      refute String.contains?(xml, "<GetWeather>")
+      refute String.contains?(xml, "<GetWeather ")
+    end
+
+    test "raw_body: false (default) wraps params in operation name" do
+      params = %{
+        "SomeElement" => %{"value" => "test"}
+      }
+
+      {:ok, xml} = Envelope.build(:MyOperation, params, raw_body: false)
+
+      # Should wrap in operation name
+      assert String.contains?(xml, "<MyOperation>")
+      assert String.contains?(xml, "<SomeElement>")
+    end
+
+    test "raw_body with namespace preserves namespace in element" do
+      params = %{
+        "InputElement" => %{
+          "@xmlns" => "http://example.com/ns",
+          "data" => "value"
+        }
+      }
+
+      {:ok, xml} = Envelope.build(:Operation, params, raw_body: true)
+
+      assert String.contains?(xml, "<InputElement")
+      assert String.contains?(xml, "xmlns=\"http://example.com/ns\"")
+      assert String.contains?(xml, "<data>value</data>")
     end
   end
 

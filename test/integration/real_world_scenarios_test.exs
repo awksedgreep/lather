@@ -387,6 +387,288 @@ defmodule Lather.Integration.RealWorldScenariosTest do
     end
   end
 
+  describe "Document/literal with element-based parts" do
+    test "builds correct body structure for element-based document/literal" do
+      # This mimics WSDL structure where parts have element attributes
+      # instead of type attributes (common in enterprise SOAP services)
+      operation_info = %{
+        name: "GetWeatherForecast",
+        style: "document",
+        input: %{
+          message: "GetWeatherForecast_Input",
+          parts: [
+            %{
+              name: "GetWeatherForecast_Input",
+              element: "tns:GetWeatherForecast_Input",
+              type: nil
+            }
+          ],
+          use: "literal"
+        },
+        output: %{message: "GetWeatherForecast_Output", parts: [], use: "literal"}
+      }
+
+      parameters = %{
+        "GetWeatherForecast_Input" => %{
+          "WeatherRequest" => %{
+            "LocationData" => %{
+              "CityCode" => "LON",
+              "CountryCode" => "UK"
+            }
+          }
+        }
+      }
+
+      {:ok, envelope} =
+        Builder.build_request(operation_info, parameters,
+          namespace: "http://example.com/weather"
+        )
+
+      # For element-based document/literal, the body should contain
+      # <GetWeatherForecast_Input> directly, NOT wrapped in <GetWeatherForecast>
+      assert String.contains?(envelope, "<GetWeatherForecast_Input")
+      assert String.contains?(envelope, "xmlns=\"http://example.com/weather\"")
+      assert String.contains?(envelope, "<WeatherRequest>")
+      assert String.contains?(envelope, "<CityCode>LON</CityCode>")
+
+      # Should NOT wrap in operation name
+      refute String.contains?(envelope, "<GetWeatherForecast>")
+      refute String.contains?(envelope, "<GetWeatherForecast ")
+    end
+
+    test "traditional document/literal without element attribute wraps in operation name" do
+      # Traditional document/literal with type-based parts
+      operation_info = %{
+        name: "GetData",
+        style: "document",
+        input: %{
+          message: "GetDataRequest",
+          parts: [
+            %{name: "param1", type: "xsd:string", element: nil}
+          ],
+          use: "literal"
+        },
+        output: %{message: "GetDataResponse", parts: [], use: "literal"}
+      }
+
+      parameters = %{"param1" => "test_value"}
+
+      {:ok, envelope} =
+        Builder.build_request(operation_info, parameters,
+          namespace: "http://example.com/ns"
+        )
+
+      # Traditional style SHOULD wrap in operation name
+      assert String.contains?(envelope, "<GetData")
+      # The param value should be present in the envelope
+      assert String.contains?(envelope, "test_value")
+    end
+
+    test "handles multiple element-based parts" do
+      operation_info = %{
+        name: "SubmitOrder",
+        style: "document",
+        input: %{
+          message: "SubmitOrderRequest",
+          parts: [
+            %{name: "OrderHeader", element: "tns:OrderHeaderElement", type: nil},
+            %{name: "OrderDetails", element: "tns:OrderDetailsElement", type: nil}
+          ],
+          use: "literal"
+        },
+        output: %{message: "SubmitOrderResponse", parts: [], use: "literal"}
+      }
+
+      parameters = %{
+        "OrderHeader" => %{"orderId" => "ORD-001"},
+        "OrderDetails" => %{"productCode" => "PROD-123"}
+      }
+
+      {:ok, envelope} =
+        Builder.build_request(operation_info, parameters,
+          namespace: "http://example.com/orders"
+        )
+
+      # Both element parts should be present directly in body
+      assert String.contains?(envelope, "<OrderHeaderElement")
+      assert String.contains?(envelope, "<orderId>ORD-001</orderId>")
+      assert String.contains?(envelope, "<OrderDetailsElement")
+      assert String.contains?(envelope, "<productCode>PROD-123</productCode>")
+
+      # Should NOT wrap in operation name
+      refute String.contains?(envelope, "<SubmitOrder>")
+    end
+
+    test "RPC style still wraps in operation name even with element parts" do
+      # RPC style should always wrap in operation name
+      operation_info = %{
+        name: "CalculateTotal",
+        style: "rpc",
+        input: %{
+          message: "CalculateTotalRequest",
+          parts: [
+            # RPC style typically uses type instead of element, but we test with element too
+            %{name: "amount", element: "tns:AmountElement", type: "xsd:string"}
+          ],
+          use: "literal"
+        },
+        output: %{message: "CalculateTotalResponse", parts: [], use: "literal"}
+      }
+
+      parameters = %{
+        "amount" => "100.50"
+      }
+
+      {:ok, envelope} =
+        Builder.build_request(operation_info, parameters,
+          namespace: "http://example.com/calculator"
+        )
+
+      # RPC style SHOULD wrap in operation name
+      assert String.contains?(envelope, "<CalculateTotal")
+      assert String.contains?(envelope, "<amount>100.50</amount>")
+    end
+  end
+
+  describe "SOAP response parsing with different namespace prefixes" do
+    test "parses response with SOAP-ENV: prefix" do
+      operation_info = %{
+        name: "GetWeather",
+        style: "document",
+        input: %{message: "GetWeatherRequest", parts: [], use: "literal"},
+        output: %{
+          message: "GetWeatherResponse",
+          parts: [%{name: "result", type: "xsd:string"}],
+          use: "literal"
+        }
+      }
+
+      # Response with SOAP-ENV: prefix (common in enterprise SOAP services)
+      response_envelope = %{
+        "SOAP-ENV:Envelope" => %{
+          "@xmlns:SOAP-ENV" => "http://schemas.xmlsoap.org/soap/envelope/",
+          "SOAP-ENV:Body" => %{
+            "ns:GetWeather_Output" => %{
+              "@xmlns:ns" => "http://example.com/weather",
+              "Temperature" => "22",
+              "Condition" => "Sunny"
+            }
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_envelope)
+
+      # When response element has namespace prefix, it returns the full body
+      assert result["ns:GetWeather_Output"]["Temperature"] == "22"
+      assert result["ns:GetWeather_Output"]["Condition"] == "Sunny"
+    end
+
+    test "parses response with soap: prefix" do
+      operation_info = %{
+        name: "GetData",
+        style: "document",
+        input: %{message: "GetDataRequest", parts: [], use: "literal"},
+        output: %{
+          message: "GetDataResponse",
+          parts: [%{name: "result", type: "xsd:string"}],
+          use: "literal"
+        }
+      }
+
+      response_envelope = %{
+        "soap:Envelope" => %{
+          "@xmlns:soap" => "http://schemas.xmlsoap.org/soap/envelope/",
+          "soap:Body" => %{
+            "GetDataResponse" => %{
+              "value" => "test_data"
+            }
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_envelope)
+
+      assert result["value"] == "test_data"
+    end
+
+    test "parses response with no namespace prefix on envelope" do
+      operation_info = %{
+        name: "SimpleOp",
+        style: "document",
+        input: %{message: "SimpleRequest", parts: [], use: "literal"},
+        output: %{
+          message: "SimpleResponse",
+          parts: [%{name: "result", type: "xsd:string"}],
+          use: "literal"
+        }
+      }
+
+      response_envelope = %{
+        "Envelope" => %{
+          "Body" => %{
+            "SimpleResponse" => %{
+              "status" => "ok"
+            }
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_envelope)
+
+      assert result["status"] == "ok"
+    end
+
+    test "parses response with custom namespace prefix" do
+      operation_info = %{
+        name: "CustomOp",
+        style: "document",
+        input: %{message: "CustomRequest", parts: [], use: "literal"},
+        output: %{
+          message: "CustomResponse",
+          parts: [%{name: "result", type: "xsd:string"}],
+          use: "literal"
+        }
+      }
+
+      # Some services use custom prefixes like "soapenv:" or "env:"
+      response_envelope = %{
+        "soapenv:Envelope" => %{
+          "@xmlns:soapenv" => "http://schemas.xmlsoap.org/soap/envelope/",
+          "soapenv:Body" => %{
+            "CustomResponse" => %{
+              "result" => "success"
+            }
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_envelope)
+
+      assert result["result"] == "success"
+    end
+
+    test "returns error for invalid envelope structure" do
+      operation_info = %{
+        name: "TestOp",
+        style: "document",
+        input: %{message: "TestRequest", parts: [], use: "literal"},
+        output: %{message: "TestResponse", parts: [], use: "literal"}
+      }
+
+      invalid_response = %{
+        "NotAnEnvelope" => %{
+          "SomeContent" => "value"
+        }
+      }
+
+      {:error, error} = Builder.parse_response(operation_info, invalid_response)
+
+      assert error.reason == :invalid_soap_response
+      assert error.type == :validation_error
+    end
+  end
+
   # Note: Endpoint resolution testing is done through integration tests
   # with the public DynamicClient API rather than testing private functions
 end
