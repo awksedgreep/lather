@@ -4,7 +4,7 @@ defmodule Lather.MixProject do
   def project do
     [
       app: :lather,
-      version: "1.0.4",
+      version: "1.0.5",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       description:
@@ -95,14 +95,14 @@ defmodule Lather.MixProject do
           Lather.Server,
           Lather.Server.Plug,
           Lather.Server.EnhancedPlug,
-          Lather.Server.WsdlGenerator,
+          Lather.Server.WSDLGenerator,
           Lather.Server.EnhancedWSDLGenerator,
           Lather.Server.FormGenerator
         ],
         "SOAP Processing": [
           Lather.Soap.Envelope,
           Lather.Operation.Builder,
-          Lather.Wsdl.Parser
+          Lather.Wsdl.Analyzer
         ],
         "Transport & HTTP": [
           Lather.Http.Transport

@@ -217,4 +217,4 @@ For questions or suggestions about this roadmap, please open an issue on GitHub.
 ---
 
 *Last updated: January 2025*
-*Version: 1.0.1*
+*Version: 1.0.4*

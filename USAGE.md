@@ -229,7 +229,7 @@ end
 ```elixir
 # Generate standard WSDL
 service_info = MyApp.UserService.__service_info__()
-wsdl = Lather.Server.WsdlGenerator.generate(service_info, "https://myapp.com/api/users")
+wsdl = Lather.Server.WSDLGenerator.generate(service_info, "https://myapp.com/api/users")
 
 # Generate enhanced multi-protocol WSDL
 enhanced_wsdl = Lather.Server.EnhancedWSDLGenerator.generate(service_info, "https://myapp.com/api/users")
@@ -569,7 +569,7 @@ defmodule MyApp.UserServiceTest do
   
   test "generates valid WSDL" do
     service_info = MyApp.UserService.__service_info__()
-    wsdl = Lather.Server.WsdlGenerator.generate(service_info, "http://test.com")
+    wsdl = Lather.Server.WSDLGenerator.generate(service_info, "http://test.com")
     
     # Validate WSDL structure
     assert wsdl =~ "definitions"
@@ -754,11 +754,15 @@ Lather includes comprehensive Livebook tutorials:
 
 - **Getting Started** (`livebooks/getting_started.livemd`) - Basic concepts and first examples
 - **Weather Service Example** (`livebooks/weather_service_example.livemd`) - Real-world document/encoded style
-- **Country Info Service** (`livebooks/country_info_service_example.livemd`) - Document/literal examples  
+- **Country Info Service** (`livebooks/country_info_service_example.livemd`) - Document/literal examples
 - **SOAP Server Development** (`livebooks/soap_server_development.livemd`) - Building services
+- **SOAP 1.2 Client** (`livebooks/soap12_client.livemd`) - SOAP 1.2 protocol differences and usage
 - **Advanced Types** (`livebooks/advanced_types.livemd`) - Complex data structures
+- **MTOM Attachments** (`livebooks/mtom_attachments.livemd`) - Binary data and file attachments
 - **Enterprise Integration** (`livebooks/enterprise_integration.livemd`) - Production patterns
+- **Production Monitoring** (`livebooks/production_monitoring.livemd`) - Telemetry, metrics, and observability
 - **Debugging & Troubleshooting** (`livebooks/debugging_troubleshooting.livemd`) - Problem solving
+- **Testing Strategies** (`livebooks/testing_strategies.livemd`) - Testing patterns and best practices
 
 Run with: `livebook server livebooks/getting_started.livemd`
 

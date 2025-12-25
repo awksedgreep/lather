@@ -410,16 +410,13 @@ defmodule EnterpriseServiceExample do
   def connect_with_wssecurity do
     IO.puts("Connecting with WS-Security...")
 
-    # Create WS-Security username token
-    username_token = Lather.Auth.WSSecurity.username_token(
+    # Create WS-Security username token (returns the complete security header)
+    security_header = Lather.Auth.WSSecurity.username_token(
       get_username(),
       get_password(),
       timestamp: true,
       nonce: true
     )
-
-    # Create security header
-    security_header = Lather.Auth.WSSecurity.security_header(username_token, [])
 
     options = [
       soap_headers: [security_header],

@@ -46,14 +46,14 @@ A single full test run makes approximately **25+ HTTP requests** to public APIs:
 Live API tests are **disabled by default** and only run when explicitly enabled:
 
 ```bash
-# Regular test run (live API tests skipped)
+# Regular test run (live API tests skipped by default)
 mix test
 
 # Enable live API testing (use sparingly!)
-ENABLE_LIVE_API_TESTS=true mix test
+mix test --include external_api
 
 # Run only specific integration tests
-ENABLE_LIVE_API_TESTS=true mix test test/integration/country_info_service_test.exs
+mix test --include external_api test/integration/country_info_service_test.exs
 ```
 
 ### When to Enable Live API Tests
@@ -111,18 +111,20 @@ end
 
 ### Test Control Mechanism
 
-Live API tests check for the `ENABLE_LIVE_API_TESTS` environment variable:
+Live API tests use the `@moduletag :external_api` tag and are excluded by default in the test configuration:
 
 ```elixir
+# In test/test_helper.exs
+ExUnit.configure(exclude: [:external_api])
+
+# In integration test files
+@moduletag :external_api
+
 setup do
-  unless System.get_env("ENABLE_LIVE_API_TESTS") == "true" do
-    {:skip, "Live API tests disabled. Set ENABLE_LIVE_API_TESTS=true to enable (use responsibly)"}
-  else
-    # Proceed with live API testing
-    case DynamicClient.new(@wsdl_url) do
-      {:ok, client} -> {:ok, client: client}
-      {:error, reason} -> {:skip, "Service unavailable: #{inspect(reason)}"}
-    end
+  # Proceed with live API testing when tag is included
+  case DynamicClient.new(@wsdl_url) do
+    {:ok, client} -> {:ok, client: client}
+    {:error, reason} -> {:skip, "Service unavailable: #{inspect(reason)}"}
   end
 end
 ```
@@ -152,13 +154,11 @@ Live API tests are tagged for easy identification:
 ```yaml
 # Example GitHub Actions configuration
 - name: Run Unit Tests
-  run: mix test --exclude external_api
+  run: mix test
 
 - name: Run Integration Tests (Release Only)
   if: github.event_name == 'release'
-  env:
-    ENABLE_LIVE_API_TESTS: true
-  run: mix test --only external_api
+  run: mix test --include external_api
 ```
 
 ### For Local Development
@@ -168,10 +168,10 @@ Live API tests are tagged for easy identification:
 mix test
 
 # Before committing significant changes
-ENABLE_LIVE_API_TESTS=true mix test --only external_api
+mix test --only external_api
 
-# Full validation before release
-ENABLE_LIVE_API_TESTS=true mix test
+# Full validation before release (unit + integration tests)
+mix test --include external_api
 ```
 
 ## Service-Specific Considerations
@@ -209,10 +209,10 @@ ENABLE_LIVE_API_TESTS=true mix test
 
 ## Conclusion
 
-Live API testing is valuable but must be used responsibly. The environment variable control system ensures that:
+Live API testing is valuable but must be used responsibly. The tag-based exclusion system ensures that:
 
 - **Default behavior is respectful** (no live calls)
-- **Live testing is intentional** (explicit opt-in)
+- **Live testing is intentional** (explicit opt-in via `--include external_api`)
 - **Tests remain fast** for regular development
 - **Integration validation** is still possible when needed
 

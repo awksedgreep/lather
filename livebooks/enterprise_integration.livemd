@@ -552,22 +552,23 @@ For services requiring WS-Security, here's how to set it up:
 
 ```elixir
 defmodule WSSecurityDemo do
-  def create_username_token(username, password) do
-    # Create WS-Security username token
+  @doc """
+  Creates a WS-Security header with username token.
+  The username_token/3 function returns the complete security header structure directly.
+  """
+  def create_security_header(username, password) do
+    # username_token/3 returns the complete security header with wsse:Security wrapper
     Lather.Auth.WSSecurity.username_token(
       username,
       password,
-      timestamp: true,
-      nonce: true
+      password_type: :digest,
+      include_nonce: true,
+      include_created: true
     )
   end
 
-  def create_security_header(username, password) do
-    username_token = create_username_token(username, password)
-    Lather.Auth.WSSecurity.security_header(username_token, [])
-  end
-
   def wssecurity_client_options(username, password, base_options) do
+    # The username_token function returns the complete security header
     security_header = create_security_header(username, password)
 
     base_options ++ [
@@ -749,6 +750,694 @@ elsif completion_percentage >= 50.0 do
 else
   IO.puts("🏗️ Keep going! There's still work to be done for a production-ready integration.")
 end
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Advanced Resilience Patterns
+
+Enterprise integrations require robust resilience patterns to handle failures gracefully. This section covers circuit breakers, advanced retry strategies, bulkheads, and fallback mechanisms.
+
+### Circuit Breaker Pattern
+
+The circuit breaker pattern prevents cascading failures by monitoring for failures and temporarily stopping requests to a failing service.
+
+**States:**
+- **Closed**: Normal operation, requests flow through
+- **Open**: Service is failing, requests are rejected immediately
+- **Half-Open**: Testing if service has recovered
+
+```elixir
+defmodule CircuitBreaker do
+  use GenServer
+
+  defstruct [
+    :name,
+    :state,
+    :failure_count,
+    :success_count,
+    :failure_threshold,
+    :success_threshold,
+    :reset_timeout,
+    :last_failure_time
+  ]
+
+  # Client API
+  def start_link(opts) do
+    name = Keyword.fetch!(opts, :name)
+    GenServer.start_link(__MODULE__, opts, name: name)
+  end
+
+  def call(breaker, fun) do
+    GenServer.call(breaker, {:call, fun}, :infinity)
+  end
+
+  def state(breaker), do: GenServer.call(breaker, :state)
+  def reset(breaker), do: GenServer.cast(breaker, :reset)
+
+  # Server Implementation
+  @impl true
+  def init(opts) do
+    state = %__MODULE__{
+      name: Keyword.fetch!(opts, :name),
+      state: :closed,
+      failure_count: 0,
+      success_count: 0,
+      failure_threshold: Keyword.get(opts, :failure_threshold, 5),
+      success_threshold: Keyword.get(opts, :success_threshold, 2),
+      reset_timeout: Keyword.get(opts, :reset_timeout, 30_000),
+      last_failure_time: nil
+    }
+    {:ok, state}
+  end
+
+  @impl true
+  def handle_call(:state, _from, state) do
+    {:reply, %{state: state.state, failures: state.failure_count}, state}
+  end
+
+  @impl true
+  def handle_call({:call, fun}, _from, %{state: :open} = state) do
+    if should_attempt_reset?(state) do
+      attempt_call(fun, %{state | state: :half_open})
+    else
+      {:reply, {:error, :circuit_open}, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:call, fun}, _from, state) do
+    attempt_call(fun, state)
+  end
+
+  @impl true
+  def handle_cast(:reset, state) do
+    {:noreply, %{state | state: :closed, failure_count: 0, success_count: 0}}
+  end
+
+  defp attempt_call(fun, state) do
+    case fun.() do
+      {:ok, result} -> handle_success(result, state)
+      {:error, _} = error -> handle_failure(error, state)
+    end
+  rescue
+    e -> handle_failure({:error, e}, state)
+  end
+
+  defp handle_success(result, %{state: :half_open} = state) do
+    new_success_count = state.success_count + 1
+    if new_success_count >= state.success_threshold do
+      {:reply, {:ok, result}, %{state | state: :closed, failure_count: 0, success_count: 0}}
+    else
+      {:reply, {:ok, result}, %{state | success_count: new_success_count}}
+    end
+  end
+
+  defp handle_success(result, state) do
+    {:reply, {:ok, result}, %{state | failure_count: 0}}
+  end
+
+  defp handle_failure(error, state) do
+    new_failure_count = state.failure_count + 1
+    new_state = if new_failure_count >= state.failure_threshold do
+      %{state | state: :open, failure_count: new_failure_count, last_failure_time: System.monotonic_time(:millisecond)}
+    else
+      %{state | failure_count: new_failure_count}
+    end
+    {:reply, error, new_state}
+  end
+
+  defp should_attempt_reset?(state) do
+    elapsed = System.monotonic_time(:millisecond) - state.last_failure_time
+    elapsed >= state.reset_timeout
+  end
+end
+
+# Demo: Start a circuit breaker
+{:ok, breaker} = CircuitBreaker.start_link(
+  name: :soap_breaker,
+  failure_threshold: 3,
+  success_threshold: 2,
+  reset_timeout: 5_000
+)
+
+IO.puts("Circuit Breaker initialized with:")
+IO.puts("  Failure threshold: 3")
+IO.puts("  Success threshold: 2")
+IO.puts("  Reset timeout: 5 seconds")
+IO.inspect(CircuitBreaker.state(breaker), label: "Initial state")
+```
+
+```elixir
+# Demonstrate circuit breaker behavior
+defmodule CircuitBreakerDemo do
+  def simulate_failures(breaker, count) do
+    Enum.each(1..count, fn i ->
+      result = CircuitBreaker.call(breaker, fn -> {:error, :service_unavailable} end)
+      state = CircuitBreaker.state(breaker)
+      IO.puts("Request #{i}: #{inspect(result)} | State: #{state.state}, Failures: #{state.failures}")
+    end)
+  end
+
+  def simulate_success(breaker) do
+    result = CircuitBreaker.call(breaker, fn -> {:ok, "Success!"} end)
+    state = CircuitBreaker.state(breaker)
+    IO.puts("Success request: #{inspect(result)} | State: #{state.state}")
+    result
+  end
+end
+
+IO.puts("\n--- Simulating failures to trip the circuit ---")
+CircuitBreakerDemo.simulate_failures(:soap_breaker, 4)
+
+IO.puts("\n--- Circuit is now open, requests are rejected ---")
+CircuitBreakerDemo.simulate_failures(:soap_breaker, 2)
+
+# Reset for next demo
+CircuitBreaker.reset(:soap_breaker)
+IO.puts("\nCircuit breaker reset for next demonstrations")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Advanced Retry Strategies
+
+Simple retries can overwhelm a recovering service. Advanced strategies include exponential backoff, jitter, and retry budgets.
+
+```elixir
+defmodule RetryStrategy do
+  @moduledoc """
+  Advanced retry strategies with exponential backoff, jitter, and budgets.
+  """
+
+  defstruct [
+    :max_retries,
+    :base_delay_ms,
+    :max_delay_ms,
+    :jitter_factor,
+    :retry_budget,
+    :budget_window_ms,
+    :retryable_errors
+  ]
+
+  def new(opts \\ []) do
+    %__MODULE__{
+      max_retries: Keyword.get(opts, :max_retries, 3),
+      base_delay_ms: Keyword.get(opts, :base_delay_ms, 1000),
+      max_delay_ms: Keyword.get(opts, :max_delay_ms, 30_000),
+      jitter_factor: Keyword.get(opts, :jitter_factor, 0.2),
+      retry_budget: Keyword.get(opts, :retry_budget, 0.1),  # 10% of requests can be retries
+      budget_window_ms: Keyword.get(opts, :budget_window_ms, 60_000),
+      retryable_errors: Keyword.get(opts, :retryable_errors, [:timeout, :server_error, :connection_error])
+    }
+  end
+
+  @doc "Calculate delay with exponential backoff and jitter"
+  def calculate_delay(strategy, attempt) do
+    # Exponential backoff: base * 2^attempt
+    exponential_delay = strategy.base_delay_ms * :math.pow(2, attempt)
+
+    # Cap at max delay
+    capped_delay = min(exponential_delay, strategy.max_delay_ms)
+
+    # Add jitter to prevent thundering herd
+    jitter_range = capped_delay * strategy.jitter_factor
+    jitter = :rand.uniform() * jitter_range * 2 - jitter_range
+
+    round(max(0, capped_delay + jitter))
+  end
+
+  @doc "Determine if an error should be retried"
+  def should_retry?(strategy, error, attempt) do
+    cond do
+      attempt >= strategy.max_retries ->
+        {:no, :max_retries_exceeded}
+      not retryable_error?(strategy, error) ->
+        {:no, :not_retryable}
+      true ->
+        {:yes, calculate_delay(strategy, attempt)}
+    end
+  end
+
+  defp retryable_error?(strategy, error) do
+    error_type = categorize_error(error)
+    error_type in strategy.retryable_errors
+  end
+
+  defp categorize_error(error) do
+    case error do
+      %{type: :transport_error, reason: :timeout} -> :timeout
+      %{type: :transport_error} -> :connection_error
+      %{type: :http_error, status: status} when status >= 500 -> :server_error
+      %{type: :http_error, status: 429} -> :rate_limited
+      %{type: :http_error, status: status} when status >= 400 -> :client_error
+      %{type: :soap_fault, fault_code: "Server"} -> :server_error
+      %{type: :soap_fault, fault_code: "Client"} -> :client_error
+      _ -> :unknown
+    end
+  end
+end
+
+# Demonstrate delay calculations
+strategy = RetryStrategy.new(
+  max_retries: 5,
+  base_delay_ms: 500,
+  max_delay_ms: 16_000,
+  jitter_factor: 0.25
+)
+
+IO.puts("Exponential Backoff with Jitter Demo:")
+IO.puts("=" |> String.duplicate(45))
+Enum.each(0..5, fn attempt ->
+  delays = Enum.map(1..3, fn _ -> RetryStrategy.calculate_delay(strategy, attempt) end)
+  avg_delay = Enum.sum(delays) / length(delays)
+  IO.puts("Attempt #{attempt}: ~#{round(avg_delay)}ms (samples: #{inspect(delays)})")
+end)
+```
+
+```elixir
+defmodule RetryExecutor do
+  @moduledoc "Execute operations with configurable retry logic"
+
+  def execute(fun, strategy, opts \\ []) do
+    idempotent = Keyword.get(opts, :idempotent, true)
+    on_retry = Keyword.get(opts, :on_retry, fn _, _, _ -> :ok end)
+
+    do_execute(fun, strategy, 0, idempotent, on_retry)
+  end
+
+  defp do_execute(fun, strategy, attempt, idempotent, on_retry) do
+    case fun.() do
+      {:ok, result} ->
+        {:ok, result, %{attempts: attempt + 1}}
+
+      {:error, error} = err ->
+        case RetryStrategy.should_retry?(strategy, error, attempt) do
+          {:yes, delay} when idempotent ->
+            on_retry.(attempt + 1, error, delay)
+            Process.sleep(delay)
+            do_execute(fun, strategy, attempt + 1, idempotent, on_retry)
+
+          {:yes, _delay} ->
+            # Non-idempotent operations should not be retried blindly
+            {:error, error, %{attempts: attempt + 1, reason: :not_idempotent}}
+
+          {:no, reason} ->
+            {:error, error, %{attempts: attempt + 1, reason: reason}}
+        end
+    end
+  end
+end
+
+# Demonstrate retry execution
+IO.puts("\n--- Retry Execution Demo ---")
+
+# Simulate a flaky service that fails twice then succeeds
+call_count = :counters.new(1, [:atomics])
+
+flaky_operation = fn ->
+  count = :counters.get(call_count, 1)
+  :counters.add(call_count, 1, 1)
+  if count < 2 do
+    {:error, %{type: :transport_error, reason: :timeout}}
+  else
+    {:ok, "Operation succeeded!"}
+  end
+end
+
+strategy = RetryStrategy.new(max_retries: 3, base_delay_ms: 100)
+
+result = RetryExecutor.execute(
+  flaky_operation,
+  strategy,
+  on_retry: fn attempt, error, delay ->
+    IO.puts("Retry #{attempt}: #{inspect(error.type)}, waiting #{delay}ms")
+  end
+)
+
+IO.puts("Final result: #{inspect(result)}")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Bulkhead Pattern
+
+The bulkhead pattern isolates failures by partitioning resources. Each service gets its own connection pool, preventing one failing service from consuming all resources.
+
+```elixir
+defmodule BulkheadConfig do
+  @moduledoc """
+  Configure isolated resource pools for different services.
+  """
+
+  def pool_config do
+    %{
+      # Critical services get more resources
+      critical: %{
+        "https://payments.enterprise.com" => [size: 20, count: 4],
+        "https://inventory.enterprise.com" => [size: 15, count: 3]
+      },
+      # Standard services
+      standard: %{
+        "https://notifications.enterprise.com" => [size: 5, count: 2],
+        "https://analytics.enterprise.com" => [size: 5, count: 2]
+      },
+      # Low priority services - isolated to prevent resource starvation
+      low_priority: %{
+        "https://legacy-reports.enterprise.com" => [size: 2, count: 1]
+      }
+    }
+  end
+
+  def build_finch_pools do
+    pool_config()
+    |> Enum.flat_map(fn {_priority, services} ->
+      Enum.map(services, fn {url, config} -> {url, config} end)
+    end)
+    |> Map.new()
+    |> Map.put(:default, [size: 3, count: 1])
+  end
+
+  def service_limits do
+    %{
+      # Max concurrent requests per service
+      "payments" => %{max_concurrent: 50, queue_size: 100},
+      "inventory" => %{max_concurrent: 30, queue_size: 50},
+      "notifications" => %{max_concurrent: 10, queue_size: 20},
+      "legacy-reports" => %{max_concurrent: 5, queue_size: 10}
+    }
+  end
+end
+
+# Display bulkhead configuration
+IO.puts("Bulkhead Configuration:")
+IO.puts("=" |> String.duplicate(50))
+
+BulkheadConfig.pool_config()
+|> Enum.each(fn {priority, services} ->
+  IO.puts("\n#{String.upcase(to_string(priority))} SERVICES:")
+  Enum.each(services, fn {url, config} ->
+    IO.puts("  #{url}")
+    IO.puts("    Pool size: #{config[:size]}, Count: #{config[:count]}")
+  end)
+end)
+
+IO.puts("\nService Limits:")
+BulkheadConfig.service_limits()
+|> Enum.each(fn {service, limits} ->
+  IO.puts("  #{service}: max #{limits.max_concurrent} concurrent, queue #{limits.queue_size}")
+end)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Fallback Strategies
+
+When primary operations fail, fallback strategies provide graceful degradation.
+
+```elixir
+defmodule FallbackStrategy do
+  @moduledoc """
+  Implements various fallback strategies for resilient operations.
+  """
+
+  # Simple in-memory cache for demo purposes
+  defstruct [:cache, :default_values, :alternative_endpoints]
+
+  def new(opts \\ []) do
+    %__MODULE__{
+      cache: %{},
+      default_values: Keyword.get(opts, :default_values, %{}),
+      alternative_endpoints: Keyword.get(opts, :alternative_endpoints, [])
+    }
+  end
+
+  @doc "Execute with fallback chain: primary -> cache -> alternative -> default"
+  def execute_with_fallback(primary_fn, fallback_config, cache_key) do
+    case primary_fn.() do
+      {:ok, result} ->
+        # Cache successful result
+        {:ok, result, :primary}
+
+      {:error, _error} ->
+        try_fallbacks(fallback_config, cache_key)
+    end
+  end
+
+  defp try_fallbacks(config, cache_key) do
+    # Try cached response
+    case Map.get(config.cache, cache_key) do
+      nil -> try_alternatives_or_default(config, cache_key)
+      cached -> {:ok, cached, :cache}
+    end
+  end
+
+  defp try_alternatives_or_default(config, cache_key) do
+    # Try alternative endpoints
+    result = Enum.find_value(config.alternative_endpoints, fn endpoint_fn ->
+      case endpoint_fn.() do
+        {:ok, result} -> {:ok, result, :alternative}
+        {:error, _} -> nil
+      end
+    end)
+
+    case result do
+      nil ->
+        # Fall back to default value
+        case Map.get(config.default_values, cache_key) do
+          nil -> {:error, :all_fallbacks_exhausted}
+          default -> {:ok, default, :default}
+        end
+      result -> result
+    end
+  end
+end
+
+# Demonstrate fallback strategies
+IO.puts("Fallback Strategy Demo:")
+IO.puts("=" |> String.duplicate(45))
+
+# Configure fallbacks
+fallback_config = %FallbackStrategy{
+  cache: %{
+    "user_preferences" => %{theme: "light", language: "en"}
+  },
+  default_values: %{
+    "user_preferences" => %{theme: "system", language: "en"},
+    "feature_flags" => %{new_ui: false, beta_features: false}
+  },
+  alternative_endpoints: []
+}
+
+# Scenario 1: Primary succeeds
+IO.puts("\n1. Primary service succeeds:")
+result = FallbackStrategy.execute_with_fallback(
+  fn -> {:ok, %{theme: "dark", language: "es"}} end,
+  fallback_config,
+  "user_preferences"
+)
+IO.puts("   Result: #{inspect(result)}")
+
+# Scenario 2: Primary fails, cache hit
+IO.puts("\n2. Primary fails, using cache:")
+result = FallbackStrategy.execute_with_fallback(
+  fn -> {:error, :timeout} end,
+  fallback_config,
+  "user_preferences"
+)
+IO.puts("   Result: #{inspect(result)}")
+
+# Scenario 3: Primary fails, no cache, use default
+IO.puts("\n3. Primary fails, no cache, using default:")
+result = FallbackStrategy.execute_with_fallback(
+  fn -> {:error, :timeout} end,
+  fallback_config,
+  "feature_flags"
+)
+IO.puts("   Result: #{inspect(result)}")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Combining Patterns
+
+Real-world applications combine these patterns for comprehensive resilience.
+
+```elixir
+defmodule ResilientClient do
+  @moduledoc """
+  A resilient SOAP client wrapper combining circuit breaker, retry, and fallback patterns.
+  """
+
+  defstruct [:client, :circuit_breaker, :retry_strategy, :fallback_config, :name]
+
+  def new(opts) do
+    %__MODULE__{
+      client: Keyword.fetch!(opts, :client),
+      circuit_breaker: Keyword.fetch!(opts, :circuit_breaker),
+      retry_strategy: Keyword.get(opts, :retry_strategy, RetryStrategy.new()),
+      fallback_config: Keyword.get(opts, :fallback_config, FallbackStrategy.new()),
+      name: Keyword.get(opts, :name, "resilient_client")
+    }
+  end
+
+  @doc """
+  Execute a SOAP operation with full resilience:
+  1. Check circuit breaker
+  2. Execute with retries
+  3. Apply fallback if all else fails
+  """
+  def call(resilient_client, operation, params, opts \\ []) do
+    cache_key = Keyword.get(opts, :cache_key, "#{operation}_default")
+    idempotent = Keyword.get(opts, :idempotent, true)
+
+    start_time = System.monotonic_time(:millisecond)
+
+    # Wrap the operation in circuit breaker
+    result = CircuitBreaker.call(resilient_client.circuit_breaker, fn ->
+      # Execute with retry strategy
+      case execute_with_retry(resilient_client, operation, params, idempotent) do
+        {:ok, response, _meta} -> {:ok, response}
+        {:error, error, _meta} -> {:error, error}
+      end
+    end)
+
+    duration = System.monotonic_time(:millisecond) - start_time
+
+    # Apply fallback if needed
+    final_result = case result do
+      {:ok, response} ->
+        {:ok, response, %{source: :primary, duration_ms: duration}}
+
+      {:error, :circuit_open} ->
+        apply_fallback(resilient_client.fallback_config, cache_key, duration)
+
+      {:error, error} ->
+        case apply_fallback(resilient_client.fallback_config, cache_key, duration) do
+          {:ok, fallback_result, meta} -> {:ok, fallback_result, meta}
+          {:error, _} -> {:error, error, %{duration_ms: duration}}
+        end
+    end
+
+    log_result(resilient_client.name, operation, final_result)
+    final_result
+  end
+
+  defp execute_with_retry(resilient_client, operation, params, idempotent) do
+    RetryExecutor.execute(
+      fn -> simulate_soap_call(resilient_client.client, operation, params) end,
+      resilient_client.retry_strategy,
+      idempotent: idempotent,
+      on_retry: fn attempt, error, delay ->
+        IO.puts("  [#{resilient_client.name}] Retry #{attempt} for #{operation}: #{inspect(error)}, waiting #{delay}ms")
+      end
+    )
+  end
+
+  defp simulate_soap_call(_client, operation, _params) do
+    # Simulate SOAP call - in real implementation, use Lather.DynamicClient.call
+    # For demo, randomly succeed or fail
+    if :rand.uniform() > 0.3 do
+      {:ok, %{operation: operation, data: "simulated_response", timestamp: DateTime.utc_now()}}
+    else
+      {:error, %{type: :transport_error, reason: :timeout}}
+    end
+  end
+
+  defp apply_fallback(fallback_config, cache_key, duration) do
+    case FallbackStrategy.execute_with_fallback(
+      fn -> {:error, :primary_failed} end,
+      fallback_config,
+      cache_key
+    ) do
+      {:ok, result, source} -> {:ok, result, %{source: source, duration_ms: duration}}
+      error -> error
+    end
+  end
+
+  defp log_result(client_name, operation, result) do
+    case result do
+      {:ok, _data, %{source: source, duration_ms: duration}} ->
+        IO.puts("  [#{client_name}] #{operation} succeeded via #{source} in #{duration}ms")
+      {:error, _error, %{duration_ms: duration}} ->
+        IO.puts("  [#{client_name}] #{operation} failed after #{duration}ms")
+    end
+  end
+end
+
+# Create and demonstrate the resilient client
+IO.puts("Resilient Client Demo:")
+IO.puts("=" |> String.duplicate(50))
+
+# Start a fresh circuit breaker for this demo
+{:ok, demo_breaker} = CircuitBreaker.start_link(
+  name: :demo_resilient_breaker,
+  failure_threshold: 3,
+  reset_timeout: 5_000
+)
+
+fallback_config = %FallbackStrategy{
+  cache: %{
+    "GetUserDetails_default" => %{id: "cached", name: "Cached User", status: "unknown"}
+  },
+  default_values: %{
+    "GetUserDetails_default" => %{id: "default", name: "Default User", status: "offline"}
+  },
+  alternative_endpoints: []
+}
+
+resilient_client = ResilientClient.new(
+  client: nil,  # Would be a real Lather.DynamicClient in production
+  circuit_breaker: :demo_resilient_breaker,
+  retry_strategy: RetryStrategy.new(max_retries: 2, base_delay_ms: 100),
+  fallback_config: fallback_config,
+  name: "UserService"
+)
+
+# Execute several calls to demonstrate the patterns working together
+IO.puts("\nExecuting resilient calls (results will vary due to simulated failures):")
+Enum.each(1..5, fn i ->
+  IO.puts("\nCall #{i}:")
+  ResilientClient.call(resilient_client, "GetUserDetails", %{user_id: "123"})
+end)
+```
+
+```elixir
+# Summary: When to use each pattern
+IO.puts("""
+
+RESILIENCE PATTERNS SUMMARY
+===========================
+
+CIRCUIT BREAKER - Use when:
+  * Calling external services that may become unavailable
+  * You want to fail fast rather than wait for timeouts
+  * Preventing cascade failures across services
+  * Configuration: failure_threshold, reset_timeout, success_threshold
+
+RETRY WITH BACKOFF - Use when:
+  * Transient failures are expected (network blips, temporary overload)
+  * Operations are idempotent (safe to repeat)
+  * Configuration: max_retries, base_delay, max_delay, jitter
+
+BULKHEAD - Use when:
+  * Multiple services share resources (connection pools, threads)
+  * One slow service shouldn't starve others
+  * Different services have different criticality levels
+  * Configuration: pool sizes per service, queue limits
+
+FALLBACK - Use when:
+  * Degraded service is better than no service
+  * Cached/stale data is acceptable temporarily
+  * Default values provide reasonable behavior
+  * Configuration: cache TTL, default values, alternative endpoints
+
+WHEN NOT TO RETRY:
+  * Non-idempotent operations (payments, order creation)
+  * Client errors (400-level HTTP, validation failures)
+  * Authentication/authorization failures
+  * Rate limiting (429) - respect backoff headers instead
+""")
 ```
 
 <!-- livebook:{"break_markdown":true} -->

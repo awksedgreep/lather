@@ -1,0 +1,1097 @@
+# SOAP 1.2 Client Operations with Lather
+
+```elixir
+Mix.install([
+  {:lather, path: ".."}, # For local development
+  # {:lather, "~> 1.0"}, # Use this for hex package
+  {:finch, "~> 0.18"},
+  {:kino, "~> 0.12"}
+])
+```
+
+## Introduction
+
+Welcome to the **SOAP 1.2 Client Operations** tutorial! This Livebook covers the differences between SOAP 1.1 and SOAP 1.2 protocols, and demonstrates how to work with SOAP 1.2 services using Lather.
+
+### What is SOAP 1.2?
+
+SOAP 1.2 is the second major version of the SOAP (Simple Object Access Protocol) specification, released by the W3C in 2003. While SOAP 1.1 remains widely deployed, SOAP 1.2 introduces several important improvements:
+
+- **Better Web Integration**: Uses standard HTTP features more effectively
+- **Enhanced Error Handling**: More structured and informative fault messages
+- **Improved Security**: Better support for modern security protocols
+- **XML Namespace Updates**: Cleaner namespace handling
+- **Transport Flexibility**: Designed to work with various transport protocols beyond HTTP
+
+### When to Choose SOAP 1.2
+
+| Use SOAP 1.2 When | Use SOAP 1.1 When |
+|-------------------|-------------------|
+| Service explicitly requires it | Legacy service compatibility |
+| Need structured fault handling | Simpler error handling is sufficient |
+| Working with modern enterprise services | Working with older SOAP implementations |
+| Service uses SOAP 1.2 bindings in WSDL | WSDL only defines SOAP 1.1 bindings |
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Setting Up the Environment
+
+First, let's start the necessary applications and configure our HTTP client:
+
+```elixir
+# Start required applications
+{:ok, _} = Application.ensure_all_started(:lather)
+
+# Configure Finch for HTTP connections
+children = [
+  {Finch, name: Lather.Finch}
+]
+
+{:ok, _supervisor} = Supervisor.start_link(children, strategy: :one_for_one)
+
+IO.puts("Lather environment ready for SOAP 1.2 operations!")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## SOAP 1.2 vs SOAP 1.1 Differences
+
+Let's explore the key differences between SOAP 1.1 and SOAP 1.2. Understanding these differences is essential for working with mixed SOAP environments.
+
+### 1. Content-Type Header Differences
+
+One of the most visible differences is in the HTTP Content-Type header:
+
+```elixir
+# Let's examine the header differences using Lather's Transport module
+alias Lather.Http.Transport
+
+IO.puts("=== HTTP Header Comparison ===\n")
+
+# SOAP 1.1 headers
+soap_11_headers = Transport.build_headers(soap_version: :v1_1, soap_action: "http://example.com/GetUser")
+IO.puts("SOAP 1.1 Headers:")
+Enum.each(soap_11_headers, fn {name, value} ->
+  IO.puts("  #{name}: #{value}")
+end)
+
+IO.puts("")
+
+# SOAP 1.2 headers
+soap_12_headers = Transport.build_headers(soap_version: :v1_2, soap_action: "http://example.com/GetUser")
+IO.puts("SOAP 1.2 Headers:")
+Enum.each(soap_12_headers, fn {name, value} ->
+  IO.puts("  #{name}: #{value}")
+end)
+```
+
+```elixir
+# Create a visual comparison using Kino
+header_comparison = """
+| Aspect | SOAP 1.1 | SOAP 1.2 |
+|--------|----------|----------|
+| Content-Type | `text/xml; charset=utf-8` | `application/soap+xml; charset=utf-8` |
+| SOAPAction Header | Separate header | Embedded in Content-Type as `action` parameter |
+| Accept Header | `text/xml` | `application/soap+xml, text/xml` |
+"""
+
+Kino.Markdown.new(header_comparison)
+```
+
+### 2. XML Namespace Differences
+
+SOAP 1.1 and 1.2 use different XML namespaces for their envelope structures:
+
+```elixir
+# Demonstrate namespace differences
+soap_11_namespace = "http://schemas.xmlsoap.org/soap/envelope/"
+soap_12_namespace = "http://www.w3.org/2003/05/soap-envelope"
+
+namespace_info = """
+### XML Namespaces
+
+**SOAP 1.1 Namespace:**
+```
+#{soap_11_namespace}
+```
+
+**SOAP 1.2 Namespace:**
+```
+#{soap_12_namespace}
+```
+
+The namespace appears in the SOAP envelope's `xmlns:soap` attribute and determines which version the message conforms to.
+"""
+
+Kino.Markdown.new(namespace_info)
+```
+
+```elixir
+# Show actual envelope structure differences
+alias Lather.Soap.Envelope
+
+# Build a sample SOAP 1.1 envelope
+{:ok, soap_11_envelope} = Envelope.build(
+  "GetUser",
+  %{"userId" => "12345"},
+  version: :v1_1,
+  namespace: "http://example.com/users"
+)
+
+# Build the same request as SOAP 1.2
+{:ok, soap_12_envelope} = Envelope.build(
+  "GetUser",
+  %{"userId" => "12345"},
+  version: :v1_2,
+  namespace: "http://example.com/users"
+)
+
+IO.puts("=== SOAP 1.1 Envelope ===")
+IO.puts(soap_11_envelope)
+IO.puts("\n=== SOAP 1.2 Envelope ===")
+IO.puts(soap_12_envelope)
+```
+
+### 3. Fault Handling Differences
+
+SOAP 1.2 introduces a completely restructured fault format with more detailed error information:
+
+```elixir
+# SOAP Fault Structure Comparison
+fault_comparison = """
+### SOAP 1.1 Fault Structure
+```xml
+<soap:Fault>
+  <faultcode>soap:Client</faultcode>
+  <faultstring>Invalid user ID provided</faultstring>
+  <faultactor>http://example.com/users</faultactor>
+  <detail>
+    <error>User ID must be numeric</error>
+  </detail>
+</soap:Fault>
+```
+
+### SOAP 1.2 Fault Structure
+```xml
+<soap:Fault>
+  <soap:Code>
+    <soap:Value>soap:Sender</soap:Value>
+    <soap:Subcode>
+      <soap:Value>ex:InvalidInput</soap:Value>
+    </soap:Subcode>
+  </soap:Code>
+  <soap:Reason>
+    <soap:Text xml:lang="en">Invalid user ID provided</soap:Text>
+  </soap:Reason>
+  <soap:Node>http://example.com/users</soap:Node>
+  <soap:Role>http://www.w3.org/2003/05/soap-envelope/role/ultimateReceiver</soap:Role>
+  <soap:Detail>
+    <ex:error>User ID must be numeric</ex:error>
+  </soap:Detail>
+</soap:Fault>
+```
+"""
+
+Kino.Markdown.new(fault_comparison)
+```
+
+```elixir
+# Fault code mapping between versions
+fault_code_mapping = """
+### Fault Code Mapping
+
+| SOAP 1.1 | SOAP 1.2 | Description |
+|----------|----------|-------------|
+| `Client` | `Sender` | Error caused by the message sender/client |
+| `Server` | `Receiver` | Error in the message receiver/server |
+| `VersionMismatch` | `VersionMismatch` | SOAP version incompatibility |
+| `MustUnderstand` | `MustUnderstand` | Required header not processed |
+| *(none)* | `DataEncodingUnknown` | Unsupported data encoding |
+
+**Key SOAP 1.2 Improvements:**
+- Nested `Code` and `Subcode` elements for hierarchical error classification
+- `Reason` element with language support (`xml:lang`)
+- `Node` element to identify which processing node generated the fault
+- `Role` element to specify the role of the faulting node
+"""
+
+Kino.Markdown.new(fault_code_mapping)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Using DynamicClient with SOAP 1.2
+
+Lather's `DynamicClient` provides seamless support for both SOAP 1.1 and 1.2. Let's explore how to work with SOAP 1.2 services.
+
+### Setting the SOAP Version Explicitly
+
+```elixir
+alias Lather.DynamicClient
+
+# Example: Creating a client with explicit SOAP 1.2 version
+# Note: This is a demonstration - the actual service may not be available
+demo_wsdl = "http://www.example.com/soap12service?wsdl"
+
+version_options_info = """
+### SOAP Version Options
+
+When creating a DynamicClient, you can specify the SOAP version:
+
+```elixir
+# Explicit SOAP 1.2
+{:ok, client} = Lather.DynamicClient.new(wsdl_url, soap_version: :v1_2)
+
+# Explicit SOAP 1.1
+{:ok, client} = Lather.DynamicClient.new(wsdl_url, soap_version: :v1_1)
+
+# Auto-detect from WSDL (default behavior)
+{:ok, client} = Lather.DynamicClient.new(wsdl_url)
+```
+
+**Version Values:**
+- `:v1_1` - SOAP 1.1 protocol
+- `:v1_2` - SOAP 1.2 protocol
+
+When not specified, Lather automatically detects the SOAP version from the WSDL by examining:
+1. `soap12:` prefixed bindings
+2. SOAP 1.2 namespace declarations
+3. Service port configurations
+"""
+
+Kino.Markdown.new(version_options_info)
+```
+
+### Checking Service SOAP Version
+
+```elixir
+# Function to detect and display SOAP version from service info
+defmodule SoapVersionChecker do
+  @moduledoc """
+  Helper module to check and display SOAP version information.
+  """
+
+  def check_version(service_info) when is_map(service_info) do
+    soap_version = Map.get(service_info, :soap_version, :unknown)
+
+    %{
+      detected_version: soap_version,
+      version_string: version_to_string(soap_version),
+      namespace: namespace_for_version(soap_version),
+      content_type: content_type_for_version(soap_version)
+    }
+  end
+
+  defp version_to_string(:v1_1), do: "SOAP 1.1"
+  defp version_to_string(:v1_2), do: "SOAP 1.2"
+  defp version_to_string(_), do: "Unknown"
+
+  defp namespace_for_version(:v1_1), do: "http://schemas.xmlsoap.org/soap/envelope/"
+  defp namespace_for_version(:v1_2), do: "http://www.w3.org/2003/05/soap-envelope"
+  defp namespace_for_version(_), do: "N/A"
+
+  defp content_type_for_version(:v1_1), do: "text/xml; charset=utf-8"
+  defp content_type_for_version(:v1_2), do: "application/soap+xml; charset=utf-8"
+  defp content_type_for_version(_), do: "N/A"
+end
+
+IO.puts("SoapVersionChecker module loaded!")
+IO.puts("Use SoapVersionChecker.check_version(service_info) to analyze SOAP version")
+```
+
+### Interactive SOAP Version Selection
+
+```elixir
+# Create an interactive SOAP version selector
+soap_version_select = Kino.Input.select(
+  "Select SOAP Version",
+  [
+    {"Auto-detect from WSDL", :auto},
+    {"SOAP 1.1", :v1_1},
+    {"SOAP 1.2", :v1_2}
+  ],
+  default: :auto
+)
+```
+
+```elixir
+# Display the selected version configuration
+selected_version = Kino.Input.read(soap_version_select)
+
+config_display = case selected_version do
+  :auto ->
+    """
+    **Configuration: Auto-detect**
+
+    Lather will analyze the WSDL document to determine the appropriate SOAP version.
+
+    ```elixir
+    {:ok, client} = Lather.DynamicClient.new(wsdl_url)
+    # Version detected automatically from WSDL bindings
+    ```
+    """
+
+  :v1_1 ->
+    """
+    **Configuration: SOAP 1.1 (Explicit)**
+
+    Force SOAP 1.1 regardless of WSDL content.
+
+    ```elixir
+    {:ok, client} = Lather.DynamicClient.new(wsdl_url, soap_version: :v1_1)
+    ```
+
+    Headers will use:
+    - Content-Type: `text/xml; charset=utf-8`
+    - SOAPAction: Separate HTTP header
+    """
+
+  :v1_2 ->
+    """
+    **Configuration: SOAP 1.2 (Explicit)**
+
+    Force SOAP 1.2 regardless of WSDL content.
+
+    ```elixir
+    {:ok, client} = Lather.DynamicClient.new(wsdl_url, soap_version: :v1_2)
+    ```
+
+    Headers will use:
+    - Content-Type: `application/soap+xml; charset=utf-8; action="..."`
+    - SOAPAction: Embedded in Content-Type
+    """
+end
+
+Kino.Markdown.new(config_display)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Making SOAP 1.2 Requests
+
+Let's explore how SOAP 1.2 requests differ from SOAP 1.1 in practice.
+
+### Building SOAP 1.2 Envelopes
+
+```elixir
+# Demonstrate building a complete SOAP 1.2 request
+alias Lather.Soap.Envelope
+
+# Complex request with headers
+{:ok, complex_soap12} = Envelope.build(
+  "ProcessOrder",
+  %{
+    "orderId" => "ORD-2024-001",
+    "items" => [
+      %{"sku" => "WIDGET-001", "quantity" => 5},
+      %{"sku" => "GADGET-002", "quantity" => 2}
+    ],
+    "shippingAddress" => %{
+      "street" => "123 Main St",
+      "city" => "Springfield",
+      "zip" => "12345"
+    }
+  },
+  version: :v1_2,
+  namespace: "http://example.com/orders",
+  headers: [
+    {"wsse:Security" => %{
+      "@xmlns:wsse" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
+      "wsse:UsernameToken" => %{
+        "wsse:Username" => "apiuser",
+        "wsse:Password" => "secret123"
+      }
+    }}
+  ]
+)
+
+IO.puts("=== Complex SOAP 1.2 Request ===")
+IO.puts(complex_soap12)
+```
+
+### Header Differences in Action
+
+```elixir
+# Show how the SOAPAction is handled differently
+alias Lather.Http.Transport
+
+soap_action = "http://example.com/orders/ProcessOrder"
+
+IO.puts("=== SOAPAction Handling ===\n")
+
+# SOAP 1.1: Separate header
+soap11_headers = Transport.build_headers(
+  soap_version: :v1_1,
+  soap_action: soap_action
+)
+
+IO.puts("SOAP 1.1 approach:")
+Enum.each(soap11_headers, fn {name, value} ->
+  if String.downcase(name) == "soapaction" do
+    IO.puts("  [SOAPAction Header] #{name}: #{value}")
+  else
+    IO.puts("  #{name}: #{value}")
+  end
+end)
+
+IO.puts("")
+
+# SOAP 1.2: Embedded in Content-Type
+soap12_headers = Transport.build_headers(
+  soap_version: :v1_2,
+  soap_action: soap_action
+)
+
+IO.puts("SOAP 1.2 approach:")
+Enum.each(soap12_headers, fn {name, value} ->
+  if String.downcase(name) == "content-type" do
+    IO.puts("  [Content-Type with action] #{name}: #{value}")
+  else
+    IO.puts("  #{name}: #{value}")
+  end
+end)
+```
+
+### Example: Complete SOAP 1.2 Client Usage
+
+```elixir
+# Full example of creating and using a SOAP 1.2 client
+example_code = """
+### Complete SOAP 1.2 Client Example
+
+```elixir
+alias Lather.DynamicClient
+
+# 1. Create client with SOAP 1.2
+{:ok, client} = DynamicClient.new(
+  "https://enterprise.example.com/api/v2?wsdl",
+  soap_version: :v1_2,
+  timeout: 30_000,
+  authentication: {:basic, "username", "password"}
+)
+
+# 2. List available operations
+operations = DynamicClient.list_operations(client)
+IO.inspect(operations, label: "Available Operations")
+
+# 3. Get operation details
+{:ok, op_info} = DynamicClient.get_operation_info(client, "CreateCustomer")
+IO.inspect(op_info, label: "CreateCustomer Details")
+
+# 4. Make the SOAP 1.2 call
+params = %{
+  "customerData" => %{
+    "name" => "Acme Corp",
+    "email" => "contact@acme.com",
+    "tier" => "enterprise"
+  }
+}
+
+case DynamicClient.call(client, "CreateCustomer", params) do
+  {:ok, response} ->
+    IO.puts("Customer created successfully!")
+    IO.inspect(response)
+
+  {:error, {:soap_fault, fault}} ->
+    # SOAP 1.2 fault handling
+    IO.puts("SOAP Fault occurred!")
+    IO.puts("Code: \#{inspect(fault.code)}")
+    IO.puts("Subcode: \#{inspect(fault.subcode)}")
+    IO.puts("Reason: \#{fault.string}")
+    IO.inspect(fault.detail, label: "Details")
+
+  {:error, error} ->
+    IO.puts("Error: \#{inspect(error)}")
+end
+```
+"""
+
+Kino.Markdown.new(example_code)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Error Handling in SOAP 1.2
+
+SOAP 1.2 provides significantly more structured error information. Let's explore how to handle these faults effectively.
+
+### Understanding SOAP 1.2 Fault Structure
+
+```elixir
+# Demonstrate parsing SOAP 1.2 faults
+alias Lather.Xml.Parser
+
+# Sample SOAP 1.2 fault response
+soap12_fault_xml = """
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+               xmlns:ex="http://example.com/errors">
+  <soap:Body>
+    <soap:Fault>
+      <soap:Code>
+        <soap:Value>soap:Sender</soap:Value>
+        <soap:Subcode>
+          <soap:Value>ex:ValidationError</soap:Value>
+        </soap:Subcode>
+      </soap:Code>
+      <soap:Reason>
+        <soap:Text xml:lang="en">The provided email address is invalid</soap:Text>
+        <soap:Text xml:lang="es">La direccion de correo proporcionada no es valida</soap:Text>
+      </soap:Reason>
+      <soap:Node>http://example.com/api/users</soap:Node>
+      <soap:Role>http://www.w3.org/2003/05/soap-envelope/role/ultimateReceiver</soap:Role>
+      <soap:Detail>
+        <ex:errorDetails>
+          <ex:field>email</ex:field>
+          <ex:value>invalid-email</ex:value>
+          <ex:constraint>Must be a valid email address</ex:constraint>
+        </ex:errorDetails>
+      </soap:Detail>
+    </soap:Fault>
+  </soap:Body>
+</soap:Envelope>
+"""
+
+case Parser.parse(soap12_fault_xml) do
+  {:ok, parsed} ->
+    IO.puts("=== Parsed SOAP 1.2 Fault ===")
+    IO.inspect(parsed, pretty: true, limit: :infinity)
+  {:error, reason} ->
+    IO.puts("Parse error: #{inspect(reason)}")
+end
+```
+
+### SOAP 1.2 Fault Handler Module
+
+```elixir
+defmodule Soap12FaultHandler do
+  @moduledoc """
+  Handler for SOAP 1.2 fault responses.
+
+  Provides utilities for extracting and formatting SOAP 1.2 fault information.
+  """
+
+  @doc """
+  Extracts fault information from a parsed SOAP 1.2 fault.
+  """
+  def extract_fault(parsed_response) do
+    fault = get_fault_element(parsed_response)
+
+    if fault do
+      %{
+        code: extract_code(fault),
+        subcode: extract_subcode(fault),
+        reason: extract_reason(fault),
+        node: extract_element(fault, ["soap:Node", "Node"]),
+        role: extract_element(fault, ["soap:Role", "Role"]),
+        detail: extract_detail(fault),
+        soap_version: :v1_2
+      }
+    else
+      nil
+    end
+  end
+
+  @doc """
+  Formats a SOAP 1.2 fault for display.
+  """
+  def format_fault(fault) when is_map(fault) do
+    """
+    SOAP 1.2 Fault
+    ==============
+    Code: #{fault.code || "N/A"}
+    Subcode: #{fault.subcode || "N/A"}
+    Reason: #{fault.reason || "N/A"}
+    Node: #{fault.node || "N/A"}
+    Role: #{fault.role || "N/A"}
+    Detail: #{inspect(fault.detail)}
+    """
+  end
+
+  @doc """
+  Determines the fault category based on the code.
+  """
+  def fault_category(fault) do
+    code = fault.code || ""
+
+    cond do
+      String.contains?(code, "Sender") -> :client_error
+      String.contains?(code, "Receiver") -> :server_error
+      String.contains?(code, "VersionMismatch") -> :version_error
+      String.contains?(code, "MustUnderstand") -> :header_error
+      String.contains?(code, "DataEncodingUnknown") -> :encoding_error
+      true -> :unknown
+    end
+  end
+
+  # Private helpers
+
+  defp get_fault_element(parsed) do
+    get_in(parsed, ["soap:Envelope", "soap:Body", "soap:Fault"]) ||
+      get_in(parsed, ["Envelope", "Body", "Fault"])
+  end
+
+  defp extract_code(fault) do
+    code_elem = get_in(fault, ["soap:Code"]) || get_in(fault, ["Code"])
+
+    if is_map(code_elem) do
+      get_in(code_elem, ["soap:Value"]) || get_in(code_elem, ["Value"])
+    else
+      code_elem
+    end
+  end
+
+  defp extract_subcode(fault) do
+    code_elem = get_in(fault, ["soap:Code"]) || get_in(fault, ["Code"])
+
+    if is_map(code_elem) do
+      subcode_elem = get_in(code_elem, ["soap:Subcode"]) || get_in(code_elem, ["Subcode"])
+
+      if is_map(subcode_elem) do
+        get_in(subcode_elem, ["soap:Value"]) || get_in(subcode_elem, ["Value"])
+      end
+    end
+  end
+
+  defp extract_reason(fault) do
+    reason_elem = get_in(fault, ["soap:Reason"]) || get_in(fault, ["Reason"])
+
+    cond do
+      is_binary(reason_elem) ->
+        reason_elem
+
+      is_map(reason_elem) ->
+        text_elem = get_in(reason_elem, ["soap:Text"]) || get_in(reason_elem, ["Text"])
+        extract_text_content(text_elem)
+
+      true ->
+        nil
+    end
+  end
+
+  defp extract_text_content(text) when is_binary(text), do: text
+  defp extract_text_content(%{"#text" => text}), do: text
+  defp extract_text_content(texts) when is_list(texts) do
+    # Prefer English text if available
+    english = Enum.find(texts, fn t ->
+      is_map(t) && Map.get(t, "@xml:lang") == "en"
+    end)
+
+    case english do
+      %{"#text" => text} -> text
+      nil ->
+        case List.first(texts) do
+          %{"#text" => text} -> text
+          text when is_binary(text) -> text
+          _ -> nil
+        end
+    end
+  end
+  defp extract_text_content(_), do: nil
+
+  defp extract_element(fault, keys) do
+    Enum.find_value(keys, fn key -> get_in(fault, [key]) end)
+  end
+
+  defp extract_detail(fault) do
+    get_in(fault, ["soap:Detail"]) || get_in(fault, ["Detail"])
+  end
+end
+
+IO.puts("Soap12FaultHandler module loaded!")
+```
+
+### Testing the Fault Handler
+
+```elixir
+# Test the fault handler with our sample fault
+alias Lather.Xml.Parser
+
+soap12_fault_xml = """
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+               xmlns:ex="http://example.com/errors">
+  <soap:Body>
+    <soap:Fault>
+      <soap:Code>
+        <soap:Value>soap:Sender</soap:Value>
+        <soap:Subcode>
+          <soap:Value>ex:ValidationError</soap:Value>
+        </soap:Subcode>
+      </soap:Code>
+      <soap:Reason>
+        <soap:Text xml:lang="en">The provided email address is invalid</soap:Text>
+      </soap:Reason>
+      <soap:Detail>
+        <ex:field>email</ex:field>
+      </soap:Detail>
+    </soap:Fault>
+  </soap:Body>
+</soap:Envelope>
+"""
+
+{:ok, parsed} = Parser.parse(soap12_fault_xml)
+fault = Soap12FaultHandler.extract_fault(parsed)
+
+IO.puts(Soap12FaultHandler.format_fault(fault))
+IO.puts("\nFault Category: #{Soap12FaultHandler.fault_category(fault)}")
+```
+
+### Error Handling Best Practices
+
+```elixir
+error_handling_guide = """
+### SOAP 1.2 Error Handling Best Practices
+
+#### 1. Check the Fault Code Hierarchy
+
+```elixir
+case DynamicClient.call(client, operation, params) do
+  {:error, {:soap_fault, fault}} when fault.soap_version == :v1_2 ->
+    # Check main code
+    case fault.code do
+      code when code in ["soap:Sender", "Sender"] ->
+        # Client-side error - fix the request
+        handle_client_error(fault)
+
+      code when code in ["soap:Receiver", "Receiver"] ->
+        # Server-side error - may be temporary
+        handle_server_error(fault)
+
+      _ ->
+        handle_unknown_error(fault)
+    end
+
+    # Also check subcode for more specific handling
+    if fault.subcode do
+      log_subcode_details(fault.subcode)
+    end
+end
+```
+
+#### 2. Handle Multi-Language Reasons
+
+SOAP 1.2 supports multiple language versions of the reason:
+
+```elixir
+# The reason may include language tags
+# Lather extracts the English version by default
+IO.puts("Error: \#{fault.string}")
+```
+
+#### 3. Extract Detail Information
+
+```elixir
+case fault.detail do
+  %{"errorCode" => code, "suggestion" => suggestion} ->
+    IO.puts("Error \#{code}: \#{suggestion}")
+
+  detail when is_binary(detail) ->
+    IO.puts("Detail: \#{detail}")
+
+  _ ->
+    IO.inspect(fault.detail, label: "Raw fault detail")
+end
+```
+
+#### 4. Implement Retry Logic for Receiver Faults
+
+```elixir
+defmodule SoapRetry do
+  def call_with_retry(client, operation, params, max_retries \\\\ 3) do
+    do_call(client, operation, params, max_retries, 0)
+  end
+
+  defp do_call(client, operation, params, max_retries, attempt) do
+    case DynamicClient.call(client, operation, params) do
+      {:ok, response} ->
+        {:ok, response}
+
+      {:error, {:soap_fault, %{code: code}}}
+        when code in ["soap:Receiver", "Receiver"] and attempt < max_retries ->
+        # Server error - retry with exponential backoff
+        Process.sleep(:timer.seconds(round(:math.pow(2, attempt))))
+        do_call(client, operation, params, max_retries, attempt + 1)
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+end
+```
+"""
+
+Kino.Markdown.new(error_handling_guide)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## When to Use SOAP 1.2
+
+Understanding when to choose SOAP 1.2 over SOAP 1.1 is important for integration projects.
+
+### Benefits of SOAP 1.2
+
+```elixir
+benefits = """
+### Key Benefits of SOAP 1.2
+
+#### 1. Better Web Integration
+- Uses MIME types properly (`application/soap+xml`)
+- Action embedded in Content-Type is more RESTful
+- Better alignment with HTTP semantics
+
+#### 2. Enhanced Error Information
+- Hierarchical fault codes with subcodes
+- Multi-language support for error messages
+- Node and Role information for distributed systems
+- More structured detail elements
+
+#### 3. Improved Extensibility
+- Cleaner namespace design
+- Better support for SOAP intermediaries
+- Enhanced envelope versioning
+
+#### 4. Modern Protocol Support
+- Native support for MTOM (Message Transmission Optimization)
+- Better binary data handling
+- Improved WS-* specification compatibility
+
+#### 5. Standards Compliance
+- W3C Recommendation (official standard)
+- Better interoperability testing
+- More precise specification
+"""
+
+Kino.Markdown.new(benefits)
+```
+
+### Compatibility Considerations
+
+```elixir
+compatibility = """
+### Compatibility Considerations
+
+#### When SOAP 1.1 is Still Preferred
+
+1. **Legacy System Integration**
+   - Many older enterprise systems only support SOAP 1.1
+   - Some government and financial services still mandate 1.1
+
+2. **Tool Compatibility**
+   - Some older SOAP testing tools may not support 1.2
+   - Legacy code generators might only produce 1.1 clients
+
+3. **Simpler Debugging**
+   - `text/xml` Content-Type is easier to inspect
+   - Separate SOAPAction header is more visible in logs
+
+#### Migration Strategy
+
+```elixir
+# Pattern: Try SOAP 1.2, fall back to 1.1
+defmodule AdaptiveClient do
+  def connect(wsdl_url) do
+    # First try auto-detection
+    case DynamicClient.new(wsdl_url) do
+      {:ok, client} ->
+        {:ok, client}
+
+      {:error, _} ->
+        # If auto-detect fails, try explicit versions
+        with {:error, _} <- DynamicClient.new(wsdl_url, soap_version: :v1_2),
+             {:error, _} <- DynamicClient.new(wsdl_url, soap_version: :v1_1) do
+          {:error, :unable_to_connect}
+        end
+    end
+  end
+end
+```
+
+#### Version Detection from WSDL
+
+Lather automatically detects the SOAP version by examining:
+
+1. **Binding Prefixes**: `soap12:binding` indicates SOAP 1.2
+2. **Namespace URIs**: `http://schemas.xmlsoap.org/wsdl/soap12/`
+3. **Port Addresses**: `soap12:address` elements
+
+```elixir
+# Check detected version
+service_info = DynamicClient.get_service_info(client)
+IO.puts("Detected SOAP version: \#{service_info.soap_version}")
+```
+"""
+
+Kino.Markdown.new(compatibility)
+```
+
+### Decision Matrix
+
+```elixir
+decision_matrix = """
+### SOAP Version Decision Matrix
+
+| Criterion | Choose SOAP 1.1 | Choose SOAP 1.2 |
+|-----------|-----------------|-----------------|
+| **Service WSDL** | Only has soap: bindings | Has soap12: bindings |
+| **Error Handling Needs** | Simple errors sufficient | Need detailed fault info |
+| **Legacy Integration** | Must integrate with old systems | Modern enterprise stack |
+| **Binary Data** | Limited MTOM needs | Heavy binary payload use |
+| **Debugging** | Need simple HTTP traces | Can use modern tools |
+| **Standards** | Legacy compliance | W3C standard compliance |
+| **Intermediaries** | Direct client-server | SOAP nodes/proxies |
+"""
+
+Kino.Markdown.new(decision_matrix)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Practical Example: Version Comparison
+
+Let's create a practical demonstration comparing SOAP 1.1 and 1.2 request generation:
+
+```elixir
+defmodule SoapVersionDemo do
+  @moduledoc """
+  Demonstrates the differences between SOAP 1.1 and 1.2 in practice.
+  """
+
+  alias Lather.Soap.Envelope
+  alias Lather.Http.Transport
+
+  def compare_versions(operation, params, namespace) do
+    IO.puts("=" |> String.duplicate(60))
+    IO.puts("SOAP Version Comparison")
+    IO.puts("Operation: #{operation}")
+    IO.puts("=" |> String.duplicate(60))
+
+    # Generate both versions
+    {:ok, soap11} = Envelope.build(operation, params,
+      version: :v1_1, namespace: namespace)
+    {:ok, soap12} = Envelope.build(operation, params,
+      version: :v1_2, namespace: namespace)
+
+    # Compare headers
+    IO.puts("\n--- HTTP Headers ---\n")
+
+    IO.puts("SOAP 1.1:")
+    Transport.build_headers(soap_version: :v1_1, soap_action: "#{namespace}/#{operation}")
+    |> Enum.each(fn {k, v} -> IO.puts("  #{k}: #{v}") end)
+
+    IO.puts("\nSOAP 1.2:")
+    Transport.build_headers(soap_version: :v1_2, soap_action: "#{namespace}/#{operation}")
+    |> Enum.each(fn {k, v} -> IO.puts("  #{k}: #{v}") end)
+
+    # Compare envelope sizes
+    IO.puts("\n--- Envelope Statistics ---\n")
+    IO.puts("SOAP 1.1 envelope: #{byte_size(soap11)} bytes")
+    IO.puts("SOAP 1.2 envelope: #{byte_size(soap12)} bytes")
+
+    # Show namespace difference
+    IO.puts("\n--- Namespace URIs ---\n")
+    IO.puts("SOAP 1.1: http://schemas.xmlsoap.org/soap/envelope/")
+    IO.puts("SOAP 1.2: http://www.w3.org/2003/05/soap-envelope")
+
+    %{
+      soap11_envelope: soap11,
+      soap12_envelope: soap12,
+      soap11_size: byte_size(soap11),
+      soap12_size: byte_size(soap12)
+    }
+  end
+end
+
+# Run the comparison
+SoapVersionDemo.compare_versions(
+  "GetUserProfile",
+  %{
+    "userId" => "user-12345",
+    "includePreferences" => true,
+    "fields" => ["name", "email", "avatar"]
+  },
+  "http://api.example.com/users"
+)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Quick Reference
+
+```elixir
+reference_card = """
+## SOAP 1.2 Quick Reference
+
+### Creating a SOAP 1.2 Client
+```elixir
+{:ok, client} = Lather.DynamicClient.new(wsdl_url, soap_version: :v1_2)
+```
+
+### Key Differences Summary
+
+| Aspect | SOAP 1.1 | SOAP 1.2 |
+|--------|----------|----------|
+| Namespace | `http://schemas.xmlsoap.org/soap/envelope/` | `http://www.w3.org/2003/05/soap-envelope` |
+| Content-Type | `text/xml` | `application/soap+xml` |
+| SOAPAction | HTTP Header | Content-Type parameter |
+| Client Fault | `Client` | `Sender` |
+| Server Fault | `Server` | `Receiver` |
+| Fault Structure | Flat | Nested (Code/Subcode) |
+| Reason | faultstring | Reason/Text with xml:lang |
+
+### Fault Code Values
+- `soap:Sender` - Client-side error
+- `soap:Receiver` - Server-side error
+- `soap:VersionMismatch` - Wrong SOAP version
+- `soap:MustUnderstand` - Header processing error
+- `soap:DataEncodingUnknown` - Unknown encoding
+
+### Version Detection
+```elixir
+service_info = DynamicClient.get_service_info(client)
+version = service_info.soap_version  # :v1_1 or :v1_2
+```
+
+### Error Handling
+```elixir
+case DynamicClient.call(client, operation, params) do
+  {:ok, response} ->
+    handle_success(response)
+
+  {:error, {:soap_fault, %{soap_version: :v1_2} = fault}} ->
+    IO.puts("SOAP 1.2 Fault: \#{fault.code}")
+    IO.puts("Subcode: \#{fault.subcode}")
+    IO.puts("Reason: \#{fault.string}")
+
+  {:error, error} ->
+    handle_error(error)
+end
+```
+"""
+
+Kino.Markdown.new(reference_card)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Next Steps
+
+Congratulations! You now understand the key differences between SOAP 1.1 and SOAP 1.2, and how to work with SOAP 1.2 services using Lather.
+
+### Recommended Further Reading
+
+1. **W3C SOAP 1.2 Specification**
+   - Part 0: Primer - https://www.w3.org/TR/soap12-part0/
+   - Part 1: Messaging Framework - https://www.w3.org/TR/soap12-part1/
+   - Part 2: Adjuncts - https://www.w3.org/TR/soap12-part2/
+
+2. **Other Lather Livebooks**
+   - `getting_started.livemd` - Basic SOAP operations
+   - `enterprise_integration.livemd` - Complex enterprise scenarios
+   - `debugging_troubleshooting.livemd` - Debugging SOAP issues
+
+3. **Related Topics**
+   - WS-Security with SOAP 1.2
+   - MTOM binary attachments
+   - SOAP intermediary patterns

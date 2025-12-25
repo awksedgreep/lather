@@ -45,7 +45,7 @@ Generate comprehensive WSDL documents with multiple protocol bindings:
 
 ```elixir
 # Standard WSDL (SOAP 1.1 only)  
-wsdl = Lather.Server.WsdlGenerator.generate(service_info, base_url)
+wsdl = Lather.Server.WSDLGenerator.generate(service_info, base_url)
 
 # Enhanced WSDL (multi-protocol)
 enhanced_wsdl = Lather.Server.EnhancedWSDLGenerator.generate(service_info, base_url)
@@ -107,22 +107,35 @@ Define SOAP services with a clean, macro-based DSL:
 ```elixir
 defmodule MyApp.UserService do
   use Lather.Server
-  
+
+  @namespace "http://myapp.com/users"
   @service_name "UserService"
-  @target_namespace "http://myapp.com/user"
-  
-  defoperation get_user,
-    input: [user_id: :string],
-    output: [user: %{name: :string, email: :string}] do
-    
+
+  soap_operation "GetUser" do
+    description "Retrieve user information by ID"
+
+    input do
+      parameter "userId", :string, required: true
+    end
+
+    output do
+      parameter "user", "tns:User"
+    end
+
+    soap_action "http://myapp.com/users/GetUser"
+  end
+
+  def get_user(%{"userId" => user_id}) do
     user = MyApp.Users.get!(user_id)
-    {:ok, %{user: %{name: user.name, email: user.email}}}
+    {:ok, %{"user" => %{"name" => user.name, "email" => user.email}}}
   end
 end
 
 # Add to your Phoenix router
-pipe_through :api
-post "/soap/user", Lather.Server.Plug, service: MyApp.UserService
+scope "/soap" do
+  pipe_through :api
+  post "/users", Lather.Server.Plug, service: MyApp.UserService
+end
 ```
 
 ### Enhanced Multi-Protocol Server
@@ -235,6 +248,13 @@ Demonstrates document/literal SOAP style:
 - Complex data structures
 - Service discovery
 
+#### 🔄 **SOAP 1.2 Client** (`livebooks/soap12_client.livemd`)
+Working with SOAP 1.2 protocol:
+- SOAP 1.2 vs 1.1 differences
+- Content-Type and namespace changes
+- SOAP 1.2 fault handling
+- Version detection and selection
+
 #### 🖥️ **SOAP Server Development** (`livebooks/soap_server_development.livemd`)
 Complete server development tutorial:
 - Building SOAP services with Lather.Server
@@ -249,12 +269,33 @@ Master complex data structures:
 - Type validation and conversion
 - Custom type mappings
 
+#### 📎 **MTOM Attachments** (`livebooks/mtom_attachments.livemd`)
+Binary data transmission with MTOM/XOP:
+- Creating and sending attachments
+- MIME multipart handling
+- XOP package structure
+- Performance considerations
+
 #### 🏢 **Enterprise Integration** (`livebooks/enterprise_integration.livemd`)
 Production-ready patterns and practices:
 - WS-Security implementation
 - SSL/TLS configuration
 - Performance optimization
 - Monitoring and logging
+
+#### 📊 **Production Monitoring** (`livebooks/production_monitoring.livemd`)
+Observability and monitoring in production:
+- Telemetry integration
+- Key metrics and health checks
+- Alerting patterns
+- Interactive dashboards
+
+#### 🧪 **Testing Strategies** (`livebooks/testing_strategies.livemd`)
+Comprehensive testing approaches:
+- Unit testing SOAP clients
+- Mocking with Bypass
+- Integration and contract testing
+- Performance testing
 
 #### 🐛 **Debugging & Troubleshooting** (`livebooks/debugging_troubleshooting.livemd`)
 Essential debugging techniques:
@@ -486,6 +527,6 @@ This project is licensed under the MIT License - see the LICENSE file in the rep
 
 ---
 
-**Lather v1.0.1** - Making SOAP integration in Elixir as smooth as possible! 🧼✨
+**Lather v1.0.4** - Making SOAP integration in Elixir as smooth as possible! 🧼✨
 
-*Released January 2025 with complete SOAP 1.2 support and multi-protocol capabilities.*
+*Released December 2025 with complete SOAP 1.2 support and multi-protocol capabilities.*

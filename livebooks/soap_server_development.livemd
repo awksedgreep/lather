@@ -1461,6 +1461,713 @@ DeploymentPatterns.show_kubernetes_deployment()
 
 <!-- livebook:{"break_markdown":true} -->
 
+## Enhanced Multi-Protocol Server
+
+This section demonstrates the full power of Lather's EnhancedPlug, which provides a complete
+multi-protocol SOAP server with interactive web forms, similar to the developer experience
+in .NET Web Services.
+
+### Introduction to EnhancedPlug
+
+EnhancedPlug extends the standard Lather.Server.Plug with these additional features:
+
+```elixir
+enhanced_features = """
+EnhancedPlug vs Standard Plug:
+
+Standard Plug:
+  - Basic SOAP 1.1 request handling
+  - WSDL generation on GET ?wsdl
+  - POST for SOAP operations
+
+EnhancedPlug:
+  - SOAP 1.1 AND SOAP 1.2 support
+  - JSON/REST API endpoints
+  - Interactive HTML test forms
+  - Multi-protocol WSDL generation
+  - Per-operation test pages
+  - Automatic protocol negotiation
+  - Responsive web interface
+"""
+
+IO.puts(enhanced_features)
+```
+
+The key advantage is that a single service module can serve clients using different protocols,
+from legacy SOAP 1.1 systems to modern JSON-based web applications.
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Setting Up EnhancedPlug
+
+Here's how to configure EnhancedPlug in your application:
+
+```elixir
+defmodule EnhancedPlugExamples do
+  def show_phoenix_router_config do
+    config = """
+    # Phoenix Router Configuration
+    # ============================
+
+    # In your router.ex file:
+
+    defmodule MyAppWeb.Router do
+      use MyAppWeb, :router
+
+      # Important: Use `match :*` to handle all HTTP methods
+      scope "/api" do
+        pipe_through :api
+
+        # Single service with all protocol endpoints
+        match :*, "/calculator", Lather.Server.EnhancedPlug,
+          service: CalculatorService
+
+        # Catch sub-paths for SOAP 1.2 (/v1.2) and JSON (/api)
+        match :*, "/calculator/*path", Lather.Server.EnhancedPlug,
+          service: CalculatorService
+
+        # Multiple services in the same scope
+        match :*, "/bookstore", Lather.Server.EnhancedPlug,
+          service: BookstoreService
+        match :*, "/bookstore/*path", Lather.Server.EnhancedPlug,
+          service: BookstoreService
+      end
+    end
+
+    # This configuration automatically provides:
+    #
+    # GET  /api/calculator           -> Interactive web form overview
+    # GET  /api/calculator?wsdl      -> Standard WSDL download
+    # GET  /api/calculator?wsdl&enhanced=true -> Multi-protocol WSDL
+    # GET  /api/calculator?op=Add    -> Test form for Add operation
+    # POST /api/calculator           -> SOAP 1.1 endpoint
+    # POST /api/calculator/v1.2      -> SOAP 1.2 endpoint
+    # POST /api/calculator/api       -> JSON/REST endpoint
+    """
+
+    IO.puts(config)
+  end
+
+  def show_standalone_config do
+    config = """
+    # Standalone EnhancedPlug with Bandit
+    # ===================================
+
+    defmodule MyApp.SOAPServer do
+      use Plug.Router
+
+      plug :match
+      plug :dispatch
+
+      # Mount EnhancedPlug for calculator service
+      forward "/soap/calculator",
+        to: Lather.Server.EnhancedPlug,
+        init_opts: [service: CalculatorService]
+
+      # Start the server
+      def start do
+        Bandit.start_link(plug: __MODULE__, port: 4000)
+      end
+    end
+
+    # Start with:
+    # {:ok, _} = MyApp.SOAPServer.start()
+    """
+
+    IO.puts(config)
+  end
+
+  def show_plug_options do
+    options = """
+    # EnhancedPlug Configuration Options
+    # ===================================
+
+    plug Lather.Server.EnhancedPlug,
+      # Required: The SOAP service module
+      service: MyApp.CalculatorService,
+
+      # Optional: Base path for URL generation (default: "/soap")
+      base_path: "/api/v1",
+
+      # Optional: Enable/disable web form interface (default: true)
+      enable_forms: true,
+
+      # Optional: Enable/disable JSON endpoints (default: true)
+      enable_json: true,
+
+      # Optional: Custom authentication handler
+      auth_handler: MyApp.AuthHandler,
+
+      # Optional: Enable parameter validation (default: true)
+      validate_params: true
+    """
+
+    IO.puts(options)
+  end
+end
+
+EnhancedPlugExamples.show_phoenix_router_config()
+IO.puts("\n" <> String.duplicate("-", 60) <> "\n")
+EnhancedPlugExamples.show_standalone_config()
+IO.puts("\n" <> String.duplicate("-", 60) <> "\n")
+EnhancedPlugExamples.show_plug_options()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Multi-Protocol Endpoints Demo
+
+Let's explore all the URL patterns supported by EnhancedPlug:
+
+```elixir
+defmodule MultiProtocolDemo do
+  def show_url_patterns do
+    IO.puts("Multi-Protocol URL Patterns")
+    IO.puts("=" |> String.duplicate(50))
+
+    patterns = [
+      {"GET  /service", "Interactive web interface with service overview"},
+      {"GET  /service?wsdl", "Standard WSDL 1.1 document"},
+      {"GET  /service?wsdl&enhanced=true", "Enhanced multi-protocol WSDL"},
+      {"GET  /service?op=OperationName", "Interactive test form for specific operation"},
+      {"POST /service", "SOAP 1.1 endpoint (Content-Type: text/xml)"},
+      {"POST /service/v1.2", "SOAP 1.2 endpoint (Content-Type: application/soap+xml)"},
+      {"POST /service/api", "JSON/REST endpoint (Content-Type: application/json)"}
+    ]
+
+    Enum.each(patterns, fn {pattern, description} ->
+      IO.puts("\n#{pattern}")
+      IO.puts("  -> #{description}")
+    end)
+  end
+
+  def generate_example_requests do
+    base_url = "http://localhost:4000/api/calculator"
+    service_info = CalculatorService.__soap_service__()
+
+    IO.puts("\n\nExample Requests for Each Protocol")
+    IO.puts("=" |> String.duplicate(50))
+
+    # SOAP 1.1 Request
+    soap_1_1_request = """
+
+    SOAP 1.1 Request:
+    -----------------
+    POST #{base_url} HTTP/1.1
+    Host: localhost:4000
+    Content-Type: text/xml; charset=utf-8
+    SOAPAction: "http://calculator.example.com/Add"
+
+    <?xml version="1.0" encoding="utf-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+      <soap:Body>
+        <Add xmlns="http://calculator.example.com">
+          <a>10.5</a>
+          <b>5.2</b>
+        </Add>
+      </soap:Body>
+    </soap:Envelope>
+    """
+
+    IO.puts(soap_1_1_request)
+
+    # SOAP 1.2 Request
+    soap_1_2_request = """
+    SOAP 1.2 Request:
+    -----------------
+    POST #{base_url}/v1.2 HTTP/1.1
+    Host: localhost:4000
+    Content-Type: application/soap+xml; charset=utf-8; action="http://calculator.example.com/Add"
+
+    <?xml version="1.0" encoding="utf-8"?>
+    <soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
+      <soap12:Body>
+        <Add xmlns="http://calculator.example.com">
+          <a>10.5</a>
+          <b>5.2</b>
+        </Add>
+      </soap12:Body>
+    </soap12:Envelope>
+    """
+
+    IO.puts(soap_1_2_request)
+
+    # JSON Request
+    json_request = """
+    JSON/REST Request:
+    ------------------
+    POST #{base_url}/api HTTP/1.1
+    Host: localhost:4000
+    Content-Type: application/json; charset=utf-8
+
+    {
+      "operation": "Add",
+      "a": "10.5",
+      "b": "5.2"
+    }
+
+    Response:
+    {
+      "success": true,
+      "data": {
+        "result": "15.7"
+      }
+    }
+    """
+
+    IO.puts(json_request)
+  end
+
+  def demonstrate_content_negotiation do
+    IO.puts("\nContent-Type Negotiation")
+    IO.puts("=" |> String.duplicate(40))
+
+    negotiation = """
+    EnhancedPlug automatically routes requests based on:
+
+    1. URL Path:
+       - /service       -> SOAP 1.1
+       - /service/v1.2  -> SOAP 1.2
+       - /service/api   -> JSON
+
+    2. Query Parameters:
+       - ?wsdl          -> Return WSDL
+       - ?op=Name       -> Operation form
+       - ?wsdl&enhanced=true -> Multi-protocol WSDL
+
+    3. Content-Type Header:
+       - text/xml                  -> SOAP 1.1
+       - application/soap+xml      -> SOAP 1.2
+       - application/json          -> JSON
+    """
+
+    IO.puts(negotiation)
+  end
+end
+
+MultiProtocolDemo.show_url_patterns()
+MultiProtocolDemo.generate_example_requests()
+MultiProtocolDemo.demonstrate_content_negotiation()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Interactive Web Forms
+
+The FormGenerator creates professional HTML interfaces for testing your SOAP services:
+
+```elixir
+defmodule FormGeneratorDemo do
+  alias Lather.Server.FormGenerator
+
+  def demonstrate_service_overview do
+    IO.puts("Interactive Web Form Generation")
+    IO.puts("=" |> String.duplicate(50))
+
+    service_info = CalculatorService.__soap_service__()
+    base_url = "http://localhost:4000/api/"
+
+    # Generate the service overview HTML
+    overview_html = FormGenerator.generate_service_overview(service_info, base_url)
+
+    # Show structure (not full HTML for brevity)
+    IO.puts("\nService Overview Page Structure:")
+    IO.puts("-" |> String.duplicate(40))
+
+    structure = """
+    The generated HTML page includes:
+
+    1. Header Section:
+       - Service name and description
+       - Namespace information
+       - Lather version info
+
+    2. Supported Protocols Section:
+       - SOAP 1.1 endpoint with URL
+       - SOAP 1.2 endpoint with URL
+       - JSON/REST endpoint with URL
+
+    3. Available Operations Section:
+       - List of all operations with links
+       - Input/output parameter counts
+       - Clickable links to test forms
+
+    4. WSDL Download Section:
+       - Standard WSDL download link
+       - Enhanced multi-protocol WSDL link
+    """
+
+    IO.puts(structure)
+
+    # Show the actual size of generated HTML
+    IO.puts("\nGenerated HTML size: #{String.length(overview_html)} bytes")
+    IO.puts("Operations listed: #{length(service_info.operations)}")
+  end
+
+  def demonstrate_operation_form do
+    service_info = CalculatorService.__soap_service__()
+    base_url = "http://localhost:4000/api/"
+
+    # Get Add operation
+    add_operation = Enum.find(service_info.operations, &(&1.name == "Add"))
+
+    IO.puts("\nOperation Test Form Structure:")
+    IO.puts("-" |> String.duplicate(40))
+
+    structure = """
+    Each operation page (accessed via ?op=OperationName) includes:
+
+    1. Operation Header:
+       - Operation name
+       - Description (if provided)
+       - Link back to service overview
+
+    2. Test Form Section:
+       - HTML input for each parameter
+       - Required field indicators
+       - Type-appropriate input controls:
+         * text inputs for strings
+         * number inputs for decimals/integers
+         * checkboxes for booleans
+         * date pickers for date types
+
+    3. Action Buttons:
+       - "Invoke" button (sends SOAP request)
+       - "View JSON Format" button (shows JSON structure)
+
+    4. Result Display Area:
+       - Shows response XML after invocation
+       - Formatted for readability
+
+    5. Protocol Examples Section:
+       - SOAP 1.1 request/response sample
+       - SOAP 1.2 request/response sample
+       - JSON request/response sample
+    """
+
+    IO.puts(structure)
+
+    # Generate and show the actual form HTML for Add operation
+    if add_operation do
+      form_html = FormGenerator.generate_operation_page(service_info, add_operation, base_url)
+      IO.puts("\nGenerated form page size: #{String.length(form_html)} bytes")
+
+      IO.puts("\nAdd Operation Parameters:")
+      Enum.each(add_operation.input, fn param ->
+        required = if param.required, do: "(required)", else: "(optional)"
+        IO.puts("  - #{param.name}: #{param.type} #{required}")
+      end)
+    end
+  end
+
+  def show_form_html_structure do
+    IO.puts("\nHTML Form Structure Example:")
+    IO.puts("-" |> String.duplicate(40))
+
+    # Show the key HTML elements that FormGenerator produces
+    html_sample = """
+    <form id="testForm" class="test-form">
+        <table class="parameter-table">
+            <thead>
+                <tr>
+                    <th>Parameter</th>
+                    <th>Value</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="param-name">
+                        a
+                        <span class="required-indicator">*</span>
+                        <br><small>First number</small>
+                    </td>
+                    <td class="param-value">
+                        <input type="number"
+                               name="a"
+                               placeholder="decimal"
+                               class="param-input required" />
+                    </td>
+                </tr>
+                <tr>
+                    <td class="param-name">
+                        b
+                        <span class="required-indicator">*</span>
+                        <br><small>Second number</small>
+                    </td>
+                    <td class="param-value">
+                        <input type="number"
+                               name="b"
+                               placeholder="decimal"
+                               class="param-input required" />
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="form-actions">
+            <button type="button" onclick="invokeOperation(...)" class="invoke-btn">
+                Invoke
+            </button>
+            <button type="button" onclick="viewJSON(...)" class="json-btn">
+                View JSON Format
+            </button>
+        </div>
+    </form>
+
+    <div id="resultSection" class="result-section" style="display: none;">
+        <h4>Result</h4>
+        <pre id="resultContent"></pre>
+    </div>
+    """
+
+    IO.puts(html_sample)
+  end
+end
+
+FormGeneratorDemo.demonstrate_service_overview()
+FormGeneratorDemo.demonstrate_operation_form()
+FormGeneratorDemo.show_form_html_structure()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Enhanced WSDL Generation
+
+The EnhancedWSDLGenerator creates comprehensive WSDL documents with multi-protocol support:
+
+```elixir
+defmodule EnhancedWSDLDemo do
+  alias Lather.Server.{WSDLGenerator, EnhancedWSDLGenerator}
+
+  def compare_wsdl_generators do
+    service_info = CalculatorService.__soap_service__()
+    base_url = "http://localhost:4000/api/"
+
+    IO.puts("WSDL Generation Comparison")
+    IO.puts("=" |> String.duplicate(50))
+
+    # Standard WSDL
+    standard_wsdl = WSDLGenerator.generate(service_info, base_url)
+
+    # Enhanced WSDL
+    enhanced_wsdl = EnhancedWSDLGenerator.generate(service_info, base_url,
+      protocols: [:soap_1_1, :soap_1_2, :http],
+      include_json: true
+    )
+
+    IO.puts("\nStandard WSDL:")
+    IO.puts("  Size: #{String.length(standard_wsdl)} bytes")
+    IO.puts("  Bindings: SOAP 1.1 only")
+    IO.puts("  Endpoints: Single SOAP endpoint")
+
+    IO.puts("\nEnhanced WSDL:")
+    IO.puts("  Size: #{String.length(enhanced_wsdl)} bytes")
+    IO.puts("  Bindings: SOAP 1.1, SOAP 1.2, HTTP/REST")
+    IO.puts("  Endpoints: Three protocol endpoints")
+
+    # Show enhanced WSDL excerpt
+    IO.puts("\nEnhanced WSDL Excerpt (bindings section):")
+    IO.puts("-" |> String.duplicate(40))
+
+    # Extract binding names from enhanced WSDL
+    binding_pattern = ~r/<binding name="([^"]+)"/
+    bindings = Regex.scan(binding_pattern, enhanced_wsdl)
+               |> Enum.map(fn [_, name] -> name end)
+
+    IO.puts("Bindings defined:")
+    Enum.each(bindings, fn binding ->
+      IO.puts("  - #{binding}")
+    end)
+
+    # Extract port names
+    port_pattern = ~r/<port name="([^"]+)"/
+    ports = Regex.scan(port_pattern, enhanced_wsdl)
+            |> Enum.map(fn [_, name] -> name end)
+
+    IO.puts("\nService ports defined:")
+    Enum.each(ports, fn port ->
+      IO.puts("  - #{port}")
+    end)
+  end
+
+  def show_enhanced_wsdl_structure do
+    IO.puts("\nEnhanced WSDL Document Structure")
+    IO.puts("-" |> String.duplicate(40))
+
+    structure = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+                 xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                 xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/"
+                 xmlns:http="http://schemas.xmlsoap.org/wsdl/http/"
+                 xmlns:mime="http://schemas.xmlsoap.org/wsdl/mime/"
+                 ...>
+
+      <!-- Service documentation -->
+      <documentation>
+        Multi-Protocol Web Service - SOAP 1.1, SOAP 1.2, HTTP/REST
+      </documentation>
+
+      <!-- XML Schema types -->
+      <types>...</types>
+
+      <!-- Request/Response messages -->
+      <message name="AddRequest">...</message>
+      <message name="AddResponse">...</message>
+
+      <!-- Abstract port type (interface) -->
+      <portType name="CalculatorServicePortType">
+        <operation name="Add">
+          <input message="tns:AddRequest"/>
+          <output message="tns:AddResponse"/>
+        </operation>
+      </portType>
+
+      <!-- SOAP 1.1 Binding -->
+      <binding name="CalculatorServiceSOAP11Binding" type="tns:CalculatorServicePortType">
+        <soap:binding transport="http://schemas.xmlsoap.org/soap/http" style="document"/>
+        ...
+      </binding>
+
+      <!-- SOAP 1.2 Binding -->
+      <binding name="CalculatorServiceSOAP12Binding" type="tns:CalculatorServicePortType">
+        <soap12:binding transport="http://schemas.xmlsoap.org/soap/http" style="document"/>
+        ...
+      </binding>
+
+      <!-- HTTP/REST Binding -->
+      <binding name="CalculatorServiceHTTPBinding" type="tns:CalculatorServicePortType">
+        <http:binding verb="POST"/>
+        <operation name="Add">
+          <http:operation location="/add"/>
+          <input><mime:content type="application/json"/></input>
+          <output><mime:content type="application/json"/></output>
+        </operation>
+      </binding>
+
+      <!-- Service with multiple endpoints -->
+      <service name="CalculatorService">
+        <port name="CalculatorServiceSOAP11Port" binding="tns:CalculatorServiceSOAP11Binding">
+          <soap:address location="http://localhost:4000/api/soap/v1.1/CalculatorService"/>
+        </port>
+        <port name="CalculatorServiceSOAP12Port" binding="tns:CalculatorServiceSOAP12Binding">
+          <soap12:address location="http://localhost:4000/api/soap/v1.2/CalculatorService"/>
+        </port>
+        <port name="CalculatorServiceHTTPPort" binding="tns:CalculatorServiceHTTPBinding">
+          <http:address location="http://localhost:4000/api/calculatorservice"/>
+        </port>
+      </service>
+    </definitions>
+    """
+
+    IO.puts(structure)
+  end
+
+  def generate_and_display_enhanced_wsdl do
+    service_info = CalculatorService.__soap_service__()
+    base_url = "http://localhost:4000/api/"
+
+    IO.puts("\nActual Enhanced WSDL Output (first 2000 chars):")
+    IO.puts("-" |> String.duplicate(40))
+
+    enhanced_wsdl = EnhancedWSDLGenerator.generate(service_info, base_url)
+    IO.puts(String.slice(enhanced_wsdl, 0, 2000) <> "\n...[truncated]...")
+  end
+end
+
+EnhancedWSDLDemo.compare_wsdl_generators()
+EnhancedWSDLDemo.show_enhanced_wsdl_structure()
+EnhancedWSDLDemo.generate_and_display_enhanced_wsdl()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+### Putting It All Together
+
+Here's a complete example showing how to test all multi-protocol endpoints:
+
+```elixir
+defmodule CompleteMultiProtocolExample do
+  def run_complete_demo do
+    IO.puts("Complete Multi-Protocol Server Demo")
+    IO.puts("=" |> String.duplicate(50))
+
+    service_info = CalculatorService.__soap_service__()
+    base_url = "http://localhost:4000/api/"
+
+    # 1. Service Overview
+    IO.puts("\n1. Service Overview (GET /api/calculator)")
+    IO.puts("-" |> String.duplicate(40))
+    overview = Lather.Server.FormGenerator.generate_service_overview(service_info, base_url)
+    IO.puts("   HTML page generated: #{String.length(overview)} bytes")
+    IO.puts("   Contains: Service info, protocol cards, operation list")
+
+    # 2. WSDL Documents
+    IO.puts("\n2. WSDL Documents")
+    IO.puts("-" |> String.duplicate(40))
+    standard_wsdl = Lather.Server.WSDLGenerator.generate(service_info, base_url)
+    enhanced_wsdl = Lather.Server.EnhancedWSDLGenerator.generate(service_info, base_url)
+    IO.puts("   Standard WSDL (GET ?wsdl): #{String.length(standard_wsdl)} bytes")
+    IO.puts("   Enhanced WSDL (GET ?wsdl&enhanced=true): #{String.length(enhanced_wsdl)} bytes")
+
+    # 3. Operation Forms
+    IO.puts("\n3. Operation Test Forms")
+    IO.puts("-" |> String.duplicate(40))
+    Enum.each(service_info.operations, fn operation ->
+      form = Lather.Server.FormGenerator.generate_operation_page(service_info, operation, base_url)
+      IO.puts("   #{operation.name} (GET ?op=#{operation.name}): #{String.length(form)} bytes")
+    end)
+
+    # 4. Direct Operation Calls
+    IO.puts("\n4. Direct Operation Execution")
+    IO.puts("-" |> String.duplicate(40))
+
+    test_cases = [
+      {"Add", %{"a" => "10.5", "b" => "5.2"}},
+      {"Subtract", %{"a" => "20.0", "b" => "8.5"}},
+      {"Multiply", %{"a" => "4.0", "b" => "3.0"}},
+      {"Divide", %{"a" => "15.0", "b" => "3.0"}}
+    ]
+
+    Enum.each(test_cases, fn {op_name, params} ->
+      function_name = String.to_atom(Macro.underscore(op_name))
+      result = apply(CalculatorService, function_name, [params])
+      IO.puts("   #{op_name}(#{inspect(params)})")
+      IO.puts("     -> #{inspect(result)}")
+    end)
+
+    # 5. Summary
+    IO.puts("\n5. Endpoint Summary")
+    IO.puts("-" |> String.duplicate(40))
+
+    endpoints = """
+    Your EnhancedPlug service at #{base_url}calculator provides:
+
+    Browser Access:
+      - #{base_url}calculator              -> Service overview
+      - #{base_url}calculator?op=Add       -> Test Add operation
+      - #{base_url}calculator?op=Subtract  -> Test Subtract operation
+      - #{base_url}calculator?op=Multiply  -> Test Multiply operation
+      - #{base_url}calculator?op=Divide    -> Test Divide operation
+
+    WSDL Documents:
+      - #{base_url}calculator?wsdl         -> Standard WSDL
+      - #{base_url}calculator?wsdl&enhanced=true -> Multi-protocol WSDL
+
+    API Endpoints:
+      - POST #{base_url}calculator         -> SOAP 1.1
+      - POST #{base_url}calculator/v1.2    -> SOAP 1.2
+      - POST #{base_url}calculator/api     -> JSON/REST
+    """
+
+    IO.puts(endpoints)
+  end
+end
+
+CompleteMultiProtocolExample.run_complete_demo()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
 ## Summary and Next Steps
 
 Congratulations! You've learned how to build comprehensive SOAP servers with Lather. Here's what you've mastered:

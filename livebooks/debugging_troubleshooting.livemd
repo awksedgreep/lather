@@ -189,7 +189,7 @@ defmodule SOAPDiagnostics do
   def diagnose_soap_fault(fault_xml) do
     IO.puts("🚨 SOAP Fault Analysis:")
 
-    case Lather.Error.parse_soap_fault(fault_xml) do
+    case Lather.Error.parse_soap_fault(fault_xml, []) do
       {:ok, fault} ->
         IO.puts("   Fault Code: #{fault.fault_code}")
         IO.puts("   Fault String: #{fault.fault_string}")
@@ -295,7 +295,7 @@ defmodule SOAPDiagnostics do
     # DNS lookup
     case :inet.gethostbyname(String.to_charlist(uri.host)) do
       {:ok, {:hostent, _name, _aliases, :inet, _length, addresses}} ->
-        IP.puts("   ✅ DNS resolution successful")
+        IO.puts("   ✅ DNS resolution successful")
         Enum.each(addresses, fn addr ->
           ip_str = addr |> Tuple.to_list() |> Enum.join(".")
           IO.puts("      IP: #{ip_str}")
@@ -540,45 +540,49 @@ defmodule LiveDebuggingSession do
     IO.puts("-" |> String.duplicate(40))
 
     # URL validation
-    case Lather.Http.Transport.validate_url(url) do
-      :ok ->
-        IO.puts("✅ URL format is valid")
+    with :ok <- Lather.Http.Transport.validate_url(url) do
+      IO.puts("✅ URL format is valid")
+
+      # HTTP connectivity test
+      case Lather.Http.Transport.post(url, "", timeout: 10_000) do
+        {:ok, %{status: status}} when status in 200..299 ->
+          IO.puts("✅ HTTP connectivity successful (#{status})")
+          IO.puts("")
+          :ok
+
+        {:ok, %{status: status, body: body}} ->
+          IO.puts("⚠️ HTTP error #{status}")
+          IO.puts("Response: #{String.slice(body, 0, 200)}...")
+          IO.puts("")
+          {:error, :http_error}
+
+        {:error, error} ->
+          IO.puts("❌ Connection failed: #{Lather.Error.format_error(error)}")
+
+          # Provide specific guidance
+          case error do
+            %{type: :transport_error, reason: :nxdomain} ->
+              IO.puts("💡 DNS resolution failed - check the hostname")
+
+            %{type: :transport_error, reason: :timeout} ->
+              IO.puts("💡 Connection timeout - check network connectivity")
+
+            %{type: :http_error, status: 404} ->
+              IO.puts("💡 WSDL not found - verify the URL path")
+
+            _ ->
+              IO.puts("💡 Check network settings and service availability")
+          end
+
+          IO.puts("")
+          {:error, error}
+      end
+    else
       {:error, :invalid_url} ->
         IO.puts("❌ Invalid URL format")
-        return {:error, :invalid_url}
+        IO.puts("")
+        {:error, :invalid_url}
     end
-
-    # HTTP connectivity test
-    case Lather.Http.Transport.post(url, "", timeout: 10_000) do
-      {:ok, %{status: status}} when status in 200..299 ->
-        IO.puts("✅ HTTP connectivity successful (#{status})")
-
-      {:ok, %{status: status, body: body}} ->
-        IO.puts("⚠️ HTTP error #{status}")
-        IO.puts("Response: #{String.slice(body, 0, 200)}...")
-
-      {:error, error} ->
-        IO.puts("❌ Connection failed: #{Lather.Error.format_error(error)}")
-
-        # Provide specific guidance
-        case error do
-          %{type: :transport_error, reason: :nxdomain} ->
-            IO.puts("💡 DNS resolution failed - check the hostname")
-
-          %{type: :transport_error, reason: :timeout} ->
-            IO.puts("💡 Connection timeout - check network connectivity")
-
-          %{type: :http_error, status: 404} ->
-            IO.puts("💡 WSDL not found - verify the URL path")
-
-          _ ->
-            IO.puts("💡 Check network settings and service availability")
-        end
-
-        return {:error, error}
-    end
-
-    IO.puts("")
   end
 
   defp step_2_wsdl_analysis(url) do
@@ -692,35 +696,37 @@ defmodule PerformanceDebugger do
     # Warm up
     IO.puts("🔥 Warming up...")
     case Lather.DynamicClient.call(client, operation, params) do
-      {:ok, _} -> IO.puts("   ✅ Warm-up successful")
+      {:ok, _} ->
+        IO.puts("   ✅ Warm-up successful")
+
+        # Benchmark
+        IO.puts("📊 Running benchmark...")
+
+        times = Enum.map(1..iterations, fn i ->
+          IO.write("   Iteration #{i}/#{iterations}: ")
+
+          start_time = System.monotonic_time(:millisecond)
+
+          result = Lather.DynamicClient.call(client, operation, params)
+
+          end_time = System.monotonic_time(:millisecond)
+          duration = end_time - start_time
+
+          case result do
+            {:ok, _} -> IO.puts("#{duration}ms ✅")
+            {:error, _} -> IO.puts("#{duration}ms ❌")
+          end
+
+          {duration, result}
+        end)
+
+        # Analyze results
+        analyze_performance_results(times)
+
       {:error, error} ->
         IO.puts("   ❌ Warm-up failed: #{Lather.Error.format_error(error)}")
-        return {:error, :warmup_failed}
+        {:error, :warmup_failed}
     end
-
-    # Benchmark
-    IO.puts("📊 Running benchmark...")
-
-    times = Enum.map(1..iterations, fn i ->
-      IO.write("   Iteration #{i}/#{iterations}: ")
-
-      start_time = System.monotonic_time(:millisecond)
-
-      result = Lather.DynamicClient.call(client, operation, params)
-
-      end_time = System.monotonic_time(:millisecond)
-      duration = end_time - start_time
-
-      case result do
-        {:ok, _} -> IO.puts("#{duration}ms ✅")
-        {:error, _} -> IO.puts("#{duration}ms ❌")
-      end
-
-      {duration, result}
-    end)
-
-    # Analyze results
-    analyze_performance_results(times)
   end
 
   defp analyze_performance_results(times) do

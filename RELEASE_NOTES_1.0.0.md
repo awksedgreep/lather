@@ -29,7 +29,7 @@ Generate comprehensive WSDL documents that support multiple protocols:
 
 ```elixir
 # Standard WSDL (SOAP 1.1 only)
-wsdl = Lather.Server.WsdlGenerator.generate(service_info, base_url)
+wsdl = Lather.Server.WSDLGenerator.generate(service_info, base_url)
 
 # Enhanced WSDL (multi-protocol)
 enhanced_wsdl = Lather.Server.EnhancedWSDLGenerator.generate(service_info, base_url)
@@ -135,7 +135,7 @@ All existing 0.9.x code continues to work unchanged:
 ```elixir
 # Existing code works exactly the same
 service_info = MyService.__service_info__()
-wsdl = Lather.Server.WsdlGenerator.generate(service_info, base_url)
+wsdl = Lather.Server.WSDLGenerator.generate(service_info, base_url)
 
 # Enhanced features are available as opt-in additions
 enhanced_wsdl = Lather.Server.EnhancedWSDLGenerator.generate(service_info, base_url)

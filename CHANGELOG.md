@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2025-12-25
+
+### Added
+- **4 new livebooks** for comprehensive feature coverage:
+  - `soap12_client.livemd` - SOAP 1.2 protocol differences and client usage
+  - `mtom_attachments.livemd` - Binary data transmission with MTOM/XOP
+  - `production_monitoring.livemd` - Telemetry, metrics, health checks, and dashboards
+  - `testing_strategies.livemd` - Unit testing, mocking, integration and contract testing
+- **5 new example files** demonstrating advanced features:
+  - `mtom_client.ex` - MTOM attachment handling
+  - `calculator_service.ex` - Multi-type operations with error handling
+  - `enhanced_plug_example.ex` - Multi-protocol server endpoints
+  - `phoenix_integration.ex` - Complete Phoenix setup patterns
+  - `ws_security_service.ex` - WS-Security authentication and validation
+- **API.md expanded** from 13 to 30 modules (100% coverage)
+- **Enhanced livebooks** with ~1,400 lines of new content:
+  - `soap_server_development.livemd` - EnhancedPlug demos and multi-protocol examples
+  - `enterprise_integration.livemd` - Circuit breakers, retry strategies, resilience patterns
+
+### Fixed
+- Corrected `WsdlGenerator` → `WSDLGenerator` module name references across all documentation
+- Fixed non-existent `security_header/2` API references in enterprise examples and livebooks
+- Fixed invalid Elixir `return` statements in debugging livebook
+- Fixed `IP.puts` typo in debugging livebook
+- Updated `TESTING.md` to use correct `--include external_api` flag (removed incorrect `ENABLE_LIVE_API_TESTS` references)
+- Corrected `username_token/3` documentation to show keyword options instead of atom argument
+
+### Changed
+- Updated examples READMEs to accurately reflect existing files (removed 9 non-existent file references)
+- All 11 livebooks now listed in README.md and USAGE.md
+- Version references updated to 1.0.5 throughout documentation
+
 ## [1.0.4] - 2025-12-02
 
 ### Added
@@ -129,7 +161,7 @@ No breaking changes. Enhanced features are additive:
 ```elixir
 # Existing code continues to work
 service_info = MyService.__service_info__()
-wsdl = Lather.Server.WsdlGenerator.generate(service_info, base_url)
+wsdl = Lather.Server.WSDLGenerator.generate(service_info, base_url)
 
 # Enhanced features available optionally
 enhanced_wsdl = Lather.Server.EnhancedWSDLGenerator.generate(service_info, base_url)

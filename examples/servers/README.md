@@ -5,24 +5,18 @@ This directory contains comprehensive examples of building SOAP servers with Lat
 ## Examples
 
 ### Basic Examples
-- **[simple_service.ex](simple_service.ex)** - A minimal SOAP service with basic operations
-- **[user_service.ex](user_service.ex)** - Complete user management SOAP service
-- **[calculator_service.ex](calculator_service.ex)** - Mathematical operations service with different data types
+- **[simple_service.ex](simple_service.ex)** - A minimal SOAP service with basic operations demonstrating core server concepts
+- **[user_service.ex](user_service.ex)** - Complete user management SOAP service with CRUD operations
+- **[calculator_service.ex](calculator_service.ex)** - Mathematical operations service demonstrating different data types and validation
 
-### Advanced Examples  
-- **[enterprise_service.ex](enterprise_service.ex)** - Enterprise-grade service with authentication, validation, and error handling
-- **[phoenix_integration.ex](phoenix_integration.ex)** - Integration with Phoenix web framework
-- **[cowboy_server.ex](cowboy_server.ex)** - Standalone SOAP server using Cowboy
+### Advanced Examples
+- **[enhanced_plug_example.ex](enhanced_plug_example.ex)** - Enhanced Plug-based SOAP server with middleware, logging, and request handling
+
+### Integration Examples
+- **[phoenix_integration.ex](phoenix_integration.ex)** - Seamless integration with Phoenix web framework including controllers and routing
 
 ### Authentication Examples
-- **[basic_auth_service.ex](basic_auth_service.ex)** - Service with HTTP Basic Authentication  
-- **[ws_security_service.ex](ws_security_service.ex)** - Service with WS-Security authentication
-- **[custom_auth_service.ex](custom_auth_service.ex)** - Service with custom authentication handler
-
-### Real-World Examples
-- **[inventory_service.ex](inventory_service.ex)** - Inventory management system
-- **[payment_service.ex](payment_service.ex)** - Payment processing service
-- **[notification_service.ex](notification_service.ex)** - Notification delivery service
+- **[ws_security_service.ex](ws_security_service.ex)** - Service with WS-Security authentication including UsernameToken and timestamp validation
 
 ## Quick Start
 

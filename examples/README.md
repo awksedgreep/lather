@@ -4,7 +4,9 @@ This directory contains practical examples demonstrating how to use the Lather S
 
 ## Example Files
 
-### 1. Weather Service (`weather_service.ex`)
+### Basic Examples
+
+#### Weather Service (`weather_service.ex`)
 
 A simple example using a public weather SOAP service that demonstrates:
 
@@ -26,7 +28,9 @@ elixir weather_service.ex
 - Error recovery
 - Concurrent operations
 
-### 2. Enterprise Service (`enterprise_service.ex`)
+### Advanced Examples
+
+#### Enterprise Service (`enterprise_service.ex`)
 
 A comprehensive example for enterprise SOAP services that demonstrates:
 
@@ -54,7 +58,7 @@ elixir enterprise_service.ex
 - SSL/TLS security configuration
 - Custom headers and options
 
-### 3. Type Mapping (`type_mapping.ex`)
+#### Type Mapping (`type_mapping.ex`)
 
 An advanced example focusing on type conversion and validation:
 
@@ -75,6 +79,37 @@ elixir type_mapping.ex
 - Custom type parsing functions
 - XML round-trip conversion
 - Complex nested data handling
+
+#### MTOM Client (`mtom_client.ex`)
+
+An example demonstrating MTOM (Message Transmission Optimization Mechanism) for handling binary attachments in SOAP messages:
+
+- **Binary Attachments**: Sending and receiving files via SOAP
+- **MTOM Encoding**: Efficient binary data transmission using XOP
+- **Multipart MIME**: Working with multipart/related messages
+- **File Upload/Download**: Practical file transfer patterns
+
+**Run the example:**
+```elixir
+cd examples
+elixir mtom_client.ex
+```
+
+**Key Features Demonstrated:**
+- MTOM-enabled SOAP requests
+- Binary attachment handling
+- File upload and download operations
+- Content-Type negotiation
+- Large file streaming
+
+## Server Examples
+
+See the [servers/](servers/) directory for examples of building SOAP servers with Lather, including:
+
+- Basic service definitions
+- Calculator and user management services
+- Phoenix and Plug integration
+- WS-Security authentication
 
 ## Running Examples
 

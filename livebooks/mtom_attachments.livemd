@@ -1,0 +1,1322 @@
+# MTOM Attachments and Binary Data Handling
+
+```elixir
+Mix.install([
+  {:lather, path: ".."}, # For local development
+  # {:lather, "~> 1.0"}, # Use this for hex package
+  {:finch, "~> 0.18"},
+  {:kino, "~> 0.12"}
+])
+```
+
+## Introduction to MTOM
+
+**MTOM (Message Transmission Optimization Mechanism)** is a W3C recommendation for efficiently transmitting binary data within SOAP messages. Instead of base64 encoding binary content directly in the XML, MTOM uses **XOP (XML-binary Optimized Packaging)** to package binary data as separate MIME parts.
+
+### Why MTOM?
+
+When you need to send binary files (PDFs, images, documents) via SOAP, you have two main options:
+
+1. **Base64 Encoding**: Embed the binary data directly in XML
+   - Simple to implement
+   - Increases message size by ~33%
+   - All data must be parsed as XML
+
+2. **MTOM/XOP**: Package binary data as separate MIME parts
+   - More complex message structure
+   - No size overhead for binary data
+   - Binary data bypasses XML parsing
+
+### When to Use MTOM
+
+| Scenario | Recommendation |
+|----------|---------------|
+| Small files (< 1KB) | Base64 is simpler |
+| Medium files (1KB - 100KB) | Either works, MTOM slightly better |
+| Large files (> 100KB) | MTOM strongly recommended |
+| High-volume attachments | MTOM for performance |
+| Simple integration | Base64 for simplicity |
+
+### MTOM Message Structure
+
+An MTOM message is a multipart/related MIME package:
+
+```
+Content-Type: multipart/related; boundary="uuid:xxx"; type="application/xop+xml"
+
+--uuid:xxx
+Content-Type: application/xop+xml; charset=UTF-8
+Content-ID: <root@soap>
+
+<soap:Envelope>
+  <soap:Body>
+    <UploadDocument>
+      <file>
+        <xop:Include href="cid:attachment1@lather.soap"/>
+      </file>
+    </UploadDocument>
+  </soap:Body>
+</soap:Envelope>
+
+--uuid:xxx
+Content-Type: application/pdf
+Content-ID: <attachment1@lather.soap>
+Content-Transfer-Encoding: binary
+
+%PDF-1.4 [binary data]...
+--uuid:xxx--
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Environment Setup
+
+Let's set up the environment for working with MTOM:
+
+```elixir
+# Start required applications
+{:ok, _} = Application.ensure_all_started(:lather)
+
+# Configure Finch for HTTP connections
+children = [
+  {Finch, name: Lather.Finch}
+]
+
+{:ok, _supervisor} = Supervisor.start_link(children, strategy: :one_for_one)
+
+# Import MTOM modules for convenience
+alias Lather.Mtom.{Attachment, Builder, Mime}
+
+IO.puts("MTOM environment ready!")
+IO.puts("")
+IO.puts("Available modules:")
+IO.puts("  - Lather.Mtom.Attachment: Create and manage attachments")
+IO.puts("  - Lather.Mtom.Builder: Build MTOM messages")
+IO.puts("  - Lather.Mtom.Mime: Handle MIME multipart operations")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Creating Attachments
+
+The `Lather.Mtom.Attachment` module provides utilities for creating attachment structures that can be included in MTOM messages.
+
+### Basic Attachment Creation
+
+Use `Attachment.new/3` to create an attachment from binary data:
+
+```elixir
+# Create sample binary data (simulating a file)
+pdf_data = """
+%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >> endobj
+xref
+0 4
+trailer << /Size 4 /Root 1 0 R >>
+startxref
+%%EOF
+"""
+
+# Create an attachment
+attachment = Attachment.new(pdf_data, "application/pdf")
+
+IO.puts("Attachment Created:")
+IO.puts("  ID: #{attachment.id}")
+IO.puts("  Content-ID: #{attachment.content_id}")
+IO.puts("  Content-Type: #{attachment.content_type}")
+IO.puts("  Size: #{attachment.size} bytes")
+IO.puts("  Transfer-Encoding: #{attachment.content_transfer_encoding}")
+```
+
+### Attachment Options
+
+You can customize attachments with various options:
+
+```elixir
+# Create attachment with custom Content-ID
+image_data = :crypto.strong_rand_bytes(1024)  # Simulated image data
+
+attachment_with_options = Attachment.new(
+  image_data,
+  "image/jpeg",
+  content_id: "company-logo@myapp.example.com",
+  content_transfer_encoding: "binary"
+)
+
+IO.puts("Customized Attachment:")
+IO.puts("  Content-ID: #{attachment_with_options.content_id}")
+IO.puts("  Size: #{attachment_with_options.size} bytes")
+
+# Generate Content-ID header format
+content_id_header = Attachment.content_id_header(attachment_with_options)
+IO.puts("  Content-ID Header: #{content_id_header}")
+
+# Generate CID reference for XOP includes
+cid_ref = Attachment.cid_reference(attachment_with_options)
+IO.puts("  CID Reference: #{cid_ref}")
+```
+
+### Creating Attachments from Files
+
+The `from_file/2` function reads a file and creates an attachment with automatic content type detection:
+
+```elixir
+# Demonstrate file-based attachment creation
+defmodule FileAttachmentDemo do
+  def demo_from_file do
+    # Create a temporary file for demonstration
+    temp_path = Path.join(System.tmp_dir!(), "demo_document.pdf")
+
+    sample_content = """
+    %PDF-1.4
+    Sample PDF content for demonstration purposes.
+    This simulates a real PDF file structure.
+    %%EOF
+    """
+
+    # Write the sample file
+    File.write!(temp_path, sample_content)
+
+    IO.puts("Creating attachment from file: #{temp_path}")
+
+    case Attachment.from_file(temp_path) do
+      {:ok, attachment} ->
+        IO.puts("  Successfully created attachment!")
+        IO.puts("  Detected content type: #{attachment.content_type}")
+        IO.puts("  File size: #{attachment.size} bytes")
+        IO.puts("  Content-ID: #{attachment.content_id}")
+
+        # Clean up
+        File.rm!(temp_path)
+        {:ok, attachment}
+
+      {:error, reason} ->
+        IO.puts("  Error: #{inspect(reason)}")
+        File.rm(temp_path)
+        {:error, reason}
+    end
+  end
+
+  def demo_content_type_detection do
+    IO.puts("\nContent Type Detection by Extension:")
+
+    extensions = [
+      {".pdf", "application/pdf"},
+      {".jpg", "image/jpeg"},
+      {".png", "image/png"},
+      {".doc", "application/msword"},
+      {".xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+      {".zip", "application/zip"},
+      {".json", "application/json"},
+      {".xml", "application/xml"},
+      {".txt", "text/plain"},
+      {".csv", "text/csv"}
+    ]
+
+    Enum.each(extensions, fn {ext, expected_type} ->
+      IO.puts("  #{ext} -> #{expected_type}")
+    end)
+  end
+end
+
+FileAttachmentDemo.demo_from_file()
+FileAttachmentDemo.demo_content_type_detection()
+```
+
+### XOP Include Elements
+
+When an attachment is referenced in a SOAP message, it uses an XOP Include element. The `xop_include/1` function generates this structure:
+
+```elixir
+# Create an attachment
+document_data = "Sample document content for XOP demonstration"
+attachment = Attachment.new(document_data, "text/plain")
+
+# Generate XOP Include element
+xop_include = Attachment.xop_include(attachment)
+
+IO.puts("XOP Include Structure:")
+IO.inspect(xop_include, pretty: true)
+
+IO.puts("\nThis structure will be serialized as:")
+IO.puts("<xop:Include href=\"#{Attachment.cid_reference(attachment)}\" ")
+IO.puts("             xmlns:xop=\"http://www.w3.org/2004/08/xop/include\"/>")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Interactive Attachment Creator
+
+Let's create an interactive widget to explore attachment creation:
+
+```elixir
+# Create input widgets
+content_input = Kino.Input.textarea("Binary Content (text simulation)", default: "Hello, this is sample content!")
+content_type_select = Kino.Input.select("Content Type", [
+  {"application/pdf", "application/pdf"},
+  {"image/jpeg", "image/jpeg"},
+  {"image/png", "image/png"},
+  {"text/plain", "text/plain"},
+  {"application/xml", "application/xml"},
+  {"application/json", "application/json"},
+  {"application/octet-stream", "application/octet-stream"}
+])
+custom_id_input = Kino.Input.text("Custom Content-ID (optional)", default: "")
+
+create_button = Kino.Control.button("Create Attachment")
+
+form = Kino.Layout.grid([
+  content_input,
+  [content_type_select, custom_id_input],
+  create_button
+])
+
+form
+```
+
+```elixir
+# Handle button clicks
+Kino.Control.stream(create_button)
+|> Kino.listen(fn _event ->
+  content = Kino.Input.read(content_input)
+  content_type = Kino.Input.read(content_type_select)
+  custom_id = Kino.Input.read(custom_id_input)
+
+  options = if custom_id != "" do
+    [content_id: custom_id]
+  else
+    []
+  end
+
+  IO.puts("Creating attachment...")
+  IO.puts(String.duplicate("=", 50))
+
+  attachment = Attachment.new(content, content_type, options)
+
+  IO.puts("Attachment Details:")
+  IO.puts("  ID: #{attachment.id}")
+  IO.puts("  Content-ID: #{attachment.content_id}")
+  IO.puts("  Content-Type: #{attachment.content_type}")
+  IO.puts("  Size: #{attachment.size} bytes")
+  IO.puts("  Encoding: #{attachment.content_transfer_encoding}")
+  IO.puts("")
+  IO.puts("Header Format: #{Attachment.content_id_header(attachment)}")
+  IO.puts("CID Reference: #{Attachment.cid_reference(attachment)}")
+  IO.puts("")
+  IO.puts("XOP Include:")
+  IO.inspect(Attachment.xop_include(attachment), pretty: true)
+  IO.puts(String.duplicate("=", 50))
+end)
+
+:ok
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Building MTOM Messages
+
+The `Lather.Mtom.Builder` module handles the construction of complete MTOM messages by processing parameters, extracting attachments, and building the multipart structure.
+
+### Using Attachment Tuples in Parameters
+
+The simplest way to include attachments is using the tuple format `{:attachment, data, content_type}`:
+
+```elixir
+# Define parameters with an embedded attachment
+params = %{
+  "documentName" => "quarterly_report.pdf",
+  "documentType" => "financial",
+  "document" => {:attachment, "PDF content here...", "application/pdf"},
+  "metadata" => %{
+    "author" => "John Doe",
+    "department" => "Finance"
+  }
+}
+
+# Check if parameters contain attachments
+has_attachments = Builder.has_attachments?(params)
+IO.puts("Parameters contain attachments: #{has_attachments}")
+
+# Process parameters to extract attachments
+case Builder.process_parameters(params) do
+  {:ok, {processed_params, attachments}} ->
+    IO.puts("\nProcessed Parameters:")
+    IO.inspect(processed_params, pretty: true)
+
+    IO.puts("\nExtracted Attachments: #{length(attachments)}")
+    Enum.each(attachments, fn att ->
+      IO.puts("  - #{att.content_type} (#{att.size} bytes)")
+    end)
+
+  {:error, error} ->
+    IO.puts("Error: #{inspect(error)}")
+end
+```
+
+### Building Complete MTOM Messages
+
+Use `build_mtom_message/3` to create a complete MTOM multipart message:
+
+```elixir
+# Create a realistic upload scenario
+pdf_content = String.duplicate("X", 5000)  # Simulated 5KB PDF
+
+params = %{
+  "UploadRequest" => %{
+    "fileName" => "report.pdf",
+    "fileSize" => byte_size(pdf_content),
+    "uploadedBy" => "system",
+    "file" => {:attachment, pdf_content, "application/pdf"}
+  }
+}
+
+case Builder.build_mtom_message(:UploadDocument, params, namespace: "http://example.com/docs") do
+  {:ok, {content_type, body}} ->
+    IO.puts("MTOM Message Built Successfully!")
+    IO.puts("")
+    IO.puts("Content-Type Header:")
+    IO.puts("  #{content_type}")
+    IO.puts("")
+    IO.puts("Message Size: #{byte_size(body)} bytes")
+    IO.puts("")
+    IO.puts("Message Preview (first 800 characters):")
+    IO.puts(String.duplicate("-", 60))
+    IO.puts(String.slice(body, 0, 800))
+    IO.puts("...")
+    IO.puts(String.duplicate("-", 60))
+
+  {:error, error} ->
+    IO.puts("Error building MTOM message: #{inspect(error)}")
+end
+```
+
+### Multiple Attachments
+
+You can include multiple attachments in a single request:
+
+```elixir
+# Create multiple attachment scenario
+image1_data = :crypto.strong_rand_bytes(2048)
+image2_data = :crypto.strong_rand_bytes(3072)
+pdf_data = String.duplicate("PDF", 1000)
+
+params = %{
+  "BatchUpload" => %{
+    "batchId" => "BATCH-001",
+    "files" => [
+      {:attachment, image1_data, "image/jpeg", content_id: "image1@batch"},
+      {:attachment, image2_data, "image/png", content_id: "image2@batch"},
+      {:attachment, pdf_data, "application/pdf", content_id: "doc@batch"}
+    ],
+    "metadata" => %{
+      "totalFiles" => 3,
+      "submittedAt" => DateTime.utc_now() |> DateTime.to_iso8601()
+    }
+  }
+}
+
+IO.puts("Building batch upload with multiple attachments...")
+
+case Builder.build_mtom_message(:BatchUploadFiles, params, namespace: "http://example.com/batch") do
+  {:ok, {content_type, body}} ->
+    IO.puts("Batch MTOM Message Built!")
+    IO.puts("")
+    IO.puts("Content-Type: #{content_type}")
+    IO.puts("Total Size: #{byte_size(body)} bytes")
+
+    # Count MIME parts
+    parts = String.split(body, "--uuid:")
+    IO.puts("MIME Parts: #{length(parts) - 1}")
+
+  {:error, error} ->
+    IO.puts("Error: #{inspect(error)}")
+end
+```
+
+### Estimating Message Size
+
+Before building a message, you can estimate its size:
+
+```elixir
+# Create test parameters with various attachment sizes
+test_cases = [
+  {"Small file (1KB)", %{"file" => {:attachment, String.duplicate("x", 1024), "text/plain"}}},
+  {"Medium file (50KB)", %{"file" => {:attachment, String.duplicate("x", 51200), "application/pdf"}}},
+  {"Large file (500KB)", %{"file" => {:attachment, String.duplicate("x", 512000), "image/jpeg"}}},
+  {"Multiple files", %{
+    "files" => [
+      {:attachment, String.duplicate("x", 10240), "image/jpeg"},
+      {:attachment, String.duplicate("x", 20480), "image/png"},
+      {:attachment, String.duplicate("x", 5120), "application/pdf"}
+    ]
+  }}
+]
+
+IO.puts("Message Size Estimation:")
+IO.puts(String.duplicate("=", 50))
+
+Enum.each(test_cases, fn {description, params} ->
+  estimated_size = Builder.estimate_message_size(params)
+
+  # Also build actual message to compare
+  {:ok, {_, actual_body}} = Builder.build_mtom_message(:Test, params, namespace: "http://test")
+  actual_size = byte_size(actual_body)
+
+  accuracy = Float.round(estimated_size / actual_size * 100, 1)
+
+  IO.puts("#{description}:")
+  IO.puts("  Estimated: #{format_bytes(estimated_size)}")
+  IO.puts("  Actual:    #{format_bytes(actual_size)}")
+  IO.puts("  Accuracy:  #{accuracy}%")
+  IO.puts("")
+end)
+
+defp format_bytes(bytes) when bytes >= 1024 * 1024 do
+  "#{Float.round(bytes / 1024 / 1024, 2)} MB"
+end
+defp format_bytes(bytes) when bytes >= 1024 do
+  "#{Float.round(bytes / 1024, 2)} KB"
+end
+defp format_bytes(bytes), do: "#{bytes} bytes"
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## MIME Multipart Handling
+
+The `Lather.Mtom.Mime` module provides low-level utilities for building and parsing multipart/related MIME messages.
+
+### Understanding Multipart Structure
+
+```elixir
+# Generate a boundary for our MIME message
+boundary = Mime.generate_boundary()
+IO.puts("Generated Boundary: #{boundary}")
+
+# Build a Content-Type header
+content_type_header = Mime.build_content_type_header(
+  boundary,
+  "application/xop+xml",
+  "root@soap.example"
+)
+
+IO.puts("\nContent-Type Header:")
+IO.puts(content_type_header)
+
+# Parse it back
+{:ok, extracted_boundary} = Mime.extract_boundary(content_type_header)
+IO.puts("\nExtracted Boundary: #{extracted_boundary}")
+IO.puts("Match: #{boundary == extracted_boundary}")
+```
+
+### Building Multipart Messages Directly
+
+You can use `Mime.build_multipart_message/3` for lower-level control:
+
+```elixir
+# Create SOAP envelope and attachments separately
+soap_envelope = """
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <UploadFile xmlns="http://example.com">
+      <fileName>report.pdf</fileName>
+      <fileContent>
+        <xop:Include href="cid:attachment1@lather.soap"
+                     xmlns:xop="http://www.w3.org/2004/08/xop/include"/>
+      </fileContent>
+    </UploadFile>
+  </soap:Body>
+</soap:Envelope>
+"""
+
+# Create attachment
+file_content = "This is the file content that would normally be binary PDF data."
+attachment = Attachment.new(file_content, "application/pdf", content_id: "attachment1@lather.soap")
+
+# Build multipart message
+{content_type, multipart_body} = Mime.build_multipart_message(
+  soap_envelope,
+  [attachment],
+  soap_content_type: "application/xop+xml",
+  soap_charset: "UTF-8"
+)
+
+IO.puts("Built Multipart Message")
+IO.puts(String.duplicate("=", 60))
+IO.puts("Content-Type: #{content_type}")
+IO.puts(String.duplicate("=", 60))
+IO.puts(multipart_body)
+IO.puts(String.duplicate("=", 60))
+```
+
+### Parsing MTOM Responses
+
+When receiving MTOM responses, use `parse_multipart_message/3`:
+
+```elixir
+# Simulate an MTOM response
+response_content_type = "multipart/related; boundary=\"response-boundary-123\"; type=\"application/xop+xml\"; start=\"<root@response>\""
+
+response_body = """
+--response-boundary-123\r
+Content-Type: application/xop+xml; charset=UTF-8; type="text/xml"\r
+Content-Transfer-Encoding: 8bit\r
+Content-ID: <root@response>\r
+\r
+<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <DownloadResponse xmlns="http://example.com">
+      <status>success</status>
+      <fileData>
+        <xop:Include href="cid:file1@response"
+                     xmlns:xop="http://www.w3.org/2004/08/xop/include"/>
+      </fileData>
+    </DownloadResponse>
+  </soap:Body>
+</soap:Envelope>
+\r
+--response-boundary-123\r
+Content-Type: application/pdf\r
+Content-Transfer-Encoding: binary\r
+Content-ID: <file1@response>\r
+\r
+%PDF-1.4 Binary PDF content here...\r
+--response-boundary-123--\r
+"""
+
+case Mime.parse_multipart_message(response_content_type, response_body) do
+  {:ok, {soap_part, attachments}} ->
+    IO.puts("Parsed MTOM Response Successfully!")
+    IO.puts("")
+    IO.puts("SOAP Part (first 300 chars):")
+    IO.puts(String.slice(soap_part, 0, 300))
+    IO.puts("...")
+    IO.puts("")
+    IO.puts("Attachments: #{length(attachments)}")
+    Enum.each(attachments, fn att ->
+      content_type = Map.get(att.headers, "content-type", "unknown")
+      content_id = Map.get(att.headers, "content-id", "unknown")
+      IO.puts("  - Type: #{content_type}")
+      IO.puts("    ID: #{content_id}")
+      IO.puts("    Size: #{byte_size(att.content)} bytes")
+    end)
+
+  {:error, reason} ->
+    IO.puts("Parse Error: #{inspect(reason)}")
+end
+```
+
+### Validating Content-Type Headers
+
+```elixir
+# Test various Content-Type headers
+test_headers = [
+  {"multipart/related; boundary=\"uuid:123\"; type=\"application/xop+xml\"", :valid},
+  {"multipart/related; boundary=simple-boundary", :valid},
+  {"application/soap+xml", :invalid},
+  {"multipart/mixed; boundary=\"xxx\"", :invalid},
+  {"multipart/related; type=\"application/xop+xml\"", :missing_boundary}
+]
+
+IO.puts("Content-Type Validation:")
+IO.puts(String.duplicate("=", 60))
+
+Enum.each(test_headers, fn {header, expected} ->
+  result = Mime.validate_content_type(header)
+  status = case result do
+    :ok -> "Valid"
+    {:error, reason} -> "Invalid (#{reason})"
+  end
+
+  match = case {result, expected} do
+    {:ok, :valid} -> "PASS"
+    {{:error, _}, :invalid} -> "PASS"
+    {{:error, :missing_boundary}, :missing_boundary} -> "PASS"
+    _ -> "FAIL"
+  end
+
+  IO.puts("[#{match}] #{status}")
+  IO.puts("  Header: #{String.slice(header, 0, 50)}...")
+  IO.puts("")
+end)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Practical Examples
+
+Let's walk through complete real-world scenarios.
+
+### Example 1: Document Upload Service
+
+```elixir
+defmodule DocumentUploadExample do
+  alias Lather.Mtom.{Attachment, Builder}
+
+  def upload_document(file_path, metadata) do
+    IO.puts("Document Upload Service Example")
+    IO.puts(String.duplicate("=", 50))
+
+    # Simulate reading file (in real scenario, use File.read!)
+    file_content = "Simulated content of #{Path.basename(file_path)}"
+    file_size = byte_size(file_content)
+
+    # Detect content type from extension
+    content_type = get_content_type(Path.extname(file_path))
+
+    IO.puts("File: #{file_path}")
+    IO.puts("Content-Type: #{content_type}")
+    IO.puts("Size: #{file_size} bytes")
+
+    # Build parameters with attachment
+    params = %{
+      "UploadDocumentRequest" => %{
+        "document" => %{
+          "fileName" => Path.basename(file_path),
+          "fileSize" => file_size,
+          "contentType" => content_type,
+          "content" => {:attachment, file_content, content_type}
+        },
+        "metadata" => metadata,
+        "options" => %{
+          "overwrite" => false,
+          "notifyOnComplete" => true
+        }
+      }
+    }
+
+    case Builder.build_mtom_message(:UploadDocument, params,
+      namespace: "http://documents.example.com/upload"
+    ) do
+      {:ok, {content_type_header, body}} ->
+        IO.puts("\nMTOM Message Ready!")
+        IO.puts("Content-Type: #{content_type_header}")
+        IO.puts("Body Size: #{byte_size(body)} bytes")
+
+        # In a real scenario, you would send this via HTTP:
+        # Finch.build(:post, endpoint, headers, body)
+        # |> Finch.request(Lather.Finch)
+
+        {:ok, %{content_type: content_type_header, body: body}}
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  defp get_content_type(ext) do
+    case String.downcase(ext) do
+      ".pdf" -> "application/pdf"
+      ".doc" -> "application/msword"
+      ".docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      ".xls" -> "application/vnd.ms-excel"
+      ".xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      ".jpg" -> "image/jpeg"
+      ".jpeg" -> "image/jpeg"
+      ".png" -> "image/png"
+      _ -> "application/octet-stream"
+    end
+  end
+end
+
+# Test the document upload
+metadata = %{
+  "department" => "Legal",
+  "category" => "Contracts",
+  "tags" => ["Q4", "2024", "review"],
+  "uploadedBy" => "user@example.com"
+}
+
+DocumentUploadExample.upload_document("/path/to/contract.pdf", metadata)
+```
+
+### Example 2: Image Gallery Upload
+
+```elixir
+defmodule ImageGalleryExample do
+  alias Lather.Mtom.Builder
+
+  def upload_gallery(images, gallery_name) do
+    IO.puts("Image Gallery Upload Example")
+    IO.puts(String.duplicate("=", 50))
+
+    # Convert image list to attachments
+    file_attachments = Enum.with_index(images, 1)
+    |> Enum.map(fn {{name, data, content_type}, index} ->
+      {:attachment, data, content_type, content_id: "image#{index}@gallery"}
+    end)
+
+    params = %{
+      "CreateGalleryRequest" => %{
+        "galleryName" => gallery_name,
+        "images" => file_attachments,
+        "settings" => %{
+          "visibility" => "private",
+          "thumbnailSize" => "medium",
+          "watermark" => false
+        }
+      }
+    }
+
+    IO.puts("Gallery: #{gallery_name}")
+    IO.puts("Images: #{length(images)}")
+
+    case Builder.build_mtom_message(:CreateGallery, params,
+      namespace: "http://gallery.example.com"
+    ) do
+      {:ok, {content_type, body}} ->
+        IO.puts("\nGallery upload message ready!")
+        IO.puts("Total message size: #{byte_size(body)} bytes")
+        {:ok, %{content_type: content_type, body: body}}
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+end
+
+# Create sample images (simulated binary data)
+sample_images = [
+  {"sunset.jpg", :crypto.strong_rand_bytes(4096), "image/jpeg"},
+  {"mountains.png", :crypto.strong_rand_bytes(3072), "image/png"},
+  {"beach.jpg", :crypto.strong_rand_bytes(5120), "image/jpeg"},
+  {"forest.png", :crypto.strong_rand_bytes(2048), "image/png"}
+]
+
+ImageGalleryExample.upload_gallery(sample_images, "Vacation Photos 2024")
+```
+
+### Example 3: Handling Large File Uploads
+
+```elixir
+defmodule LargeFileHandler do
+  alias Lather.Mtom.Builder
+
+  @chunk_size 1024 * 1024  # 1MB chunks
+
+  def prepare_large_upload(file_path, total_size) do
+    IO.puts("Large File Upload Handler")
+    IO.puts(String.duplicate("=", 50))
+
+    # Calculate chunks
+    chunk_count = ceil(total_size / @chunk_size)
+
+    IO.puts("File: #{file_path}")
+    IO.puts("Total Size: #{format_size(total_size)}")
+    IO.puts("Chunk Size: #{format_size(@chunk_size)}")
+    IO.puts("Chunks: #{chunk_count}")
+
+    # Estimate total message sizes
+    total_estimated = Enum.map(1..chunk_count, fn chunk_num ->
+      chunk_size = min(@chunk_size, total_size - (chunk_num - 1) * @chunk_size)
+      chunk_data = String.duplicate("x", chunk_size)
+
+      params = %{
+        "chunk" => {:attachment, chunk_data, "application/octet-stream"}
+      }
+
+      Builder.estimate_message_size(params)
+    end)
+    |> Enum.sum()
+
+    IO.puts("\nUpload Strategy:")
+    IO.puts("  Estimated total transfer: #{format_size(total_estimated)}")
+    IO.puts("  Overhead: #{format_size(total_estimated - total_size)} (#{Float.round((total_estimated - total_size) / total_size * 100, 1)}%)")
+
+    # Generate upload plan
+    upload_plan = Enum.map(1..chunk_count, fn chunk_num ->
+      offset = (chunk_num - 1) * @chunk_size
+      chunk_size = min(@chunk_size, total_size - offset)
+
+      %{
+        chunk_number: chunk_num,
+        offset: offset,
+        size: chunk_size,
+        is_last: chunk_num == chunk_count
+      }
+    end)
+
+    {:ok, upload_plan}
+  end
+
+  def upload_chunk(file_path, chunk_info, upload_id) do
+    # Simulate reading chunk from file
+    chunk_data = String.duplicate("x", chunk_info.size)
+
+    params = %{
+      "UploadChunk" => %{
+        "uploadId" => upload_id,
+        "chunkNumber" => chunk_info.chunk_number,
+        "offset" => chunk_info.offset,
+        "isLast" => chunk_info.is_last,
+        "data" => {:attachment, chunk_data, "application/octet-stream"}
+      }
+    }
+
+    case Builder.build_mtom_message(:UploadChunk, params,
+      namespace: "http://upload.example.com"
+    ) do
+      {:ok, {content_type, body}} ->
+        IO.puts("Chunk #{chunk_info.chunk_number}: #{format_size(byte_size(body))} prepared")
+        {:ok, body}
+
+      {:error, error} ->
+        {:error, error}
+    end
+  end
+
+  defp format_size(bytes) when bytes >= 1024 * 1024 do
+    "#{Float.round(bytes / 1024 / 1024, 2)} MB"
+  end
+  defp format_size(bytes) when bytes >= 1024 do
+    "#{Float.round(bytes / 1024, 2)} KB"
+  end
+  defp format_size(bytes), do: "#{bytes} bytes"
+end
+
+# Demonstrate large file handling
+{:ok, upload_plan} = LargeFileHandler.prepare_large_upload("large_video.mp4", 5 * 1024 * 1024)
+
+IO.puts("\nUpload Plan:")
+Enum.each(upload_plan, fn chunk ->
+  status = if chunk.is_last, do: " (FINAL)", else: ""
+  IO.puts("  Chunk #{chunk.chunk_number}: offset=#{chunk.offset}, size=#{chunk.size}#{status}")
+end)
+
+# Upload first chunk as example
+IO.puts("\nUploading first chunk...")
+LargeFileHandler.upload_chunk("large_video.mp4", hd(upload_plan), "upload-12345")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Performance Considerations
+
+### Size Comparison: Base64 vs MTOM
+
+```elixir
+defmodule PerformanceComparison do
+  alias Lather.Mtom.Builder
+
+  def compare_encoding_methods(data_size) do
+    IO.puts("Encoding Comparison: #{format_size(data_size)} of binary data")
+    IO.puts(String.duplicate("=", 60))
+
+    # Generate test data
+    test_data = :crypto.strong_rand_bytes(data_size)
+
+    # Base64 encoding
+    base64_start = System.monotonic_time(:microsecond)
+    base64_encoded = Base.encode64(test_data)
+    base64_time = System.monotonic_time(:microsecond) - base64_start
+    base64_size = byte_size(base64_encoded)
+
+    # MTOM (binary transfer)
+    mtom_start = System.monotonic_time(:microsecond)
+    params = %{"data" => {:attachment, test_data, "application/octet-stream"}}
+    {:ok, {_, mtom_body}} = Builder.build_mtom_message(:Test, params, namespace: "http://test")
+    mtom_time = System.monotonic_time(:microsecond) - mtom_start
+    mtom_size = byte_size(mtom_body)
+
+    # Results
+    IO.puts("\n| Metric          | Base64        | MTOM          | Winner |")
+    IO.puts("|-----------------|---------------|---------------|--------|")
+
+    # Size comparison
+    size_winner = if base64_size < mtom_size, do: "Base64", else: "MTOM"
+    IO.puts("| Data Size       | #{pad_size(base64_size)} | #{pad_size(mtom_size)} | #{size_winner} |")
+
+    # Size overhead
+    base64_overhead = Float.round((base64_size - data_size) / data_size * 100, 1)
+    mtom_overhead = Float.round((mtom_size - data_size) / data_size * 100, 1)
+    overhead_winner = if base64_overhead < mtom_overhead, do: "Base64", else: "MTOM"
+    IO.puts("| Size Overhead   | #{pad_num(base64_overhead)}%        | #{pad_num(mtom_overhead)}%        | #{overhead_winner} |")
+
+    # Time comparison
+    time_winner = if base64_time < mtom_time, do: "Base64", else: "MTOM"
+    IO.puts("| Encoding Time   | #{pad_num(base64_time)} us      | #{pad_num(mtom_time)} us      | #{time_winner} |")
+
+    %{
+      base64: %{size: base64_size, time: base64_time, overhead: base64_overhead},
+      mtom: %{size: mtom_size, time: mtom_time, overhead: mtom_overhead}
+    }
+  end
+
+  defp format_size(bytes) when bytes >= 1024 * 1024 do
+    "#{Float.round(bytes / 1024 / 1024, 2)} MB"
+  end
+  defp format_size(bytes) when bytes >= 1024 do
+    "#{Float.round(bytes / 1024, 2)} KB"
+  end
+  defp format_size(bytes), do: "#{bytes} bytes"
+
+  defp pad_size(bytes), do: format_size(bytes) |> String.pad_trailing(13)
+  defp pad_num(num), do: to_string(num) |> String.pad_leading(6)
+end
+
+# Compare at different sizes
+sizes = [1024, 10240, 102400, 1024000]
+
+IO.puts("Performance Analysis at Different Sizes")
+IO.puts(String.duplicate("=", 60))
+
+Enum.each(sizes, fn size ->
+  IO.puts("")
+  PerformanceComparison.compare_encoding_methods(size)
+end)
+```
+
+### Memory Usage Analysis
+
+```elixir
+defmodule MemoryAnalysis do
+  def analyze_memory_usage(attachment_sizes) do
+    IO.puts("Memory Usage Analysis")
+    IO.puts(String.duplicate("=", 50))
+
+    results = Enum.map(attachment_sizes, fn size ->
+      # Measure memory before
+      :erlang.garbage_collect()
+      memory_before = :erlang.memory(:total)
+
+      # Create attachment
+      data = :crypto.strong_rand_bytes(size)
+      attachment = Lather.Mtom.Attachment.new(data, "application/octet-stream")
+
+      # Build message
+      params = %{"file" => {:attachment, data, "application/octet-stream"}}
+      {:ok, {_, body}} = Lather.Mtom.Builder.build_mtom_message(:Test, params, namespace: "http://test")
+
+      # Measure memory after
+      memory_after = :erlang.memory(:total)
+      memory_used = memory_after - memory_before
+
+      %{
+        input_size: size,
+        attachment_size: attachment.size,
+        message_size: byte_size(body),
+        memory_used: memory_used,
+        memory_ratio: Float.round(memory_used / size, 2)
+      }
+    end)
+
+    IO.puts("\n| Input Size | Message Size | Memory Used | Ratio |")
+    IO.puts("|------------|--------------|-------------|-------|")
+
+    Enum.each(results, fn r ->
+      IO.puts("| #{format_size(r.input_size)} | #{format_size(r.message_size)} | #{format_size(r.memory_used)} | #{r.memory_ratio}x |")
+    end)
+
+    results
+  end
+
+  defp format_size(bytes) when bytes >= 1024 * 1024 do
+    "#{Float.round(bytes / 1024 / 1024, 2)} MB" |> String.pad_trailing(10)
+  end
+  defp format_size(bytes) when bytes >= 1024 do
+    "#{Float.round(bytes / 1024, 2)} KB" |> String.pad_trailing(10)
+  end
+  defp format_size(bytes), do: "#{bytes} B" |> String.pad_trailing(10)
+end
+
+# Analyze memory at different sizes
+MemoryAnalysis.analyze_memory_usage([1024, 10240, 102400, 512000])
+```
+
+### When MTOM is Most Beneficial
+
+```elixir
+IO.puts("""
+MTOM Performance Guidelines
+
+BEST USE CASES:
+  - Files > 100KB: 20-33% bandwidth savings
+  - Binary data (images, PDFs): No base64 encoding overhead
+  - High-frequency uploads: Reduced CPU from encoding
+  - Memory-constrained systems: No base64 expansion
+
+LESS BENEFICIAL:
+  - Small files < 1KB: MIME overhead may exceed savings
+  - Text-heavy XML: Base64 overhead is acceptable
+  - Simple integrations: Base64 is simpler to debug
+
+OPTIMIZATION TIPS:
+  1. Batch small files together
+  2. Use streaming for files > 10MB
+  3. Consider compression before MTOM
+  4. Set appropriate chunk sizes for large files
+  5. Monitor memory usage with :erlang.memory/0
+
+SIZE THRESHOLDS (Approximate):
+  | File Size   | Recommendation           |
+  |-------------|--------------------------|
+  | < 1 KB      | Base64 (simpler)         |
+  | 1-10 KB     | Either (MTOM slightly better) |
+  | 10-100 KB   | MTOM (noticeable savings) |
+  | 100 KB - 1 MB | MTOM (significant savings) |
+  | > 1 MB      | MTOM + chunking          |
+""")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Error Handling
+
+### Attachment Validation Errors
+
+```elixir
+defmodule ErrorHandlingExamples do
+  alias Lather.Mtom.{Attachment, Builder}
+
+  def demonstrate_validation_errors do
+    IO.puts("Attachment Validation Errors")
+    IO.puts(String.duplicate("=", 50))
+
+    test_cases = [
+      {"Empty content type", fn ->
+        Attachment.new("data", "")
+      end},
+
+      {"Invalid content type format", fn ->
+        Attachment.new("data", "invalid")
+      end},
+
+      {"Empty data", fn ->
+        attachment = Attachment.new("", "application/pdf", validate: false)
+        Attachment.validate(attachment)
+      end},
+
+      {"Invalid encoding", fn ->
+        Attachment.new("data", "application/pdf", content_transfer_encoding: "invalid-encoding")
+      end}
+    ]
+
+    Enum.each(test_cases, fn {description, test_fn} ->
+      IO.puts("\nTest: #{description}")
+      try do
+        result = test_fn.()
+        case result do
+          :ok -> IO.puts("  Result: :ok (unexpected)")
+          {:error, reason} -> IO.puts("  Result: {:error, #{inspect(reason)}}")
+          %Attachment{} -> IO.puts("  Result: Attachment created (unexpected)")
+        end
+      rescue
+        e in ArgumentError ->
+          IO.puts("  Raised: ArgumentError - #{e.message}")
+        e ->
+          IO.puts("  Raised: #{inspect(e)}")
+      end
+    end)
+  end
+
+  def demonstrate_builder_errors do
+    IO.puts("\n\nBuilder Error Handling")
+    IO.puts(String.duplicate("=", 50))
+
+    test_cases = [
+      {"Malformed attachment tuple", %{
+        "file" => {:attachment, 123, "application/pdf"}  # data should be binary
+      }},
+
+      {"Missing content type", %{
+        "file" => {:attachment, "data"}  # missing content type
+      }},
+
+      {"Invalid options type", %{
+        "file" => {:attachment, "data", "application/pdf", "not-a-list"}
+      }}
+    ]
+
+    Enum.each(test_cases, fn {description, params} ->
+      IO.puts("\nTest: #{description}")
+
+      case Builder.build_mtom_message(:Test, params, namespace: "http://test") do
+        {:ok, _} ->
+          IO.puts("  Result: Success (unexpected)")
+
+        {:error, reason} ->
+          IO.puts("  Result: {:error, #{inspect(reason)}}")
+      end
+    end)
+  end
+
+  def demonstrate_mime_errors do
+    IO.puts("\n\nMIME Parsing Errors")
+    IO.puts(String.duplicate("=", 50))
+
+    test_cases = [
+      {"Missing boundary", "multipart/related; type=\"application/xop+xml\""},
+      {"Not multipart/related", "application/soap+xml"},
+      {"Empty content-type", ""}
+    ]
+
+    Enum.each(test_cases, fn {description, content_type} ->
+      IO.puts("\nTest: #{description}")
+
+      result = Lather.Mtom.Mime.validate_content_type(content_type)
+      IO.puts("  Input: #{inspect(content_type)}")
+      IO.puts("  Result: #{inspect(result)}")
+    end)
+  end
+end
+
+ErrorHandlingExamples.demonstrate_validation_errors()
+ErrorHandlingExamples.demonstrate_builder_errors()
+ErrorHandlingExamples.demonstrate_mime_errors()
+```
+
+### Handling Size Limits
+
+```elixir
+defmodule SizeLimitDemo do
+  @max_attachment_size 100 * 1024 * 1024  # 100MB default
+
+  def check_size_limits(data_size) do
+    IO.puts("Size Limit Check: #{format_size(data_size)}")
+
+    cond do
+      data_size > @max_attachment_size ->
+        IO.puts("  Status: EXCEEDS LIMIT")
+        IO.puts("  Max allowed: #{format_size(@max_attachment_size)}")
+        IO.puts("  Suggestion: Use chunked upload or streaming")
+        {:error, :attachment_too_large}
+
+      data_size > @max_attachment_size * 0.8 ->
+        IO.puts("  Status: WARNING - Near limit (80%+)")
+        IO.puts("  Consider: Chunked upload for safety margin")
+        {:ok, :warning}
+
+      true ->
+        IO.puts("  Status: OK")
+        {:ok, :within_limits}
+    end
+  end
+
+  defp format_size(bytes) when bytes >= 1024 * 1024 do
+    "#{Float.round(bytes / 1024 / 1024, 2)} MB"
+  end
+  defp format_size(bytes) when bytes >= 1024 do
+    "#{Float.round(bytes / 1024, 2)} KB"
+  end
+  defp format_size(bytes), do: "#{bytes} bytes"
+end
+
+# Test size limits
+IO.puts("Size Limit Validation")
+IO.puts(String.duplicate("=", 50))
+
+[
+  10 * 1024 * 1024,      # 10 MB
+  50 * 1024 * 1024,      # 50 MB
+  85 * 1024 * 1024,      # 85 MB (warning)
+  150 * 1024 * 1024      # 150 MB (exceeds)
+]
+|> Enum.each(fn size ->
+  SizeLimitDemo.check_size_limits(size)
+  IO.puts("")
+end)
+
+IO.puts("""
+Configuration Tip:
+  Set custom max size in config/config.exs:
+
+  config :lather, :max_attachment_size, 200 * 1024 * 1024  # 200MB
+""")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Summary and Quick Reference
+
+```elixir
+IO.puts("""
+MTOM ATTACHMENTS - QUICK REFERENCE
+
+CREATING ATTACHMENTS:
+  # From binary data
+  attachment = Attachment.new(data, "application/pdf")
+
+  # With options
+  attachment = Attachment.new(data, "image/jpeg",
+    content_id: "custom-id@example.com"
+  )
+
+  # From file
+  {:ok, attachment} = Attachment.from_file("/path/to/file.pdf")
+
+BUILDING MTOM MESSAGES:
+  # Using attachment tuples in parameters
+  params = %{
+    "file" => {:attachment, data, "application/pdf"}
+  }
+
+  {:ok, {content_type, body}} = Builder.build_mtom_message(
+    :UploadFile,
+    params,
+    namespace: "http://example.com"
+  )
+
+MIME OPERATIONS:
+  # Generate boundary
+  boundary = Mime.generate_boundary()
+
+  # Build Content-Type header
+  header = Mime.build_content_type_header(boundary, type, start_id)
+
+  # Parse MTOM response
+  {:ok, {soap, attachments}} = Mime.parse_multipart_message(
+    content_type, body
+  )
+
+ATTACHMENT UTILITIES:
+  # Get Content-ID header format
+  Attachment.content_id_header(att)  # "<id@lather.soap>"
+
+  # Get CID reference for XOP
+  Attachment.cid_reference(att)  # "cid:id@lather.soap"
+
+  # Generate XOP Include element
+  Attachment.xop_include(att)
+
+  # Check if value is attachment
+  Attachment.is_attachment?(value)
+
+  # Validate attachment
+  Attachment.validate(att)
+
+BUILDER UTILITIES:
+  # Check for attachments in params
+  Builder.has_attachments?(params)
+
+  # Process and extract attachments
+  {:ok, {processed, attachments}} = Builder.process_parameters(params)
+
+  # Estimate message size
+  size = Builder.estimate_message_size(params)
+
+SUPPORTED CONTENT TYPES:
+  Documents: application/pdf, application/msword, application/vnd.openxmlformats-*
+  Images: image/jpeg, image/png, image/gif, image/tiff, image/bmp, image/webp
+  Archives: application/zip, application/gzip, application/x-tar
+  Text: text/plain, text/csv, text/xml, application/json
+  Binary: application/octet-stream
+  Media: video/mp4, audio/mpeg, audio/wav
+""")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Next Steps
+
+Congratulations! You now understand MTOM attachments in Lather. Here's what to explore next:
+
+1. **Enterprise Integration**: See the `enterprise_integration.livemd` for complex multi-service scenarios
+2. **Debugging**: Use `debugging_troubleshooting.livemd` to diagnose MTOM issues
+3. **SOAP Server Development**: Learn to build MTOM-enabled SOAP servers
+4. **Performance Tuning**: Optimize large file transfers for production
+
+Happy SOAP-ing with binary attachments!

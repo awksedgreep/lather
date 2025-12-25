@@ -1,0 +1,2278 @@
+# Testing Strategies for SOAP Services
+
+```elixir
+Mix.install([
+  {:lather, path: ".."}, # For local development
+  # {:lather, "~> 1.0"}, # Use this for hex package
+  {:finch, "~> 0.18"},
+  {:kino, "~> 0.12"},
+  {:jason, "~> 1.4"},
+  {:bypass, "~> 2.1"},
+  {:mox, "~> 1.0"},
+  {:benchee, "~> 1.3"}
+])
+```
+
+## Introduction
+
+Welcome to the comprehensive guide on **Testing SOAP Services** with Lather! This Livebook covers everything you need to know about building reliable, well-tested SOAP integrations.
+
+In this Livebook, you'll learn:
+- The testing pyramid for SOAP services
+- Unit testing techniques with mocks
+- Integration testing strategies
+- Contract testing with WSDL
+- Performance and load testing
+- Best practices for CI/CD pipelines
+
+<!-- livebook:{"break_markdown":true} -->
+
+## The Testing Pyramid for SOAP Services
+
+Understanding the testing pyramid is crucial for building maintainable SOAP integrations:
+
+```elixir
+testing_pyramid = """
+                    /\\
+                   /  \\
+                  / E2E \\           <- End-to-End Tests (Few)
+                 /  Tests \\            Real services, slow, expensive
+                /----------\\
+               / Integration \\      <- Integration Tests (Some)
+              /    Tests      \\        Mock services, HTTP level
+             /----------------\\
+            /    Unit Tests    \\    <- Unit Tests (Many)
+           /                    \\      Fast, isolated, deterministic
+          /______________________\\
+
+SOAP-Specific Considerations:
+- Unit Tests: Mock HTTP responses, test XML parsing/building
+- Integration Tests: Use Bypass for HTTP mocking, test full client flow
+- E2E Tests: Test against real services (tagged, excluded by default)
+"""
+
+IO.puts(testing_pyramid)
+```
+
+### Key Principles
+
+```elixir
+principles = """
+1. DEFAULT TO MOCKS
+   Live API tests should be disabled by default.
+   Use @moduletag :external_api for live tests.
+
+2. RESPECT PUBLIC SERVICES
+   Public SOAP APIs are shared resources.
+   Don't overwhelm them with automated tests.
+
+3. FAST FEEDBACK
+   Unit tests should run in milliseconds.
+   Keep integration tests under a few seconds.
+
+4. DETERMINISTIC RESULTS
+   Tests should pass consistently.
+   Avoid flaky tests caused by network issues.
+
+5. TEST COVERAGE
+   Focus on error paths, not just happy paths.
+   SOAP services have many failure modes.
+"""
+
+IO.puts(principles)
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Environment Setup
+
+Let's set up our testing environment:
+
+```elixir
+# Start required applications
+{:ok, _} = Application.ensure_all_started(:lather)
+{:ok, _} = Application.ensure_all_started(:bypass)
+
+# Configure Finch for HTTP connections
+children = [
+  {Finch, name: Lather.Finch}
+]
+
+{:ok, _supervisor} = Supervisor.start_link(children, strategy: :one_for_one)
+
+IO.puts("Testing environment ready!")
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Unit Testing SOAP Clients
+
+Unit tests focus on individual components in isolation. Let's explore various unit testing techniques.
+
+### Testing Parameter Building
+
+```elixir
+defmodule ParameterBuildingTest do
+  @moduledoc """
+  Tests for SOAP parameter building and XML generation.
+  """
+
+  def test_simple_parameters do
+    IO.puts("Testing Simple Parameter Building")
+    IO.puts("=" |> String.duplicate(40))
+
+    params = %{
+      "CityName" => "New York",
+      "CountryName" => "United States"
+    }
+
+    # Build XML from parameters
+    xml = Lather.XMLBuilder.build_params(params, "GetWeather", "http://example.com")
+
+    IO.puts("Input parameters:")
+    IO.inspect(params, pretty: true)
+
+    IO.puts("\nGenerated XML:")
+    IO.puts(xml)
+
+    # Verify XML contains expected elements
+    assert_contains(xml, "<CityName>New York</CityName>")
+    assert_contains(xml, "<CountryName>United States</CountryName>")
+
+    IO.puts("\nAll assertions passed!")
+  end
+
+  def test_complex_nested_parameters do
+    IO.puts("\nTesting Complex Nested Parameters")
+    IO.puts("=" |> String.duplicate(40))
+
+    params = %{
+      "request" => %{
+        "searchCriteria" => %{
+          "field" => "department",
+          "value" => "Engineering"
+        },
+        "pagination" => %{
+          "pageSize" => 25,
+          "pageNumber" => 1
+        }
+      }
+    }
+
+    xml = Lather.XMLBuilder.build_params(params, "Search", "http://example.com")
+
+    IO.puts("Input parameters:")
+    IO.inspect(params, pretty: true)
+
+    IO.puts("\nGenerated XML:")
+    IO.puts(xml)
+
+    # Verify nested structure is preserved
+    assert_contains(xml, "<field>department</field>")
+    assert_contains(xml, "<value>Engineering</value>")
+    assert_contains(xml, "<pageSize>25</pageSize>")
+
+    IO.puts("\nAll assertions passed!")
+  end
+
+  def test_array_parameters do
+    IO.puts("\nTesting Array Parameters")
+    IO.puts("=" |> String.duplicate(40))
+
+    params = %{
+      "items" => [
+        %{"id" => "1", "name" => "Item 1"},
+        %{"id" => "2", "name" => "Item 2"},
+        %{"id" => "3", "name" => "Item 3"}
+      ]
+    }
+
+    xml = Lather.XMLBuilder.build_params(params, "ProcessItems", "http://example.com")
+
+    IO.puts("Input parameters:")
+    IO.inspect(params, pretty: true)
+
+    IO.puts("\nGenerated XML:")
+    IO.puts(xml)
+
+    # Verify array elements
+    assert_contains(xml, "<id>1</id>")
+    assert_contains(xml, "<name>Item 1</name>")
+    assert_contains(xml, "<id>3</id>")
+
+    IO.puts("\nAll assertions passed!")
+  end
+
+  defp assert_contains(xml, expected) do
+    if String.contains?(xml, expected) do
+      IO.puts("  [PASS] Contains: #{expected}")
+    else
+      IO.puts("  [FAIL] Missing: #{expected}")
+      raise "Assertion failed: XML does not contain #{expected}"
+    end
+  end
+end
+
+# Run parameter building tests
+ParameterBuildingTest.test_simple_parameters()
+ParameterBuildingTest.test_complex_nested_parameters()
+ParameterBuildingTest.test_array_parameters()
+```
+
+### Testing Response Parsing
+
+```elixir
+defmodule ResponseParsingTest do
+  @moduledoc """
+  Tests for parsing SOAP responses into Elixir data structures.
+  """
+
+  def test_simple_response do
+    IO.puts("Testing Simple Response Parsing")
+    IO.puts("=" |> String.duplicate(40))
+
+    soap_response = """
+    <?xml version="1.0" encoding="utf-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+      <soap:Body>
+        <GetWeatherResponse xmlns="http://example.com">
+          <GetWeatherResult>
+            <Temperature>72</Temperature>
+            <Conditions>Sunny</Conditions>
+            <Humidity>45</Humidity>
+          </GetWeatherResult>
+        </GetWeatherResponse>
+      </soap:Body>
+    </soap:Envelope>
+    """
+
+    IO.puts("SOAP Response:")
+    IO.puts(String.slice(soap_response, 0, 200) <> "...")
+
+    case Lather.XMLParser.parse_soap_response(soap_response) do
+      {:ok, parsed} ->
+        IO.puts("\nParsed Result:")
+        IO.inspect(parsed, pretty: true)
+
+        # Verify parsed structure
+        assert_equals(parsed["Temperature"], "72", "Temperature")
+        assert_equals(parsed["Conditions"], "Sunny", "Conditions")
+
+        IO.puts("\nAll assertions passed!")
+
+      {:error, error} ->
+        IO.puts("\nParsing failed: #{inspect(error)}")
+    end
+  end
+
+  def test_complex_response do
+    IO.puts("\nTesting Complex Response with Arrays")
+    IO.puts("=" |> String.duplicate(40))
+
+    soap_response = """
+    <?xml version="1.0" encoding="utf-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+      <soap:Body>
+        <ListCountriesResponse xmlns="http://example.com">
+          <ListCountriesResult>
+            <Country>
+              <Code>US</Code>
+              <Name>United States</Name>
+            </Country>
+            <Country>
+              <Code>CA</Code>
+              <Name>Canada</Name>
+            </Country>
+            <Country>
+              <Code>MX</Code>
+              <Name>Mexico</Name>
+            </Country>
+          </ListCountriesResult>
+        </ListCountriesResponse>
+      </soap:Body>
+    </soap:Envelope>
+    """
+
+    case Lather.XMLParser.parse_soap_response(soap_response) do
+      {:ok, parsed} ->
+        IO.puts("Parsed Result:")
+        IO.inspect(parsed, pretty: true)
+
+        # Verify array parsing
+        countries = parsed["Country"]
+        if is_list(countries) do
+          IO.puts("\n[PASS] Countries parsed as array")
+          IO.puts("  Count: #{length(countries)}")
+        else
+          IO.puts("\n[INFO] Single country or wrapped structure")
+        end
+
+      {:error, error} ->
+        IO.puts("Parsing failed: #{inspect(error)}")
+    end
+  end
+
+  def test_soap_fault_parsing do
+    IO.puts("\nTesting SOAP Fault Parsing")
+    IO.puts("=" |> String.duplicate(40))
+
+    soap_fault = """
+    <?xml version="1.0" encoding="utf-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+      <soap:Body>
+        <soap:Fault>
+          <faultcode>soap:Client</faultcode>
+          <faultstring>Invalid parameter: CityName is required</faultstring>
+          <detail>
+            <ErrorCode>PARAM_001</ErrorCode>
+            <Field>CityName</Field>
+          </detail>
+        </soap:Fault>
+      </soap:Body>
+    </soap:Envelope>
+    """
+
+    IO.puts("SOAP Fault XML:")
+    IO.puts(String.slice(soap_fault, 0, 300) <> "...")
+
+    case Lather.Error.parse_soap_fault(soap_fault, []) do
+      {:ok, fault} ->
+        IO.puts("\nParsed Fault:")
+        IO.inspect(fault, pretty: true)
+
+        IO.puts("\n[PASS] SOAP fault parsed successfully")
+        IO.puts("  Fault Code: #{fault.fault_code}")
+        IO.puts("  Fault String: #{fault.fault_string}")
+
+      {:error, reason} ->
+        IO.puts("\nFault parsing failed: #{inspect(reason)}")
+    end
+  end
+
+  defp assert_equals(actual, expected, field_name) do
+    if actual == expected do
+      IO.puts("  [PASS] #{field_name}: #{actual}")
+    else
+      IO.puts("  [FAIL] #{field_name}: expected #{expected}, got #{actual}")
+      raise "Assertion failed for #{field_name}"
+    end
+  end
+end
+
+# Run response parsing tests
+ResponseParsingTest.test_simple_response()
+ResponseParsingTest.test_complex_response()
+ResponseParsingTest.test_soap_fault_parsing()
+```
+
+### Testing Error Handling
+
+```elixir
+defmodule ErrorHandlingTest do
+  @moduledoc """
+  Tests for error handling and edge cases.
+  """
+
+  def test_invalid_xml_handling do
+    IO.puts("Testing Invalid XML Handling")
+    IO.puts("=" |> String.duplicate(40))
+
+    invalid_responses = [
+      {"Empty response", ""},
+      {"Not XML", "This is not XML at all"},
+      {"Malformed XML", "<soap:Envelope><unclosed>"},
+      {"Missing Body", "<soap:Envelope xmlns:soap='http://schemas.xmlsoap.org/soap/envelope/'></soap:Envelope>"},
+      {"HTML error page", "<html><body><h1>500 Server Error</h1></body></html>"}
+    ]
+
+    Enum.each(invalid_responses, fn {name, response} ->
+      IO.puts("\nTest: #{name}")
+      IO.puts("  Input: #{String.slice(response, 0, 50)}...")
+
+      case Lather.XMLParser.parse_soap_response(response) do
+        {:ok, _parsed} ->
+          IO.puts("  [WARN] Unexpectedly succeeded")
+
+        {:error, error} ->
+          IO.puts("  [PASS] Properly returned error")
+          IO.puts("  Error: #{inspect(error)}")
+      end
+    end)
+  end
+
+  def test_timeout_error_handling do
+    IO.puts("\nTesting Timeout Error Handling")
+    IO.puts("=" |> String.duplicate(40))
+
+    # Simulate timeout error
+    timeout_error = %Lather.Error{
+      type: :transport_error,
+      message: "Request timed out",
+      reason: :timeout,
+      details: %{timeout: 30_000}
+    }
+
+    formatted = Lather.Error.format_error(timeout_error)
+    IO.puts("Formatted error: #{formatted}")
+
+    # Verify error can be pattern matched
+    case timeout_error do
+      %Lather.Error{type: :transport_error, reason: :timeout} ->
+        IO.puts("[PASS] Timeout error can be pattern matched")
+
+      _ ->
+        IO.puts("[FAIL] Pattern matching failed")
+    end
+  end
+
+  def test_http_error_handling do
+    IO.puts("\nTesting HTTP Error Handling")
+    IO.puts("=" |> String.duplicate(40))
+
+    http_errors = [
+      {401, "Unauthorized - check credentials"},
+      {403, "Forbidden - insufficient permissions"},
+      {404, "Not Found - check service URL"},
+      {500, "Internal Server Error"},
+      {502, "Bad Gateway"},
+      {503, "Service Unavailable"}
+    ]
+
+    Enum.each(http_errors, fn {status, description} ->
+      error = %Lather.Error{
+        type: :http_error,
+        message: "HTTP #{status}: #{description}",
+        status: status,
+        details: %{body: "Error response body"}
+      }
+
+      IO.puts("\nHTTP #{status}:")
+      IO.puts("  Message: #{error.message}")
+      IO.puts("  Recoverable: #{is_recoverable?(status)}")
+    end)
+  end
+
+  defp is_recoverable?(status) when status in [500, 502, 503, 504], do: "Yes (retry appropriate)"
+  defp is_recoverable?(status) when status in [401, 403], do: "No (fix credentials/permissions)"
+  defp is_recoverable?(status) when status == 404, do: "No (fix URL)"
+  defp is_recoverable?(_status), do: "Unknown"
+end
+
+# Run error handling tests
+ErrorHandlingTest.test_invalid_xml_handling()
+ErrorHandlingTest.test_timeout_error_handling()
+ErrorHandlingTest.test_http_error_handling()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Mocking SOAP Services with Bypass
+
+Bypass is an excellent tool for mocking HTTP services. Let's see how to use it for SOAP testing.
+
+### Basic Bypass Setup
+
+```elixir
+defmodule BypassMockingExample do
+  @moduledoc """
+  Examples of mocking SOAP services with Bypass.
+  """
+
+  def setup_mock_wsdl_endpoint do
+    IO.puts("Setting Up Mock WSDL Endpoint")
+    IO.puts("=" |> String.duplicate(40))
+
+    # Start Bypass
+    bypass = Bypass.open()
+
+    # Mock WSDL endpoint
+    wsdl_response = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+                 xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                 xmlns:tns="http://example.com/calculator"
+                 xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                 name="CalculatorService"
+                 targetNamespace="http://example.com/calculator">
+
+      <types>
+        <xsd:schema targetNamespace="http://example.com/calculator">
+          <xsd:element name="Add">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="a" type="xsd:decimal"/>
+                <xsd:element name="b" type="xsd:decimal"/>
+              </xsd:sequence>
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="AddResponse">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="result" type="xsd:decimal"/>
+              </xsd:sequence>
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:schema>
+      </types>
+
+      <message name="AddRequest">
+        <part name="parameters" element="tns:Add"/>
+      </message>
+      <message name="AddResponse">
+        <part name="parameters" element="tns:AddResponse"/>
+      </message>
+
+      <portType name="CalculatorPortType">
+        <operation name="Add">
+          <input message="tns:AddRequest"/>
+          <output message="tns:AddResponse"/>
+        </operation>
+      </portType>
+
+      <binding name="CalculatorBinding" type="tns:CalculatorPortType">
+        <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+        <operation name="Add">
+          <soap:operation soapAction="http://example.com/calculator/Add"/>
+          <input><soap:body use="literal"/></input>
+          <output><soap:body use="literal"/></output>
+        </operation>
+      </binding>
+
+      <service name="CalculatorService">
+        <port name="CalculatorPort" binding="tns:CalculatorBinding">
+          <soap:address location="http://localhost:#{bypass.port}/soap"/>
+        </port>
+      </service>
+    </definitions>
+    """
+
+    Bypass.expect(bypass, "GET", "/wsdl", fn conn ->
+      conn
+      |> Plug.Conn.put_resp_content_type("text/xml")
+      |> Plug.Conn.resp(200, wsdl_response)
+    end)
+
+    IO.puts("Mock WSDL endpoint created at: http://localhost:#{bypass.port}/wsdl")
+
+    bypass
+  end
+
+  def setup_mock_soap_operation(bypass) do
+    IO.puts("\nSetting Up Mock SOAP Operation")
+    IO.puts("=" |> String.duplicate(40))
+
+    # Mock SOAP operation endpoint
+    Bypass.expect(bypass, "POST", "/soap", fn conn ->
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      IO.puts("Received SOAP request:")
+      IO.puts(String.slice(body, 0, 200) <> "...")
+
+      # Parse request and create response
+      response = create_add_response(body)
+
+      conn
+      |> Plug.Conn.put_resp_content_type("text/xml")
+      |> Plug.Conn.resp(200, response)
+    end)
+
+    IO.puts("Mock SOAP operation endpoint ready")
+  end
+
+  defp create_add_response(request_body) do
+    # Simple extraction of values (in real tests, use proper XML parsing)
+    a_match = Regex.run(~r/<a>([^<]+)<\/a>/, request_body)
+    b_match = Regex.run(~r/<b>([^<]+)<\/b>/, request_body)
+
+    result = case {a_match, b_match} do
+      {[_, a], [_, b]} ->
+        {a_num, _} = Float.parse(a)
+        {b_num, _} = Float.parse(b)
+        a_num + b_num
+
+      _ ->
+        0.0
+    end
+
+    """
+    <?xml version="1.0" encoding="utf-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+      <soap:Body>
+        <AddResponse xmlns="http://example.com/calculator">
+          <result>#{result}</result>
+        </AddResponse>
+      </soap:Body>
+    </soap:Envelope>
+    """
+  end
+
+  def test_with_bypass do
+    IO.puts("\nTesting SOAP Client with Bypass")
+    IO.puts("=" |> String.duplicate(40))
+
+    bypass = setup_mock_wsdl_endpoint()
+    setup_mock_soap_operation(bypass)
+
+    wsdl_url = "http://localhost:#{bypass.port}/wsdl"
+
+    case Lather.DynamicClient.new(wsdl_url, timeout: 5_000) do
+      {:ok, client} ->
+        IO.puts("\n[PASS] Client created successfully")
+
+        operations = Lather.DynamicClient.list_operations(client)
+        IO.puts("Available operations: #{inspect(operations)}")
+
+        # Make a test call
+        params = %{"a" => "10.5", "b" => "5.5"}
+        IO.puts("\nCalling Add with params: #{inspect(params)}")
+
+        case Lather.DynamicClient.call(client, "Add", params) do
+          {:ok, response} ->
+            IO.puts("[PASS] SOAP call successful")
+            IO.puts("Response: #{inspect(response)}")
+
+          {:error, error} ->
+            IO.puts("[FAIL] SOAP call failed: #{inspect(error)}")
+        end
+
+      {:error, error} ->
+        IO.puts("[FAIL] Failed to create client: #{inspect(error)}")
+    end
+
+    # Clean up
+    Bypass.down(bypass)
+    IO.puts("\nBypass mock server shut down")
+  end
+end
+
+# Run Bypass mocking example
+BypassMockingExample.test_with_bypass()
+```
+
+### Simulating SOAP Faults
+
+```elixir
+defmodule SOAPFaultSimulation do
+  @moduledoc """
+  Examples of simulating various SOAP faults for testing error handling.
+  """
+
+  def simulate_client_fault do
+    IO.puts("Simulating Client SOAP Fault")
+    IO.puts("=" |> String.duplicate(40))
+
+    bypass = Bypass.open()
+
+    fault_response = """
+    <?xml version="1.0" encoding="utf-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+      <soap:Body>
+        <soap:Fault>
+          <faultcode>soap:Client</faultcode>
+          <faultstring>Missing required parameter: CityName</faultstring>
+          <detail>
+            <ValidationError>
+              <Field>CityName</Field>
+              <Code>REQUIRED_FIELD</Code>
+            </ValidationError>
+          </detail>
+        </soap:Fault>
+      </soap:Body>
+    </soap:Envelope>
+    """
+
+    Bypass.expect(bypass, "POST", "/soap", fn conn ->
+      conn
+      |> Plug.Conn.put_resp_content_type("text/xml")
+      |> Plug.Conn.resp(500, fault_response)
+    end)
+
+    # Test that client properly handles the fault
+    request = Finch.build(:post, "http://localhost:#{bypass.port}/soap", [
+      {"content-type", "text/xml"},
+      {"SOAPAction", "GetWeather"}
+    ], "<soap:Envelope><soap:Body><GetWeather/></soap:Body></soap:Envelope>")
+
+    case Finch.request(request, Lather.Finch) do
+      {:ok, response} ->
+        IO.puts("Received fault response (status #{response.status})")
+        IO.puts("Body preview: #{String.slice(response.body, 0, 200)}...")
+
+        case Lather.Error.parse_soap_fault(response.body, []) do
+          {:ok, fault} ->
+            IO.puts("\n[PASS] Fault parsed correctly")
+            IO.puts("  Fault Code: #{fault.fault_code}")
+            IO.puts("  Fault String: #{fault.fault_string}")
+
+          {:error, _} ->
+            IO.puts("\n[FAIL] Could not parse fault")
+        end
+
+      {:error, error} ->
+        IO.puts("[FAIL] Request failed: #{inspect(error)}")
+    end
+
+    Bypass.down(bypass)
+  end
+
+  def simulate_server_fault do
+    IO.puts("\nSimulating Server SOAP Fault")
+    IO.puts("=" |> String.duplicate(40))
+
+    bypass = Bypass.open()
+
+    fault_response = """
+    <?xml version="1.0" encoding="utf-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+      <soap:Body>
+        <soap:Fault>
+          <faultcode>soap:Server</faultcode>
+          <faultstring>Internal service error: Database connection failed</faultstring>
+          <detail>
+            <ErrorCode>DB_CONNECTION_FAILED</ErrorCode>
+            <Timestamp>2024-01-15T10:30:00Z</Timestamp>
+          </detail>
+        </soap:Fault>
+      </soap:Body>
+    </soap:Envelope>
+    """
+
+    Bypass.expect(bypass, "POST", "/soap", fn conn ->
+      conn
+      |> Plug.Conn.put_resp_content_type("text/xml")
+      |> Plug.Conn.resp(500, fault_response)
+    end)
+
+    request = Finch.build(:post, "http://localhost:#{bypass.port}/soap", [
+      {"content-type", "text/xml"}
+    ], "<request/>")
+
+    case Finch.request(request, Lather.Finch) do
+      {:ok, response} ->
+        case Lather.Error.parse_soap_fault(response.body, []) do
+          {:ok, fault} ->
+            IO.puts("[PASS] Server fault parsed correctly")
+            IO.puts("  Fault Code: #{fault.fault_code}")
+            IO.puts("  This is a server error - retry may be appropriate")
+
+          {:error, _} ->
+            IO.puts("[FAIL] Could not parse fault")
+        end
+
+      {:error, error} ->
+        IO.puts("[FAIL] Request failed: #{inspect(error)}")
+    end
+
+    Bypass.down(bypass)
+  end
+
+  def simulate_authentication_fault do
+    IO.puts("\nSimulating Authentication Fault")
+    IO.puts("=" |> String.duplicate(40))
+
+    bypass = Bypass.open()
+
+    Bypass.expect(bypass, "POST", "/soap", fn conn ->
+      # Check for authorization header
+      auth_header = Enum.find(conn.req_headers, fn {key, _} ->
+        String.downcase(key) == "authorization"
+      end)
+
+      if auth_header do
+        conn
+        |> Plug.Conn.put_resp_content_type("text/xml")
+        |> Plug.Conn.resp(200, "<success/>")
+      else
+        fault = """
+        <?xml version="1.0" encoding="utf-8"?>
+        <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+          <soap:Body>
+            <soap:Fault>
+              <faultcode>soap:Client</faultcode>
+              <faultstring>Authentication required</faultstring>
+              <detail>
+                <AuthenticationError>
+                  <Code>AUTH_REQUIRED</Code>
+                  <Message>Please provide valid credentials</Message>
+                </AuthenticationError>
+              </detail>
+            </soap:Fault>
+          </soap:Body>
+        </soap:Envelope>
+        """
+
+        conn
+        |> Plug.Conn.put_resp_content_type("text/xml")
+        |> Plug.Conn.resp(401, fault)
+      end
+    end)
+
+    # Test without auth
+    IO.puts("Test 1: Request without authentication")
+    request = Finch.build(:post, "http://localhost:#{bypass.port}/soap", [
+      {"content-type", "text/xml"}
+    ], "<request/>")
+
+    case Finch.request(request, Lather.Finch) do
+      {:ok, %{status: 401}} ->
+        IO.puts("  [PASS] Received 401 as expected")
+
+      {:ok, %{status: status}} ->
+        IO.puts("  [FAIL] Unexpected status: #{status}")
+
+      {:error, error} ->
+        IO.puts("  [FAIL] Request failed: #{inspect(error)}")
+    end
+
+    # Test with auth
+    IO.puts("\nTest 2: Request with authentication")
+    auth_request = Finch.build(:post, "http://localhost:#{bypass.port}/soap", [
+      {"content-type", "text/xml"},
+      {"authorization", "Basic " <> Base.encode64("user:pass")}
+    ], "<request/>")
+
+    case Finch.request(auth_request, Lather.Finch) do
+      {:ok, %{status: 200}} ->
+        IO.puts("  [PASS] Received 200 with auth")
+
+      {:ok, %{status: status}} ->
+        IO.puts("  [FAIL] Unexpected status: #{status}")
+
+      {:error, error} ->
+        IO.puts("  [FAIL] Request failed: #{inspect(error)}")
+    end
+
+    Bypass.down(bypass)
+  end
+end
+
+# Run fault simulation tests
+SOAPFaultSimulation.simulate_client_fault()
+SOAPFaultSimulation.simulate_server_fault()
+SOAPFaultSimulation.simulate_authentication_fault()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Testing SOAP Servers
+
+If you're building SOAP servers with Lather, here's how to test them.
+
+### Testing Operation Handlers Directly
+
+```elixir
+defmodule SOAPServerTesting do
+  @moduledoc """
+  Examples of testing SOAP server operation handlers.
+  """
+
+  # Define a sample service for testing
+  defmodule TestCalculatorService do
+    @moduledoc false
+
+    def add(%{"a" => a, "b" => b}) do
+      num_a = parse_number(a)
+      num_b = parse_number(b)
+      {:ok, %{"result" => Float.to_string(num_a + num_b)}}
+    end
+
+    def divide(%{"a" => a, "b" => b}) do
+      num_a = parse_number(a)
+      num_b = parse_number(b)
+
+      if num_b == 0.0 do
+        {:soap_fault, %{
+          fault_code: "Client",
+          fault_string: "Division by zero is not allowed"
+        }}
+      else
+        {:ok, %{"result" => Float.to_string(num_a / num_b)}}
+      end
+    end
+
+    defp parse_number(val) when is_binary(val) do
+      case Float.parse(val) do
+        {num, _} -> num
+        :error -> 0.0
+      end
+    end
+
+    defp parse_number(val) when is_number(val), do: val / 1
+  end
+
+  def test_add_operation do
+    IO.puts("Testing Add Operation Handler")
+    IO.puts("=" |> String.duplicate(40))
+
+    test_cases = [
+      {%{"a" => "10.0", "b" => "5.0"}, "15.0"},
+      {%{"a" => "0", "b" => "0"}, "0.0"},
+      {%{"a" => "-5.5", "b" => "5.5"}, "0.0"},
+      {%{"a" => "100.25", "b" => "200.75"}, "301.0"}
+    ]
+
+    Enum.each(test_cases, fn {params, expected} ->
+      IO.puts("\nInput: #{inspect(params)}")
+
+      case TestCalculatorService.add(params) do
+        {:ok, %{"result" => result}} ->
+          if result == expected do
+            IO.puts("  [PASS] Result: #{result}")
+          else
+            IO.puts("  [FAIL] Expected #{expected}, got #{result}")
+          end
+
+        {:error, error} ->
+          IO.puts("  [FAIL] Unexpected error: #{inspect(error)}")
+      end
+    end)
+  end
+
+  def test_divide_operation do
+    IO.puts("\nTesting Divide Operation Handler")
+    IO.puts("=" |> String.duplicate(40))
+
+    # Normal division
+    IO.puts("\nTest 1: Normal division")
+    case TestCalculatorService.divide(%{"a" => "10.0", "b" => "2.0"}) do
+      {:ok, %{"result" => "5.0"}} ->
+        IO.puts("  [PASS] 10 / 2 = 5.0")
+
+      other ->
+        IO.puts("  [FAIL] Unexpected result: #{inspect(other)}")
+    end
+
+    # Division by zero
+    IO.puts("\nTest 2: Division by zero")
+    case TestCalculatorService.divide(%{"a" => "10.0", "b" => "0"}) do
+      {:soap_fault, %{fault_code: "Client", fault_string: msg}} ->
+        IO.puts("  [PASS] Received SOAP fault: #{msg}")
+
+      {:ok, _} ->
+        IO.puts("  [FAIL] Should have returned a fault")
+
+      other ->
+        IO.puts("  [FAIL] Unexpected result: #{inspect(other)}")
+    end
+  end
+
+  def test_invalid_inputs do
+    IO.puts("\nTesting Invalid Inputs")
+    IO.puts("=" |> String.duplicate(40))
+
+    invalid_inputs = [
+      %{"a" => "not_a_number", "b" => "5"},
+      %{"a" => "", "b" => ""},
+      %{},
+      nil
+    ]
+
+    Enum.each(invalid_inputs, fn params ->
+      IO.puts("\nInput: #{inspect(params)}")
+
+      try do
+        result = TestCalculatorService.add(params || %{})
+        IO.puts("  Result: #{inspect(result)}")
+      rescue
+        e ->
+          IO.puts("  [INFO] Raised exception: #{Exception.message(e)}")
+      end
+    end)
+  end
+end
+
+# Run server operation tests
+SOAPServerTesting.test_add_operation()
+SOAPServerTesting.test_divide_operation()
+SOAPServerTesting.test_invalid_inputs()
+```
+
+### Testing with Plug.Test
+
+```elixir
+defmodule PlugTestExample do
+  @moduledoc """
+  Examples of testing SOAP endpoints using Plug.Test.
+  """
+
+  # A simple Plug that handles SOAP requests
+  defmodule TestSOAPPlug do
+    import Plug.Conn
+
+    def init(opts), do: opts
+
+    def call(conn, _opts) do
+      {:ok, body, conn} = read_body(conn)
+
+      # Simple routing based on SOAPAction header
+      soap_action = get_req_header(conn, "soapaction") |> List.first() || ""
+
+      response = case soap_action do
+        action when action in ["Add", "\"Add\""] ->
+          handle_add(body)
+
+        action when action in ["Subtract", "\"Subtract\""] ->
+          handle_subtract(body)
+
+        _ ->
+          create_fault("Client", "Unknown operation")
+      end
+
+      conn
+      |> put_resp_content_type("text/xml")
+      |> send_resp(200, response)
+    end
+
+    defp handle_add(body) do
+      # Extract values (simplified for demo)
+      a = extract_value(body, "a") || "0"
+      b = extract_value(body, "b") || "0"
+
+      {a_num, _} = Float.parse(a)
+      {b_num, _} = Float.parse(b)
+      result = a_num + b_num
+
+      """
+      <?xml version="1.0"?>
+      <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+        <soap:Body>
+          <AddResponse>
+            <result>#{result}</result>
+          </AddResponse>
+        </soap:Body>
+      </soap:Envelope>
+      """
+    end
+
+    defp handle_subtract(body) do
+      a = extract_value(body, "a") || "0"
+      b = extract_value(body, "b") || "0"
+
+      {a_num, _} = Float.parse(a)
+      {b_num, _} = Float.parse(b)
+      result = a_num - b_num
+
+      """
+      <?xml version="1.0"?>
+      <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+        <soap:Body>
+          <SubtractResponse>
+            <result>#{result}</result>
+          </SubtractResponse>
+        </soap:Body>
+      </soap:Envelope>
+      """
+    end
+
+    defp create_fault(code, message) do
+      """
+      <?xml version="1.0"?>
+      <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+        <soap:Body>
+          <soap:Fault>
+            <faultcode>soap:#{code}</faultcode>
+            <faultstring>#{message}</faultstring>
+          </soap:Fault>
+        </soap:Body>
+      </soap:Envelope>
+      """
+    end
+
+    defp extract_value(body, element) do
+      case Regex.run(~r/<#{element}>([^<]+)<\/#{element}>/, body) do
+        [_, value] -> value
+        _ -> nil
+      end
+    end
+  end
+
+  def test_add_endpoint do
+    IO.puts("Testing Add Endpoint with Plug.Test")
+    IO.puts("=" |> String.duplicate(40))
+
+    soap_request = """
+    <?xml version="1.0"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+      <soap:Body>
+        <Add>
+          <a>15.5</a>
+          <b>4.5</b>
+        </Add>
+      </soap:Body>
+    </soap:Envelope>
+    """
+
+    conn = Plug.Test.conn(:post, "/soap", soap_request)
+           |> Plug.Conn.put_req_header("content-type", "text/xml")
+           |> Plug.Conn.put_req_header("soapaction", "Add")
+
+    conn = TestSOAPPlug.call(conn, [])
+
+    IO.puts("Response status: #{conn.status}")
+    IO.puts("Response body:")
+    IO.puts(conn.resp_body)
+
+    if String.contains?(conn.resp_body, "<result>20.0</result>") do
+      IO.puts("\n[PASS] Add operation returned correct result")
+    else
+      IO.puts("\n[FAIL] Unexpected result")
+    end
+  end
+
+  def test_unknown_operation do
+    IO.puts("\nTesting Unknown Operation")
+    IO.puts("=" |> String.duplicate(40))
+
+    conn = Plug.Test.conn(:post, "/soap", "<request/>")
+           |> Plug.Conn.put_req_header("content-type", "text/xml")
+           |> Plug.Conn.put_req_header("soapaction", "UnknownOperation")
+
+    conn = TestSOAPPlug.call(conn, [])
+
+    IO.puts("Response status: #{conn.status}")
+
+    if String.contains?(conn.resp_body, "soap:Fault") do
+      IO.puts("[PASS] Received SOAP fault for unknown operation")
+    else
+      IO.puts("[FAIL] Expected SOAP fault")
+    end
+  end
+end
+
+# Run Plug.Test examples
+PlugTestExample.test_add_endpoint()
+PlugTestExample.test_unknown_operation()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Integration Testing
+
+Integration tests verify that components work together correctly.
+
+### Environment-Based Test Configuration
+
+```elixir
+defmodule IntegrationTestConfig do
+  @moduledoc """
+  Configuration patterns for integration testing.
+  """
+
+  def show_test_helper_config do
+    IO.puts("Test Helper Configuration Pattern")
+    IO.puts("=" |> String.duplicate(40))
+
+    config = """
+    # test/test_helper.exs
+
+    # Configure ExUnit
+    ExUnit.start()
+
+    # Exclude external API tests by default
+    ExUnit.configure(exclude: [:external_api, :slow])
+
+    # Set up test environment
+    Application.put_env(:my_app, :soap_timeout, 5_000)
+    Application.put_env(:my_app, :enable_request_logging, true)
+
+    # Start required services
+    {:ok, _} = Application.ensure_all_started(:bypass)
+
+    # Helpful utilities for tests
+    defmodule TestHelpers do
+      def build_soap_envelope(body) do
+        \"\"\"
+        <?xml version="1.0" encoding="UTF-8"?>
+        <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+          <soap:Body>
+            \#{body}
+          </soap:Body>
+        </soap:Envelope>
+        \"\"\"
+      end
+
+      def assert_soap_success(response) do
+        refute String.contains?(response, "soap:Fault"),
+               "Expected success but got SOAP fault"
+      end
+
+      def assert_soap_fault(response, expected_code \\\\ nil) do
+        assert String.contains?(response, "soap:Fault"),
+               "Expected SOAP fault but got success"
+
+        if expected_code do
+          assert String.contains?(response, expected_code),
+                 "Expected fault code \#{expected_code}"
+        end
+      end
+    end
+    """
+
+    IO.puts(config)
+  end
+
+  def show_integration_test_pattern do
+    IO.puts("\nIntegration Test Pattern")
+    IO.puts("=" |> String.duplicate(40))
+
+    pattern = """
+    # test/integration/country_info_service_test.exs
+
+    defmodule CountryInfoServiceTest do
+      use ExUnit.Case, async: false
+
+      # Tag all tests in this module as external API tests
+      @moduletag :external_api
+      @moduletag timeout: 60_000
+
+      @wsdl_url "http://webservices.oorsprong.org/websamples.countryinfo/CountryInfoService.wso?WSDL"
+
+      setup do
+        # Skip if service is unavailable
+        case Lather.DynamicClient.new(@wsdl_url, timeout: 30_000) do
+          {:ok, client} ->
+            {:ok, client: client}
+
+          {:error, reason} ->
+            {:skip, "Service unavailable: \#{inspect(reason)}"}
+        end
+      end
+
+      describe "ListOfCountryNamesByName" do
+        test "returns list of countries", %{client: client} do
+          {:ok, response} = Lather.DynamicClient.call(
+            client,
+            "ListOfCountryNamesByName",
+            %{}
+          )
+
+          assert is_map(response)
+          # Countries should be present
+          assert Map.has_key?(response, "ListOfCountryNamesByNameResult") or
+                 Map.has_key?(response, "tCountryCodeAndName")
+        end
+      end
+
+      describe "CountryName" do
+        test "returns country name for valid code", %{client: client} do
+          {:ok, response} = Lather.DynamicClient.call(
+            client,
+            "CountryName",
+            %{"sCountryISOCode" => "US"}
+          )
+
+          assert response["CountryNameResult"] == "United States"
+        end
+
+        test "handles invalid country code", %{client: client} do
+          {:ok, response} = Lather.DynamicClient.call(
+            client,
+            "CountryName",
+            %{"sCountryISOCode" => "XX"}
+          )
+
+          # Should return empty or error message
+          result = response["CountryNameResult"]
+          assert result == "" or result == "Country not found"
+        end
+      end
+    end
+    """
+
+    IO.puts(pattern)
+  end
+
+  def show_running_tests do
+    IO.puts("\nRunning Integration Tests")
+    IO.puts("=" |> String.duplicate(40))
+
+    commands = """
+    # Regular test run (excludes external API tests)
+    mix test
+
+    # Include external API tests
+    mix test --include external_api
+
+    # Run only external API tests
+    mix test --only external_api
+
+    # Run specific integration test file
+    mix test --include external_api test/integration/country_info_test.exs
+
+    # Run with verbose output
+    mix test --include external_api --trace
+
+    # Run with seed for reproducibility
+    mix test --include external_api --seed 12345
+    """
+
+    IO.puts(commands)
+  end
+end
+
+# Show integration testing patterns
+IntegrationTestConfig.show_test_helper_config()
+IntegrationTestConfig.show_integration_test_pattern()
+IntegrationTestConfig.show_running_tests()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Contract Testing
+
+Contract testing ensures your code adheres to the WSDL specification.
+
+### WSDL as Contract
+
+```elixir
+defmodule ContractTesting do
+  @moduledoc """
+  Contract testing patterns for SOAP services.
+  """
+
+  def validate_response_against_schema do
+    IO.puts("Contract Testing: Response Validation")
+    IO.puts("=" |> String.duplicate(40))
+
+    # Example: Validate response structure matches WSDL definition
+    expected_schema = %{
+      "GetWeatherResponse" => %{
+        required_fields: ["GetWeatherResult"],
+        field_types: %{
+          "GetWeatherResult" => :string
+        }
+      },
+      "AddResponse" => %{
+        required_fields: ["result"],
+        field_types: %{
+          "result" => :decimal
+        }
+      }
+    }
+
+    # Test responses
+    test_responses = [
+      {"GetWeatherResponse", %{"GetWeatherResult" => "Sunny, 72F"}, :valid},
+      {"GetWeatherResponse", %{}, :invalid},
+      {"AddResponse", %{"result" => "15.5"}, :valid},
+      {"AddResponse", %{"wrong_field" => "15.5"}, :invalid}
+    ]
+
+    Enum.each(test_responses, fn {operation, response, expected_result} ->
+      IO.puts("\nValidating #{operation}:")
+      IO.puts("  Response: #{inspect(response)}")
+
+      schema = Map.get(expected_schema, operation)
+      result = validate_response(response, schema)
+
+      case {result, expected_result} do
+        {:valid, :valid} ->
+          IO.puts("  [PASS] Valid response as expected")
+
+        {:invalid, :invalid} ->
+          IO.puts("  [PASS] Invalid response detected as expected")
+
+        {actual, expected} ->
+          IO.puts("  [FAIL] Expected #{expected}, got #{actual}")
+      end
+    end)
+  end
+
+  defp validate_response(response, schema) when is_map(schema) do
+    required_present = Enum.all?(schema.required_fields, fn field ->
+      Map.has_key?(response, field)
+    end)
+
+    if required_present, do: :valid, else: :invalid
+  end
+
+  def detect_breaking_changes do
+    IO.puts("\nDetecting Breaking Changes")
+    IO.puts("=" |> String.duplicate(40))
+
+    # Compare old vs new WSDL
+    old_operations = ["GetWeather", "GetCities", "AddCity"]
+    new_operations = ["GetWeather", "GetCities", "UpdateCity"]  # AddCity removed, UpdateCity added
+
+    old_params = %{
+      "GetWeather" => ["city", "country"],
+      "GetCities" => ["country"]
+    }
+
+    new_params = %{
+      "GetWeather" => ["city", "country", "units"],  # New optional param
+      "GetCities" => ["country", "region"]  # New required param (breaking!)
+    }
+
+    IO.puts("\nOperation Changes:")
+
+    # Removed operations (breaking)
+    removed = old_operations -- new_operations
+    if length(removed) > 0 do
+      IO.puts("  [BREAKING] Removed operations: #{inspect(removed)}")
+    end
+
+    # Added operations (non-breaking)
+    added = new_operations -- old_operations
+    if length(added) > 0 do
+      IO.puts("  [INFO] New operations: #{inspect(added)}")
+    end
+
+    IO.puts("\nParameter Changes:")
+
+    Enum.each(old_params, fn {op, old_params_list} ->
+      new_params_list = Map.get(new_params, op, [])
+
+      added_params = new_params_list -- old_params_list
+      removed_params = old_params_list -- new_params_list
+
+      if length(added_params) > 0 do
+        IO.puts("  [WARN] #{op}: New parameters #{inspect(added_params)}")
+        IO.puts("         (Breaking if required)")
+      end
+
+      if length(removed_params) > 0 do
+        IO.puts("  [BREAKING] #{op}: Removed parameters #{inspect(removed_params)}")
+      end
+    end)
+  end
+
+  def show_contract_test_example do
+    IO.puts("\nContract Test Example")
+    IO.puts("=" |> String.duplicate(40))
+
+    test_code = """
+    defmodule ContractTest do
+      use ExUnit.Case
+
+      @wsdl_url "http://example.com/service?wsdl"
+
+      describe "WSDL contract validation" do
+        setup do
+          {:ok, client} = Lather.DynamicClient.new(@wsdl_url)
+          {:ok, client: client}
+        end
+
+        test "service exposes expected operations", %{client: client} do
+          operations = Lather.DynamicClient.list_operations(client)
+
+          # These operations MUST exist (contract requirement)
+          assert "GetWeather" in operations
+          assert "GetForecast" in operations
+          assert "GetAlerts" in operations
+        end
+
+        test "GetWeather has expected input parameters", %{client: client} do
+          {:ok, info} = Lather.DynamicClient.get_operation_info(client, "GetWeather")
+
+          param_names = Enum.map(info.input_parts, & &1.name)
+
+          assert "city" in param_names
+          assert "country" in param_names
+        end
+
+        test "GetWeather has expected output structure", %{client: client} do
+          {:ok, info} = Lather.DynamicClient.get_operation_info(client, "GetWeather")
+
+          output_names = Enum.map(info.output_parts, & &1.name)
+
+          assert "GetWeatherResult" in output_names or
+                 "temperature" in output_names
+        end
+      end
+    end
+    """
+
+    IO.puts(test_code)
+  end
+end
+
+# Run contract testing examples
+ContractTesting.validate_response_against_schema()
+ContractTesting.detect_breaking_changes()
+ContractTesting.show_contract_test_example()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Test Fixtures and Factories
+
+Creating reusable test data makes tests cleaner and more maintainable.
+
+### SOAP Message Fixtures
+
+```elixir
+defmodule TestFixtures do
+  @moduledoc """
+  Test fixtures for SOAP messages and responses.
+  """
+
+  # SOAP Envelope wrapper
+  def soap_envelope(body) do
+    """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+      <soap:Body>
+        #{body}
+      </soap:Body>
+    </soap:Envelope>
+    """
+  end
+
+  # Weather service fixtures
+  def weather_response(temperature, conditions) do
+    soap_envelope("""
+      <GetWeatherResponse xmlns="http://weather.example.com">
+        <GetWeatherResult>
+          <Temperature>#{temperature}</Temperature>
+          <Conditions>#{conditions}</Conditions>
+          <Humidity>45</Humidity>
+          <WindSpeed>10</WindSpeed>
+          <LastUpdated>#{DateTime.utc_now() |> DateTime.to_iso8601()}</LastUpdated>
+        </GetWeatherResult>
+      </GetWeatherResponse>
+    """)
+  end
+
+  def weather_not_found_response(city) do
+    soap_envelope("""
+      <GetWeatherResponse xmlns="http://weather.example.com">
+        <GetWeatherResult>
+          <Error>City not found: #{city}</Error>
+        </GetWeatherResult>
+      </GetWeatherResponse>
+    """)
+  end
+
+  # Country service fixtures
+  def country_list_response(countries) do
+    country_xml = Enum.map_join(countries, "\n", fn {code, name} ->
+      """
+            <tCountryCodeAndName>
+              <sISOCode>#{code}</sISOCode>
+              <sName>#{name}</sName>
+            </tCountryCodeAndName>
+      """
+    end)
+
+    soap_envelope("""
+      <ListOfCountryNamesByNameResponse xmlns="http://www.oorsprong.org/websamples.countryinfo">
+        <ListOfCountryNamesByNameResult>
+          #{country_xml}
+        </ListOfCountryNamesByNameResult>
+      </ListOfCountryNamesByNameResponse>
+    """)
+  end
+
+  # SOAP Fault fixtures
+  def client_fault(message, detail \\ nil) do
+    detail_xml = if detail do
+      "<detail>#{detail}</detail>"
+    else
+      ""
+    end
+
+    soap_envelope("""
+      <soap:Fault>
+        <faultcode>soap:Client</faultcode>
+        <faultstring>#{message}</faultstring>
+        #{detail_xml}
+      </soap:Fault>
+    """)
+  end
+
+  def server_fault(message) do
+    soap_envelope("""
+      <soap:Fault>
+        <faultcode>soap:Server</faultcode>
+        <faultstring>#{message}</faultstring>
+      </soap:Fault>
+    """)
+  end
+
+  def authentication_fault do
+    client_fault(
+      "Authentication required",
+      "<AuthError><Code>AUTH_001</Code></AuthError>"
+    )
+  end
+
+  def demonstrate_fixtures do
+    IO.puts("Test Fixture Examples")
+    IO.puts("=" |> String.duplicate(40))
+
+    IO.puts("\n1. Weather Response:")
+    IO.puts(weather_response("72", "Sunny") |> String.slice(0, 300) <> "...")
+
+    IO.puts("\n2. Country List Response:")
+    countries = [{"US", "United States"}, {"CA", "Canada"}, {"MX", "Mexico"}]
+    IO.puts(country_list_response(countries) |> String.slice(0, 400) <> "...")
+
+    IO.puts("\n3. Client Fault:")
+    IO.puts(client_fault("Invalid parameter"))
+
+    IO.puts("\n4. Authentication Fault:")
+    IO.puts(authentication_fault())
+  end
+end
+
+# Demonstrate fixtures
+TestFixtures.demonstrate_fixtures()
+```
+
+### Parameter Factories
+
+```elixir
+defmodule TestFactories do
+  @moduledoc """
+  Factory functions for generating test parameters.
+  """
+
+  # Counter for unique IDs
+  def unique_id do
+    System.unique_integer([:positive])
+  end
+
+  # Weather service parameters
+  def weather_params(overrides \\ %{}) do
+    Map.merge(%{
+      "CityName" => "New York",
+      "CountryName" => "United States"
+    }, overrides)
+  end
+
+  def weather_params_list(count) do
+    cities = [
+      {"New York", "United States"},
+      {"London", "United Kingdom"},
+      {"Tokyo", "Japan"},
+      {"Sydney", "Australia"},
+      {"Paris", "France"},
+      {"Berlin", "Germany"},
+      {"Toronto", "Canada"},
+      {"Mumbai", "India"}
+    ]
+
+    cities
+    |> Enum.take(count)
+    |> Enum.map(fn {city, country} ->
+      weather_params(%{"CityName" => city, "CountryName" => country})
+    end)
+  end
+
+  # Calculator service parameters
+  def calculator_params(operation, overrides \\ %{}) do
+    base = case operation do
+      :add -> %{"a" => "10.0", "b" => "5.0"}
+      :subtract -> %{"a" => "10.0", "b" => "5.0"}
+      :multiply -> %{"a" => "10.0", "b" => "5.0"}
+      :divide -> %{"a" => "10.0", "b" => "2.0"}
+    end
+
+    Map.merge(base, overrides)
+  end
+
+  def random_calculator_params(operation) do
+    a = :rand.uniform(1000) / 10
+    b = if operation == :divide do
+      # Avoid division by zero
+      max(:rand.uniform(1000) / 10, 0.1)
+    else
+      :rand.uniform(1000) / 10
+    end
+
+    calculator_params(operation, %{
+      "a" => Float.to_string(a),
+      "b" => Float.to_string(b)
+    })
+  end
+
+  # User/Customer parameters
+  def user_params(overrides \\ %{}) do
+    id = unique_id()
+
+    Map.merge(%{
+      "userId" => "USER_#{id}",
+      "firstName" => "Test",
+      "lastName" => "User#{id}",
+      "email" => "test.user#{id}@example.com",
+      "phone" => "+1555#{String.pad_leading("#{id}", 7, "0")}",
+      "active" => true
+    }, overrides)
+  end
+
+  # Order parameters
+  def order_params(overrides \\ %{}) do
+    id = unique_id()
+
+    Map.merge(%{
+      "orderId" => "ORD_#{id}",
+      "customerId" => "CUST_#{id}",
+      "items" => [
+        %{"productId" => "PROD_1", "quantity" => 2, "price" => "19.99"},
+        %{"productId" => "PROD_2", "quantity" => 1, "price" => "49.99"}
+      ],
+      "totalAmount" => "89.97",
+      "status" => "pending"
+    }, overrides)
+  end
+
+  def demonstrate_factories do
+    IO.puts("Test Factory Examples")
+    IO.puts("=" |> String.duplicate(40))
+
+    IO.puts("\n1. Weather Parameters:")
+    IO.inspect(weather_params(), pretty: true)
+
+    IO.puts("\n2. Weather Parameters with Override:")
+    IO.inspect(weather_params(%{"CityName" => "London"}), pretty: true)
+
+    IO.puts("\n3. Multiple Weather Parameters:")
+    IO.inspect(weather_params_list(3), pretty: true)
+
+    IO.puts("\n4. Calculator Parameters:")
+    IO.inspect(calculator_params(:divide), pretty: true)
+
+    IO.puts("\n5. Random Calculator Parameters:")
+    IO.inspect(random_calculator_params(:multiply), pretty: true)
+
+    IO.puts("\n6. User Parameters:")
+    IO.inspect(user_params(), pretty: true)
+
+    IO.puts("\n7. Order Parameters:")
+    IO.inspect(order_params(), pretty: true)
+  end
+end
+
+# Demonstrate factories
+TestFactories.demonstrate_factories()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Performance Testing
+
+Performance testing ensures your SOAP integrations can handle expected load.
+
+### Benchmarking Operations
+
+```elixir
+defmodule PerformanceTesting do
+  @moduledoc """
+  Performance testing utilities for SOAP operations.
+  """
+
+  def benchmark_xml_parsing do
+    IO.puts("Benchmarking XML Parsing")
+    IO.puts("=" |> String.duplicate(40))
+
+    # Generate test XML of various sizes
+    small_xml = TestFixtures.weather_response("72", "Sunny")
+
+    medium_xml = TestFixtures.country_list_response(
+      Enum.map(1..100, fn i -> {"C#{i}", "Country #{i}"} end)
+    )
+
+    large_xml = TestFixtures.country_list_response(
+      Enum.map(1..1000, fn i -> {"C#{i}", "Country #{i}"} end)
+    )
+
+    IO.puts("\nXML sizes:")
+    IO.puts("  Small:  #{byte_size(small_xml)} bytes")
+    IO.puts("  Medium: #{byte_size(medium_xml)} bytes")
+    IO.puts("  Large:  #{byte_size(large_xml)} bytes")
+
+    # Benchmark parsing
+    IO.puts("\nParsing benchmarks (100 iterations):")
+
+    Enum.each([
+      {"Small", small_xml},
+      {"Medium", medium_xml},
+      {"Large", large_xml}
+    ], fn {name, xml} ->
+      {time, _} = :timer.tc(fn ->
+        Enum.each(1..100, fn _ ->
+          Lather.XMLParser.parse_soap_response(xml)
+        end)
+      end)
+
+      avg_time = time / 100 / 1000  # Convert to ms
+      IO.puts("  #{name}: #{Float.round(avg_time, 3)} ms average")
+    end)
+  end
+
+  def benchmark_request_building do
+    IO.puts("\nBenchmarking Request Building")
+    IO.puts("=" |> String.duplicate(40))
+
+    simple_params = %{"city" => "New York", "country" => "US"}
+
+    complex_params = %{
+      "request" => %{
+        "criteria" => %{
+          "filters" => Enum.map(1..10, fn i ->
+            %{"field" => "field#{i}", "value" => "value#{i}"}
+          end),
+          "sorting" => [%{"field" => "name", "direction" => "asc"}],
+          "pagination" => %{"page" => 1, "size" => 50}
+        }
+      }
+    }
+
+    IO.puts("\nRequest building benchmarks (1000 iterations):")
+
+    Enum.each([
+      {"Simple params", simple_params},
+      {"Complex params", complex_params}
+    ], fn {name, params} ->
+      {time, _} = :timer.tc(fn ->
+        Enum.each(1..1000, fn _ ->
+          Lather.XMLBuilder.build_params(params, "TestOperation", "http://example.com")
+        end)
+      end)
+
+      avg_time = time / 1000  # microseconds per iteration
+      IO.puts("  #{name}: #{Float.round(avg_time, 1)} us average")
+    end)
+  end
+
+  def simulate_concurrent_load do
+    IO.puts("\nSimulating Concurrent Load")
+    IO.puts("=" |> String.duplicate(40))
+
+    # Set up a mock service
+    bypass = Bypass.open()
+
+    Bypass.stub(bypass, "POST", "/soap", fn conn ->
+      # Simulate some processing time
+      Process.sleep(10)
+
+      conn
+      |> Plug.Conn.put_resp_content_type("text/xml")
+      |> Plug.Conn.resp(200, TestFixtures.weather_response("72", "Sunny"))
+    end)
+
+    endpoint = "http://localhost:#{bypass.port}/soap"
+
+    # Run concurrent requests
+    concurrency_levels = [1, 5, 10, 20]
+
+    IO.puts("\nConcurrent request performance:")
+
+    Enum.each(concurrency_levels, fn concurrency ->
+      requests = Enum.map(1..100, fn _ ->
+        Task.async(fn ->
+          request = Finch.build(:post, endpoint, [
+            {"content-type", "text/xml"},
+            {"soapaction", "GetWeather"}
+          ], "<request/>")
+
+          {time, result} = :timer.tc(fn ->
+            Finch.request(request, Lather.Finch, receive_timeout: 5_000)
+          end)
+
+          {time, result}
+        end)
+      end)
+      |> Enum.chunk_every(concurrency)
+      |> Enum.flat_map(fn chunk ->
+        Task.await_many(chunk, 10_000)
+      end)
+
+      times = Enum.map(requests, fn {time, _} -> time end)
+      successes = Enum.count(requests, fn {_, result} -> match?({:ok, _}, result) end)
+
+      avg_time = Enum.sum(times) / length(times) / 1000
+      p99_time = times |> Enum.sort() |> Enum.at(round(length(times) * 0.99)) |> Kernel./(1000)
+
+      IO.puts("  Concurrency #{concurrency}:")
+      IO.puts("    Success rate: #{successes}/#{length(requests)}")
+      IO.puts("    Avg response: #{Float.round(avg_time, 1)} ms")
+      IO.puts("    P99 response: #{Float.round(p99_time, 1)} ms")
+    end)
+
+    Bypass.down(bypass)
+  end
+end
+
+# Run performance tests
+PerformanceTesting.benchmark_xml_parsing()
+PerformanceTesting.benchmark_request_building()
+PerformanceTesting.simulate_concurrent_load()
+```
+
+### Memory Profiling
+
+```elixir
+defmodule MemoryProfiling do
+  @moduledoc """
+  Memory profiling utilities for SOAP operations.
+  """
+
+  def profile_response_memory do
+    IO.puts("Memory Profiling: Response Processing")
+    IO.puts("=" |> String.duplicate(40))
+
+    # Generate responses of various sizes
+    response_sizes = [10, 100, 500, 1000]
+
+    IO.puts("\nMemory usage by response size:")
+
+    Enum.each(response_sizes, fn count ->
+      response = TestFixtures.country_list_response(
+        Enum.map(1..count, fn i -> {"C#{i}", "Country #{i}"} end)
+      )
+
+      # Measure memory before
+      :erlang.garbage_collect()
+      memory_before = :erlang.memory(:total)
+
+      # Parse response
+      {:ok, parsed} = Lather.XMLParser.parse_soap_response(response)
+
+      # Measure memory after
+      memory_after = :erlang.memory(:total)
+
+      # Calculate sizes
+      xml_size = byte_size(response)
+      parsed_size = :erlang.external_size(parsed)
+      memory_delta = memory_after - memory_before
+
+      IO.puts("\n  #{count} countries:")
+      IO.puts("    XML size: #{format_bytes(xml_size)}")
+      IO.puts("    Parsed size: #{format_bytes(parsed_size)}")
+      IO.puts("    Memory delta: #{format_bytes(memory_delta)}")
+      IO.puts("    Expansion ratio: #{Float.round(parsed_size / xml_size, 2)}x")
+    end)
+  end
+
+  def profile_connection_pool do
+    IO.puts("\nMemory Profiling: Connection Pool")
+    IO.puts("=" |> String.duplicate(40))
+
+    # Note: This is illustrative - actual pool memory depends on Finch configuration
+
+    pool_configs = [
+      %{size: 5, count: 1, description: "Small pool"},
+      %{size: 10, count: 2, description: "Medium pool"},
+      %{size: 25, count: 4, description: "Large pool"}
+    ]
+
+    IO.puts("\nEstimated memory per connection pool configuration:")
+
+    Enum.each(pool_configs, fn config ->
+      # Each connection ~50KB base + buffers
+      connection_memory = 50_000
+      total_connections = config.size * config.count
+      estimated_memory = total_connections * connection_memory
+
+      IO.puts("\n  #{config.description}:")
+      IO.puts("    Pool size: #{config.size}")
+      IO.puts("    Pool count: #{config.count}")
+      IO.puts("    Total connections: #{total_connections}")
+      IO.puts("    Estimated memory: #{format_bytes(estimated_memory)}")
+    end)
+  end
+
+  defp format_bytes(bytes) when bytes < 1024, do: "#{bytes} B"
+  defp format_bytes(bytes) when bytes < 1024 * 1024, do: "#{Float.round(bytes / 1024, 1)} KB"
+  defp format_bytes(bytes), do: "#{Float.round(bytes / (1024 * 1024), 1)} MB"
+end
+
+# Run memory profiling
+MemoryProfiling.profile_response_memory()
+MemoryProfiling.profile_connection_pool()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Best Practices
+
+### Test Organization
+
+```elixir
+defmodule TestBestPractices do
+  @moduledoc """
+  Best practices for organizing SOAP service tests.
+  """
+
+  def show_directory_structure do
+    IO.puts("Recommended Test Directory Structure")
+    IO.puts("=" |> String.duplicate(40))
+
+    structure = """
+    test/
+    |-- test_helper.exs           # Test configuration
+    |-- support/
+    |   |-- fixtures/             # XML fixtures and test data
+    |   |   |-- weather_responses.ex
+    |   |   |-- country_responses.ex
+    |   |   |-- soap_faults.ex
+    |   |-- factories/            # Test data factories
+    |   |   |-- parameter_factory.ex
+    |   |   |-- response_factory.ex
+    |   |-- mocks/                # Mock service definitions
+    |   |   |-- weather_mock.ex
+    |   |   |-- calculator_mock.ex
+    |   |-- helpers.ex            # Test helper functions
+    |
+    |-- unit/                     # Fast, isolated tests
+    |   |-- xml_parser_test.exs
+    |   |-- xml_builder_test.exs
+    |   |-- error_handling_test.exs
+    |   |-- wsdl_parser_test.exs
+    |
+    |-- integration/              # Tests with mock HTTP
+    |   |-- dynamic_client_test.exs
+    |   |-- soap_server_test.exs
+    |   |-- authentication_test.exs
+    |
+    |-- external/                 # Live API tests (tagged)
+    |   |-- weather_service_test.exs
+    |   |-- country_info_test.exs
+    |
+    |-- performance/              # Performance tests
+    |   |-- parsing_benchmark_test.exs
+    |   |-- load_test.exs
+    |
+    |-- contract/                 # Contract/schema tests
+        |-- wsdl_contract_test.exs
+        |-- response_schema_test.exs
+    """
+
+    IO.puts(structure)
+  end
+
+  def show_test_naming_conventions do
+    IO.puts("\nTest Naming Conventions")
+    IO.puts("=" |> String.duplicate(40))
+
+    conventions = """
+    # Good test names - describe behavior, not implementation
+
+    # Unit tests
+    describe "parse_soap_response/1" do
+      test "extracts values from simple response"
+      test "handles nested elements correctly"
+      test "returns error for invalid XML"
+      test "handles empty response body"
+    end
+
+    # Integration tests
+    describe "calling GetWeather operation" do
+      test "returns weather data for valid city"
+      test "returns appropriate error for unknown city"
+      test "handles service timeout gracefully"
+      test "retries on temporary server error"
+    end
+
+    # Avoid vague names like:
+    # test "it works"
+    # test "test1"
+    # test "GetWeather test"
+
+    # Tags for test categorization
+    @tag :unit
+    @tag :integration
+    @tag :external_api
+    @tag :slow
+    @tag :wip  # Work in progress
+    @tag timeout: 60_000
+    """
+
+    IO.puts(conventions)
+  end
+
+  def show_ci_configuration do
+    IO.puts("\nCI/CD Configuration")
+    IO.puts("=" |> String.duplicate(40))
+
+    ci_config = """
+    # .github/workflows/test.yml
+
+    name: Tests
+
+    on:
+      push:
+        branches: [main]
+      pull_request:
+        branches: [main]
+
+    jobs:
+      unit-tests:
+        name: Unit Tests
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v3
+
+          - uses: erlef/setup-beam@v1
+            with:
+              elixir-version: '1.15'
+              otp-version: '26'
+
+          - name: Install dependencies
+            run: mix deps.get
+
+          - name: Run unit tests
+            run: mix test --exclude integration --exclude external_api
+
+      integration-tests:
+        name: Integration Tests
+        runs-on: ubuntu-latest
+        needs: unit-tests
+        steps:
+          - uses: actions/checkout@v3
+
+          - uses: erlef/setup-beam@v1
+            with:
+              elixir-version: '1.15'
+              otp-version: '26'
+
+          - name: Install dependencies
+            run: mix deps.get
+
+          - name: Run integration tests
+            run: mix test --only integration
+
+      # External API tests only on release
+      external-api-tests:
+        name: External API Tests
+        runs-on: ubuntu-latest
+        if: github.event_name == 'release'
+        needs: [unit-tests, integration-tests]
+        steps:
+          - uses: actions/checkout@v3
+
+          - uses: erlef/setup-beam@v1
+            with:
+              elixir-version: '1.15'
+              otp-version: '26'
+
+          - name: Install dependencies
+            run: mix deps.get
+
+          - name: Run external API tests
+            run: mix test --include external_api
+            continue-on-error: true  # Don't fail release on flaky external tests
+    """
+
+    IO.puts(ci_config)
+  end
+
+  def show_coverage_tips do
+    IO.puts("\nTest Coverage Tips")
+    IO.puts("=" |> String.duplicate(40))
+
+    tips = """
+    # mix.exs configuration for test coverage
+    def project do
+      [
+        # ... other config
+        test_coverage: [tool: ExCoveralls],
+        preferred_cli_env: [
+          coveralls: :test,
+          "coveralls.detail": :test,
+          "coveralls.html": :test
+        ]
+      ]
+    end
+
+    # Run coverage report
+    mix coveralls.html
+
+    # Focus coverage on critical paths:
+    1. Error handling paths (SOAP faults, HTTP errors, timeouts)
+    2. XML parsing edge cases
+    3. Authentication flows
+    4. Complex type handling
+    5. Retry logic
+
+    # Coverage goals:
+    - Unit tests: 80%+ coverage
+    - Critical paths: 100% coverage
+    - Integration tests: Key scenarios covered
+    - External tests: Happy path + key error cases
+    """
+
+    IO.puts(tips)
+  end
+end
+
+# Show best practices
+TestBestPractices.show_directory_structure()
+TestBestPractices.show_test_naming_conventions()
+TestBestPractices.show_ci_configuration()
+TestBestPractices.show_coverage_tips()
+```
+
+<!-- livebook:{"break_markdown":true} -->
+
+## Summary
+
+Congratulations! You've learned comprehensive testing strategies for SOAP services. Here's what you've covered:
+
+```elixir
+summary = """
+SOAP TESTING MASTERY SUMMARY
+
+Testing Pyramid:
+  - Unit Tests: Fast, isolated, deterministic
+  - Integration Tests: Mock HTTP with Bypass
+  - E2E Tests: Tagged, excluded by default
+
+Unit Testing:
+  - Parameter building tests
+  - Response parsing tests
+  - Error handling tests
+  - XML validation tests
+
+Mocking with Bypass:
+  - Mock WSDL endpoints
+  - Simulate SOAP operations
+  - Generate SOAP faults
+  - Test authentication flows
+
+Server Testing:
+  - Direct handler testing
+  - Plug.Test integration
+  - Request validation
+
+Integration Testing:
+  - Environment-based configuration
+  - @moduletag :external_api
+  - Graceful service unavailability handling
+
+Contract Testing:
+  - WSDL as contract
+  - Response validation
+  - Breaking change detection
+
+Fixtures & Factories:
+  - Reusable SOAP fixtures
+  - Parameter factories
+  - Response generators
+
+Performance Testing:
+  - XML parsing benchmarks
+  - Concurrent load simulation
+  - Memory profiling
+
+Best Practices:
+  - Organized test structure
+  - Clear naming conventions
+  - CI/CD configuration
+  - Coverage goals
+
+Key Takeaways:
+  1. Default to mocks - respect public APIs
+  2. Tag external tests - run intentionally
+  3. Test error paths - SOAP has many failure modes
+  4. Use factories - clean, maintainable test data
+  5. Benchmark critical paths - ensure performance
+"""
+
+IO.puts(summary)
+```
+
+You're now equipped to build robust, well-tested SOAP integrations!
