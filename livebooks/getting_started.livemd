@@ -187,7 +187,7 @@ case Lather.DynamicClient.new(wsdl_url, timeout: 30_000) do
     # Show available operations
     operations = Lather.DynamicClient.list_operations(client)
     IO.puts("\nAvailable operations:")
-    Enum.each(operations, fn op -> IO.puts("   #{op}") end)
+    Enum.each(operations, fn op -> IO.puts("   #{op.name}") end)
 
     client
 
