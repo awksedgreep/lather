@@ -330,14 +330,28 @@ Let's explore how Lather handles different types of errors:
 if calculator_client do
   IO.puts("Testing Error Scenarios\n")
 
+  # Helper to extract error message from various error structures
+  get_message = fn error ->
+    cond do
+      is_map(error) and Map.has_key?(error, :details) and is_map(error.details) ->
+        error.details[:message] || inspect(error.details)
+      is_map(error) and Map.has_key?(error, :message) ->
+        error.message
+      is_map(error) and Map.has_key?(error, :reason) ->
+        inspect(error.reason)
+      true ->
+        inspect(error)
+    end
+  end
+
   # Test 1: Division by zero (SOAP fault from server)
   IO.puts("1. Division by zero:")
   case Lather.DynamicClient.call(calculator_client, "Divide", %{"dividend" => 100, "divisor" => 0}) do
     {:ok, response} ->
       IO.puts("   Unexpected success: #{inspect(response)}")
     {:error, error} ->
-      IO.puts("   Expected error: #{error.type}")
-      IO.puts("   Message: #{error.message || inspect(error)}")
+      IO.puts("   Error type: #{error[:type] || "unknown"}")
+      IO.puts("   Message: #{get_message.(error)}")
   end
 
   # Test 2: Invalid operation name
@@ -346,8 +360,8 @@ if calculator_client do
     {:ok, _response} ->
       IO.puts("   Unexpected success")
     {:error, error} ->
-      IO.puts("   Expected error: #{error.type}")
-      IO.puts("   Message: #{error.message}")
+      IO.puts("   Error type: #{error[:type] || "unknown"}")
+      IO.puts("   Message: #{get_message.(error)}")
   end
 
   # Test 3: Missing required parameters
@@ -356,8 +370,8 @@ if calculator_client do
     {:ok, response} ->
       IO.puts("   Response: #{inspect(response)}")
     {:error, error} ->
-      IO.puts("   Error: #{error.type}")
-      IO.puts("   Details: #{inspect(error.details || error.message)}")
+      IO.puts("   Error type: #{error[:type] || "unknown"}")
+      IO.puts("   Message: #{get_message.(error)}")
   end
 else
   IO.puts("⚠️ No client available. Run the connection cell first.")
