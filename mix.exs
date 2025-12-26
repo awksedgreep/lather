@@ -35,7 +35,8 @@ defmodule Lather.MixProject do
       {:telemetry, "~> 1.2"},
       {:jason, "~> 1.4", optional: true},
       {:plug, "~> 1.14"},
-      {:ex_doc, "~> 0.30", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.30", only: :dev, runtime: false},
+      {:bandit, "~> 1.0", only: :test}
     ]
   end
 

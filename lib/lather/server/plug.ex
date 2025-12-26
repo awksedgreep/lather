@@ -95,9 +95,9 @@ defmodule Lather.Server.Plug do
     with {:ok, body} <- read_full_body(conn),
          {:ok, parsed_request} <- RequestParser.parse(body),
          {:ok, authenticated_conn} <- authenticate(conn, config),
-         {:ok, result} <- dispatch_operation(parsed_request, config) do
+         {:ok, result, operation} <- dispatch_operation(parsed_request, config) do
 
-      response_xml = ResponseBuilder.build_response(result, parsed_request.operation)
+      response_xml = ResponseBuilder.build_response(result, operation)
 
       authenticated_conn
       |> put_resp_content_type("text/xml")
@@ -152,13 +152,15 @@ defmodule Lather.Server.Plug do
   defp authenticate(conn, _config), do: {:ok, conn}
 
   # Dispatch the operation to the service module
+  # Returns {:ok, result, operation} on success so the operation can be passed to ResponseBuilder
   defp dispatch_operation(request, %{service: service, validate_params: validate?}) do
     operation = service.__soap_operation__(request.operation)
 
     if operation do
       with {:ok, params} <- validate_operation_params(request.params, operation, validate?),
-           {:ok, result} <- call_operation_function(service, operation, params) do
-        Lather.Server.format_response(result, operation)
+           {:ok, result} <- call_operation_function(service, operation, params),
+           {:ok, formatted_result} <- Lather.Server.format_response(result, operation) do
+        {:ok, formatted_result, operation}
       end
     else
       {:error, {:soap_fault, %{
