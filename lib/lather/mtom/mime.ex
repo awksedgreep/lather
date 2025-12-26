@@ -311,7 +311,8 @@ defmodule Lather.Mtom.Mime do
       |> Enum.drop(1)
       # Remove closing boundary
       |> Enum.reject(&String.starts_with?(&1, "--"))
-      |> Enum.map(&String.trim(&1, "\r\n"))
+      # Only trim leading CRLF (each part starts with \r\n after boundary)
+      |> Enum.map(&String.trim_leading(&1, "\r\n"))
       |> Enum.reject(&(&1 == ""))
 
     parsed_parts =
@@ -319,7 +320,9 @@ defmodule Lather.Mtom.Mime do
         case String.split(part, "\r\n\r\n", parts: 2) do
           [headers_section, content] ->
             headers = parse_headers(headers_section)
-            %{headers: headers, content: content}
+            # Trim trailing CRLF from content (added by MIME builder)
+            trimmed_content = String.trim_trailing(content, "\r\n")
+            %{headers: headers, content: trimmed_content}
 
           [content] ->
             # No headers, just content

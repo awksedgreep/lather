@@ -205,11 +205,17 @@ defmodule Lather.Mtom.Builder do
   end
 
   defp build_multipart_message(soap_envelope, attachments, options) do
-    mime_options = [
-      boundary: Keyword.get(options, :boundary),
+    # Only include boundary option if explicitly provided (nil would override the default)
+    base_options = [
       soap_content_type: "application/xop+xml",
       soap_charset: "UTF-8"
     ]
+
+    mime_options =
+      case Keyword.get(options, :boundary) do
+        nil -> base_options
+        boundary -> Keyword.put(base_options, :boundary, boundary)
+      end
 
     try do
       {content_type, multipart_body} =
