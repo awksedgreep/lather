@@ -131,24 +131,25 @@ IO.puts("Calculator service module defined!")
 
 ## Starting the SOAP Server
 
-Now let's start our Calculator service on a local port:
+Now let's start our Calculator service on a local port. We'll use `EnhancedPlug` which provides
+an interactive web interface for testing operations - similar to .NET ASMX web services.
 
 ```elixir
 # Start required applications
 {:ok, _} = Application.ensure_all_started(:lather)
 {:ok, _} = Application.ensure_all_started(:bandit)
 
-# Define a simple Plug router for our service
+# Define a simple Plug router for our service using EnhancedPlug
 defmodule CalculatorRouter do
   use Plug.Router
 
   plug :match
   plug :dispatch
 
-  # Handle WSDL and SOAP requests
-  match "/calculator" do
-    Lather.Server.Plug.call(conn, Lather.Server.Plug.init(service: CalculatorService))
-  end
+  # EnhancedPlug provides web forms, WSDL, and multi-protocol support
+  forward "/calculator",
+    to: Lather.Server.EnhancedPlug,
+    init_opts: [service: CalculatorService, base_path: "/calculator"]
 
   match _ do
     send_resp(conn, 404, "Not found")
@@ -165,8 +166,17 @@ end
 {:ok, pid} = Bandit.start_link(plug: CalculatorRouter, port: 4040, scheme: :http)
 Process.register(pid, :calculator_server)
 
-IO.puts("Calculator SOAP server started on http://localhost:4040/calculator")
-IO.puts("WSDL available at: http://localhost:4040/calculator?wsdl")
+IO.puts("Calculator SOAP server started!")
+IO.puts("")
+IO.puts("Browse to these URLs:")
+IO.puts("  http://localhost:4040/calculator          - Service overview with operation list")
+IO.puts("  http://localhost:4040/calculator?op=Add   - Interactive form to test Add operation")
+IO.puts("  http://localhost:4040/calculator?wsdl     - WSDL document")
+IO.puts("")
+IO.puts("API Endpoints:")
+IO.puts("  POST /calculator       - SOAP 1.1")
+IO.puts("  POST /calculator/v1.2  - SOAP 1.2")
+IO.puts("  POST /calculator/api   - JSON/REST")
 ```
 
 ## Connecting as a SOAP Client
@@ -496,7 +506,7 @@ Congratulations! You've learned the basics of using the Lather SOAP library for 
 
 Here's what you can explore next:
 
-1. **Enhanced Server**: Check out `Lather.Server.EnhancedPlug` for web forms and multi-protocol support
+1. **SOAP Server Development Livebook**: Deep dive into server features in `soap_server_development.livemd`
 2. **Authentication**: Add WS-Security or Basic Auth to your services
 3. **Complex Types**: Define custom types with `soap_type` for structured data
 4. **MTOM Attachments**: Handle binary data with MTOM support
@@ -524,6 +534,20 @@ SERVER SIDE:
 
      def my_op(%{"param1" => val}), do: {:ok, %{"result" => val}}
    end
+
+ENHANCED PLUG (Web Forms + Multi-Protocol):
+   # In Plug.Router:
+   forward "/myservice",
+     to: Lather.Server.EnhancedPlug,
+     init_opts: [service: MyService, base_path: "/myservice"]
+
+   # URL Patterns:
+   GET  /myservice           -> Service overview (HTML)
+   GET  /myservice?op=MyOp   -> Operation test form (HTML)
+   GET  /myservice?wsdl      -> WSDL document (XML)
+   POST /myservice           -> SOAP 1.1 endpoint
+   POST /myservice/v1.2      -> SOAP 1.2 endpoint
+   POST /myservice/api       -> JSON/REST endpoint
 
 CLIENT SIDE:
    {:ok, client} = Lather.DynamicClient.new(wsdl_url)

@@ -84,6 +84,9 @@ defmodule Lather.Server.EnhancedPlug do
 
   @impl Plug
   def call(conn, config) do
+    # Ensure query params are fetched for URL pattern detection
+    conn = Plug.Conn.fetch_query_params(conn)
+
     case {conn.method, get_request_type(conn)} do
       # WSDL requests
       {"GET", :wsdl} ->
