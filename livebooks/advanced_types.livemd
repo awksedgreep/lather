@@ -210,16 +210,66 @@ Let's demonstrate how Lather validates data against type definitions:
 
 ```elixir
 defmodule TypeValidationDemo do
-  def validate_user_data(data, types) do
-    user_type = types["User"]
+  @moduledoc """
+  Demonstrates type validation with custom type definitions.
+  This module provides validation that works with the SampleTypes format.
+  """
 
-    case Lather.Types.Mapper.validate_type(data, user_type, types: types) do
+  def validate_user_data(data, types) do
+    # Create a type context that Lather.Types.Mapper expects
+    type_context = create_type_context(types)
+
+    case Lather.Types.Mapper.validate_type(data, "User", type_context) do
       :ok ->
         {:valid, "Data passes all validations"}
       {:error, error} ->
-        {:invalid, Lather.Error.format_error(error)}
+        {:invalid, format_error(error)}
     end
   end
+
+  # Convert our custom type format into the type_context structure that Mapper expects
+  defp create_type_context(types) do
+    # Build a type_registry from our custom types
+    type_registry = Map.new(types, fn {name, type_def} ->
+      elements = Enum.map(type_def.elements, fn {elem_name, elem_def} ->
+        %{
+          name: elem_name,
+          type: elem_def[:type],
+          min_occurs: if(elem_def[:required], do: 1, else: 0),
+          max_occurs: if(elem_def[:array], do: :unbounded, else: 1),
+          restrictions: build_restrictions(elem_def)
+        }
+      end)
+
+      {name, %{
+        name: name,
+        category: :complex_type,
+        elements: elements
+      }}
+    end)
+
+    %{
+      type_registry: type_registry,
+      element_registry: %{},
+      namespaces: %{},
+      target_namespace: "http://example.com/types"
+    }
+  end
+
+  defp build_restrictions(elem_def) do
+    restrictions = []
+    restrictions = if elem_def[:pattern], do: [{:pattern, elem_def[:pattern]} | restrictions], else: restrictions
+    restrictions = if elem_def[:enum], do: [{:enumeration, elem_def[:enum]} | restrictions], else: restrictions
+    restrictions = if elem_def[:min], do: [{:min_inclusive, elem_def[:min]} | restrictions], else: restrictions
+    restrictions = if elem_def[:max], do: [{:max_inclusive, elem_def[:max]} | restrictions], else: restrictions
+    restrictions
+  end
+
+  defp format_error({:missing_required_field, field}), do: "Missing required field: #{field}"
+  defp format_error({:invalid_type, field, expected, _got}), do: "Invalid type for #{field}: expected #{expected}"
+  defp format_error({:unknown_type, type}), do: "Unknown type: #{type}"
+  defp format_error(error) when is_binary(error), do: error
+  defp format_error(error), do: inspect(error)
 
   def create_test_cases do
     [
@@ -497,18 +547,21 @@ defmodule XMLConversionDemo do
     user_data = SampleTypes.sample_data()
     types = SampleTypes.enterprise_types()
 
+    # Create proper type context for Lather.Types.Mapper
+    type_context = create_type_context(types)
+
     IO.puts("🔄 XML Conversion Demonstration")
     IO.puts("=" |> String.duplicate(45))
 
     # Convert Elixir data to XML structure
     IO.puts("1️⃣ Converting Elixir data to XML...")
 
-    case Lather.Types.Mapper.elixir_to_xml(user_data, types["User"], types: types) do
+    case Lather.Types.Mapper.elixir_to_xml(user_data, "User", type_context) do
       {:ok, xml_structure} ->
         IO.puts("✅ Conversion successful!")
 
         # Build actual XML string
-        xml_string = Lather.XML.Builder.build(xml_structure)
+        xml_string = Lather.Xml.Builder.build(xml_structure)
 
         IO.puts("\n📄 Generated XML (first 500 characters):")
         IO.puts(String.slice(xml_string, 0, 500) <> "...")
@@ -516,12 +569,12 @@ defmodule XMLConversionDemo do
         # Parse it back to verify round-trip
         IO.puts("\n2️⃣ Parsing XML back to Elixir...")
 
-        case Lather.XML.Parser.parse(xml_string) do
+        case Lather.Xml.Parser.parse(xml_string) do
           {:ok, parsed_data} ->
             IO.puts("✅ Parse successful!")
 
             # Convert back to Elixir types
-            case Lather.Types.Mapper.xml_to_elixir(parsed_data, types["User"], types: types) do
+            case Lather.Types.Mapper.xml_to_elixir(parsed_data, "User", type_context) do
               {:ok, elixir_data} ->
                 IO.puts("✅ Round-trip conversion successful!")
 
@@ -584,6 +637,33 @@ defmodule XMLConversionDemo do
       _ ->
         []
     end
+  end
+
+  # Convert custom type format to Lather's type_context structure
+  defp create_type_context(types) do
+    type_registry = Map.new(types, fn {name, type_def} ->
+      elements = Enum.map(type_def.elements, fn {elem_name, elem_def} ->
+        %{
+          name: elem_name,
+          type: elem_def[:type],
+          min_occurs: if(elem_def[:required], do: 1, else: 0),
+          max_occurs: if(elem_def[:array], do: :unbounded, else: 1)
+        }
+      end)
+
+      {name, %{
+        name: name,
+        category: :complex_type,
+        elements: elements
+      }}
+    end)
+
+    %{
+      type_registry: type_registry,
+      element_registry: %{},
+      namespaces: %{},
+      target_namespace: "http://example.com/types"
+    }
   end
 end
 
@@ -840,27 +920,30 @@ defmodule PerformanceAnalysis do
     types = SampleTypes.enterprise_types()
     sample_data = SampleTypes.sample_data()
 
+    # Create a proper type context for Lather.Types.Mapper
+    type_context = create_type_context(types)
+
     IO.puts("⚡ Type Operation Performance Analysis")
     IO.puts("=" |> String.duplicate(45))
 
     # Benchmark validation
     validation_time = benchmark_operation("Type Validation", 1000, fn ->
-      Lather.Types.Mapper.validate_type(sample_data, types["User"], types: types)
+      Lather.Types.Mapper.validate_type(sample_data, "User", type_context)
     end)
 
     # Benchmark Elixir to XML conversion
     xml_conversion_time = benchmark_operation("Elixir → XML", 1000, fn ->
-      Lather.Types.Mapper.elixir_to_xml(sample_data, types["User"], types: types)
+      Lather.Types.Mapper.elixir_to_xml(sample_data, "User", type_context)
     end)
 
     # Create XML for reverse benchmark
-    {:ok, xml_structure} = Lather.Types.Mapper.elixir_to_xml(sample_data, types["User"], types: types)
-    xml_string = Lather.XML.Builder.build(xml_structure)
-    {:ok, parsed_xml} = Lather.XML.Parser.parse(xml_string)
+    {:ok, xml_structure} = Lather.Types.Mapper.elixir_to_xml(sample_data, "User", type_context)
+    xml_string = Lather.Xml.Builder.build(xml_structure)
+    {:ok, parsed_xml} = Lather.Xml.Parser.parse(xml_string)
 
     # Benchmark XML to Elixir conversion
     elixir_conversion_time = benchmark_operation("XML → Elixir", 1000, fn ->
-      Lather.Types.Mapper.xml_to_elixir(parsed_xml, types["User"], types: types)
+      Lather.Types.Mapper.xml_to_elixir(parsed_xml, "User", type_context)
     end)
 
     # Analyze performance
@@ -918,6 +1001,33 @@ defmodule PerformanceAnalysis do
     "#{Float.round(num / 1_000, 1)}K"
   end
   defp format_number(num), do: to_string(num)
+
+  # Convert custom type format to Lather's type_context structure
+  defp create_type_context(types) do
+    type_registry = Map.new(types, fn {name, type_def} ->
+      elements = Enum.map(type_def.elements, fn {elem_name, elem_def} ->
+        %{
+          name: elem_name,
+          type: elem_def[:type],
+          min_occurs: if(elem_def[:required], do: 1, else: 0),
+          max_occurs: if(elem_def[:array], do: :unbounded, else: 1)
+        }
+      end)
+
+      {name, %{
+        name: name,
+        category: :complex_type,
+        elements: elements
+      }}
+    end)
+
+    %{
+      type_registry: type_registry,
+      element_registry: %{},
+      namespaces: %{},
+      target_namespace: "http://example.com/types"
+    }
+  end
 end
 
 # Run performance analysis
