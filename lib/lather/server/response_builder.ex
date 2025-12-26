@@ -86,7 +86,18 @@ defmodule Lather.Server.ResponseBuilder do
     operation_name = Map.get(operation, :name) || Map.get(operation, "name", "")
     response_name = "#{operation_name}Response"
 
-    case result do
+    # Unwrap {:ok, data} tuples from service functions
+    unwrapped_result =
+      case result do
+        {:ok, data} -> data
+        {:error, _} = err -> err
+        other -> other
+      end
+
+    case unwrapped_result do
+      {:error, reason} ->
+        %{response_name => %{"error" => format_response_data(reason)}}
+
       %{^response_name => data} ->
         %{response_name => format_response_data(data)}
 
