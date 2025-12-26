@@ -478,28 +478,33 @@ defmodule CustomTypeParsers do
     # Parse currency strings like "$50,000", "€45.50", "¥1000"
     cleaned = String.replace(value, ~r/[,\s]/, "")
 
-    cond do
-      Regex.match?(~r/^\$[\d.]+$/, cleaned) ->
-        amount = String.slice(cleaned, 1..-1) |> String.to_float()
-        {:ok, %{amount: amount, currency: "USD"}}
-
-      Regex.match?(~r/^€[\d.]+$/, cleaned) ->
-        amount = String.slice(cleaned, 1..-1) |> String.to_float()
-        {:ok, %{amount: amount, currency: "EUR"}}
-
-      Regex.match?(~r/^¥[\d.]+$/, cleaned) ->
-        amount = String.slice(cleaned, 1..-1) |> String.to_float()
-        {:ok, %{amount: amount, currency: "JPY"}}
-
-      Regex.match?(~r/^[\d.]+$/, cleaned) ->
-        amount = String.to_float(cleaned)
-        {:ok, %{amount: amount, currency: "USD"}}  # Default to USD
-
-      true ->
-        {:error, :invalid_currency_format}
+    {currency, amount_str} = cond do
+      String.starts_with?(cleaned, "$") -> {"USD", String.slice(cleaned, 1, String.length(cleaned) - 1)}
+      String.starts_with?(cleaned, "€") -> {"EUR", String.slice(cleaned, 1, String.length(cleaned) - 1)}
+      String.starts_with?(cleaned, "¥") -> {"JPY", String.slice(cleaned, 1, String.length(cleaned) - 1)}
+      Regex.match?(~r/^[\d.]+$/, cleaned) -> {"USD", cleaned}
+      true -> {nil, nil}
     end
-  rescue
-    _ -> {:error, :invalid_number}
+
+    case {currency, parse_number(amount_str)} do
+      {nil, _} -> {:error, :invalid_currency_format}
+      {_, nil} -> {:error, :invalid_number}
+      {curr, amount} -> {:ok, %{amount: amount, currency: curr}}
+    end
+  end
+
+  defp parse_number(nil), do: nil
+  defp parse_number(str) do
+    case Float.parse(str) do
+      {num, ""} -> num
+      {num, _rest} -> num
+      :error ->
+        case Integer.parse(str) do
+          {num, ""} -> num * 1.0
+          {num, _rest} -> num * 1.0
+          :error -> nil
+        end
+    end
   end
   def currency_parser(value) when is_number(value) do
     {:ok, %{amount: value, currency: "USD"}}
