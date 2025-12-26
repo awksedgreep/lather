@@ -3,562 +3,330 @@
 ```elixir
 Mix.install([
   {:lather, "~> 1.0"},
-  {:kino, "~> 0.12.0"},
-  {:jason, "~> 1.4"}
+  {:kino, "~> 0.12.0"}
 ])
 ```
 
 ## Introduction
 
-In this Livebook, we'll explore how to use Lather to interact with the **Country Info Service SOAP API**. This is a comprehensive, real-world SOAP service that provides detailed information about countries, currencies, languages, and continents worldwide.
-
-The service offers:
-- **Country Information** (names, ISO codes, capitals, phone codes)
-- **Currency Data** (ISO codes, names, country usage)
-- **Language Information** (ISO codes, names by country)
-- **Continental Data** (continent codes and countries)
-- **Comprehensive Country Details** (flags, full country profiles)
-
-## 🌍 About the Country Info Service API
-
-The Country Info Service is a free, public SOAP web service that provides comprehensive geographical and political information about world countries. It's perfect for applications that need country/currency/language data and serves as an excellent example of SOAP integration.
+This Livebook demonstrates using Lather to interact with the **Country Info Service SOAP API** - a real-world public SOAP service providing information about countries, currencies, languages, and continents.
 
 **Service Details:**
 - **WSDL URL**: http://webservices.oorsprong.org/websamples.countryinfo/CountryInfoService.wso?WSDL
 - **Provider**: Oorsprong Web Services
 - **Authentication**: None required
-- **SOAP Versions**: Both SOAP 1.1 and SOAP 1.2 supported
-- **Style**: Document/Literal
-- **Operations**: 20+ different country/currency/language operations
 
-## 📡 Setting Up the SOAP Client
-
-Let's start by creating a Lather client connected to the Country Info Service SOAP endpoint:
+## Setting Up the SOAP Client
 
 ```elixir
 alias Lather.DynamicClient
 
-# Country Info Service SOAP endpoint
 wsdl_url = "http://webservices.oorsprong.org/websamples.countryinfo/CountryInfoService.wso?WSDL"
 
-# Create the SOAP client
 {:ok, country_client} = DynamicClient.new(wsdl_url, timeout: 15_000)
 
-IO.puts("✅ Successfully connected to Country Info Service SOAP API!")
-IO.puts("🌐 WSDL URL: #{wsdl_url}")
+IO.puts("Connected to Country Info Service!")
 ```
 
-## 🔍 Exploring Available Operations
+## Helper Functions
 
-Let's see what operations are available in this service:
+The SOAP responses include namespace prefixes (like `m:`) in the keys. These helpers extract the data cleanly:
 
 ```elixir
-# Get service information
-service_info = DynamicClient.get_service_info(country_client)
-
-IO.puts("🏢 Service: #{service_info.service_name}")
-IO.puts("📍 Endpoints: #{length(service_info.endpoints)}")
-IO.puts("🛠️ Operations: #{length(service_info.operations)}")
-IO.puts("")
-
-# List all available operations
-IO.puts("📋 Available Operations:")
-service_info.operations
-|> Enum.with_index(1)
-|> Enum.each(fn {operation, index} ->
-  IO.puts("#{String.pad_leading(to_string(index), 2)}. #{operation.name}")
-  if operation.documentation != "" do
-    IO.puts("    📖 #{operation.documentation}")
+defmodule ResponseHelper do
+  @doc "Find a value in a map, ignoring namespace prefixes on keys"
+  def get(map, key) when is_map(map) and is_binary(key) do
+    # Try exact match first
+    case Map.get(map, key) do
+      nil ->
+        # Try to find key with any namespace prefix
+        map
+        |> Enum.find(fn {k, _v} ->
+          String.ends_with?(to_string(k), ":" <> key) or k == key
+        end)
+        |> case do
+          {_k, v} -> v
+          nil -> nil
+        end
+      value -> value
+    end
   end
+  def get(_, _), do: nil
+
+  @doc "Navigate nested path, handling namespace prefixes"
+  def get_in(map, []), do: map
+  def get_in(map, [key | rest]) when is_map(map) do
+    get_in(get(map, key), rest)
+  end
+  def get_in(_, _), do: nil
+
+  @doc "Strip namespace prefix from a key"
+  def strip_ns(key) when is_binary(key) do
+    case String.split(key, ":", parts: 2) do
+      [_ns, name] -> name
+      [name] -> name
+    end
+  end
+  def strip_ns(key), do: key
+
+  @doc "Strip namespace prefixes from all keys in a map"
+  def strip_ns_keys(map) when is_map(map) do
+    Map.new(map, fn {k, v} ->
+      {strip_ns(k), strip_ns_keys(v)}
+    end)
+  end
+  def strip_ns_keys(list) when is_list(list) do
+    Enum.map(list, &strip_ns_keys/1)
+  end
+  def strip_ns_keys(other), do: other
+end
+
+IO.puts("Helper functions defined!")
+```
+
+## Exploring Available Operations
+
+```elixir
+operations = DynamicClient.list_operations(country_client)
+
+IO.puts("Available Operations (#{length(operations)}):\n")
+
+operations
+|> Enum.with_index(1)
+|> Enum.each(fn {op, index} ->
+  name = if is_map(op), do: op[:name] || op.name, else: op
+  IO.puts("#{String.pad_leading(to_string(index), 2)}. #{name}")
 end)
 ```
 
-## 🌎 Basic Country Operations
-
-### Getting a List of All Countries
-
-Let's start with the most basic operation - getting all countries:
+## Getting a List of All Countries
 
 ```elixir
-# Get list of countries ordered by name
-case DynamicClient.call(country_client, "ListOfCountryNamesByName", %{"parameters" => %{}}) do
+case DynamicClient.call(country_client, "ListOfCountryNamesByName", %{}) do
   {:ok, response} ->
-    countries = get_in(response.body, ["ListOfCountryNamesByNameResponse", "ListOfCountryNamesByNameResult", "tCountryCodeAndName"])
+    # Strip namespace prefixes for easier access
+    clean = ResponseHelper.strip_ns_keys(response)
 
-    IO.puts("🌍 Found #{length(countries)} countries:")
-    IO.puts("")
+    countries = get_in(clean, ["ListOfCountryNamesByNameResponse", "ListOfCountryNamesByNameResult", "tCountryCodeAndName"]) || []
 
-    # Show first 10 countries
+    IO.puts("Found #{length(countries)} countries:\n")
+
     countries
-    |> Enum.take(10)
+    |> Enum.take(15)
     |> Enum.each(fn country ->
       code = country["sISOCode"]
       name = country["sName"]
-      IO.puts("🏴 #{code}: #{name}")
+      IO.puts("  #{code}: #{name}")
     end)
 
-    IO.puts("... (and #{length(countries) - 10} more)")
+    IO.puts("\n  ... and #{length(countries) - 15} more")
 
   {:error, reason} ->
-    IO.puts("❌ Error: #{inspect(reason)}")
+    IO.puts("Error: #{inspect(reason)}")
 end
 ```
 
-### Looking Up Specific Country Information
-
-Let's get detailed information about a specific country:
+## Looking Up Specific Country Information
 
 ```elixir
-# Let's look up information about the Netherlands
-country_code = "NL"
+country_code = "NL"  # Change this to look up other countries
 
-case DynamicClient.call(country_client, "FullCountryInfo", %{"parameters" => %{"sCountryISOCode" => country_code}}) do
+case DynamicClient.call(country_client, "FullCountryInfo", %{"sCountryISOCode" => country_code}) do
   {:ok, response} ->
-    country_info = get_in(response.body, ["FullCountryInfoResponse", "FullCountryInfoResult"])
+    clean = ResponseHelper.strip_ns_keys(response)
+    info = get_in(clean, ["FullCountryInfoResponse", "FullCountryInfoResult"]) || %{}
 
-    IO.puts("🇳🇱 Complete Information for #{country_code}:")
-    IO.puts("📍 Name: #{country_info["sName"]}")
-    IO.puts("🏛️ Capital: #{country_info["sCapitalCity"]}")
-    IO.puts("📞 Phone Code: +#{country_info["sPhoneCode"]}")
-    IO.puts("🌍 Continent: #{country_info["sContinentCode"]}")
-    IO.puts("💰 Currency: #{country_info["sCurrencyISOCode"]}")
-    IO.puts("🏴 Flag: #{country_info["sCountryFlag"]}")
-
-    # Show languages
-    languages = country_info["Languages"]["tLanguage"]
-    languages = if is_list(languages), do: languages, else: [languages]
-
-    IO.puts("🗣️ Languages:")
-    Enum.each(languages, fn lang ->
-      IO.puts("   • #{lang["sName"]} (#{lang["sISOCode"]})")
-    end)
+    IO.puts("Country Information for #{country_code}:")
+    IO.puts("  Name: #{info["sName"]}")
+    IO.puts("  Capital: #{info["sCapitalCity"]}")
+    IO.puts("  Phone Code: +#{info["sPhoneCode"]}")
+    IO.puts("  Continent: #{info["sContinentCode"]}")
+    IO.puts("  Currency: #{info["sCurrencyISOCode"]}")
+    IO.puts("  Languages: #{inspect(info["Languages"])}")
 
   {:error, reason} ->
-    IO.puts("❌ Error getting country info: #{inspect(reason)}")
+    IO.puts("Error: #{inspect(reason)}")
 end
 ```
 
-## 💱 Currency Operations
+## Currency Operations
 
-### Getting Currency Information
+### List All Currencies
 
 ```elixir
-# Get all currencies ordered by name
-case DynamicClient.call(country_client, "ListOfCurrenciesByName", %{"parameters" => %{}}) do
+case DynamicClient.call(country_client, "ListOfCurrenciesByName", %{}) do
   {:ok, response} ->
-    currencies = get_in(response.body, ["ListOfCurrenciesByNameResponse", "ListOfCurrenciesByNameResult", "tCurrency"])
+    clean = ResponseHelper.strip_ns_keys(response)
+    currencies = get_in(clean, ["ListOfCurrenciesByNameResponse", "ListOfCurrenciesByNameResult", "tCurrency"]) || []
 
-    IO.puts("💰 Found #{length(currencies)} currencies:")
-    IO.puts("")
+    IO.puts("Found #{length(currencies)} currencies:\n")
 
-    # Show first 15 currencies
     currencies
     |> Enum.take(15)
     |> Enum.each(fn currency ->
       code = currency["sISOCode"]
       name = currency["sName"]
-      IO.puts("💵 #{code}: #{name}")
+      IO.puts("  #{code}: #{name}")
     end)
 
+    IO.puts("\n  ... and #{length(currencies) - 15} more")
+
   {:error, reason} ->
-    IO.puts("❌ Error: #{inspect(reason)}")
+    IO.puts("Error: #{inspect(reason)}")
 end
 ```
 
-### Finding Countries Using a Specific Currency
+### Countries Using a Specific Currency
 
 ```elixir
-# Find all countries using the Euro
-currency_code = "EUR"
+currency_code = "EUR"  # Change to look up other currencies
 
-case DynamicClient.call(country_client, "CountriesUsingCurrency", %{"parameters" => %{"sISOCurrencyCode" => currency_code}}) do
+case DynamicClient.call(country_client, "CountriesUsingCurrency", %{"sISOCurrencyCode" => currency_code}) do
   {:ok, response} ->
-    countries = get_in(response.body, ["CountriesUsingCurrencyResponse", "CountriesUsingCurrencyResult", "tCountryCodeAndName"])
-    countries = if is_list(countries), do: countries, else: [countries]
+    clean = ResponseHelper.strip_ns_keys(response)
+    countries = get_in(clean, ["CountriesUsingCurrencyResponse", "CountriesUsingCurrencyResult", "tCountryCodeAndName"])
 
-    IO.puts("🇪🇺 Countries using #{currency_code}:")
-    IO.puts("")
+    # Ensure it's a list (single result might not be wrapped)
+    countries = if is_list(countries), do: countries, else: [countries]
+    countries = Enum.filter(countries, & &1)
+
+    IO.puts("Countries using #{currency_code}:\n")
 
     Enum.each(countries, fn country ->
-      code = country["sISOCode"]
-      name = country["sName"]
-      IO.puts("💶 #{code}: #{name}")
+      IO.puts("  #{country["sISOCode"]}: #{country["sName"]}")
     end)
 
   {:error, reason} ->
-    IO.puts("❌ Error: #{inspect(reason)}")
+    IO.puts("Error: #{inspect(reason)}")
 end
 ```
 
-## 🗺️ Continental and Regional Operations
+## Continental Data
 
-### Getting Continents
+### List All Continents
 
 ```elixir
-# Get list of all continents
-case DynamicClient.call(country_client, "ListOfContinentsByName", %{"parameters" => %{}}) do
+case DynamicClient.call(country_client, "ListOfContinentsByName", %{}) do
   {:ok, response} ->
-    continents = get_in(response.body, ["ListOfContinentsByNameResponse", "ListOfContinentsByNameResult", "tContinent"])
+    clean = ResponseHelper.strip_ns_keys(response)
+    continents = get_in(clean, ["ListOfContinentsByNameResponse", "ListOfContinentsByNameResult", "tContinent"]) || []
 
-    IO.puts("🌍 World Continents:")
-    IO.puts("")
+    IO.puts("World Continents:\n")
 
     Enum.each(continents, fn continent ->
       code = continent["sCode"]
       name = continent["sName"]
-      IO.puts("🗺️ #{code}: #{name}")
+      IO.puts("  #{code}: #{name}")
     end)
 
   {:error, reason} ->
-    IO.puts("❌ Error: #{inspect(reason)}")
+    IO.puts("Error: #{inspect(reason)}")
 end
 ```
 
-### Countries Grouped by Continent
+## Language Operations
 
 ```elixir
-# Get countries grouped by continent
-case DynamicClient.call(country_client, "ListOfCountryNamesGroupedByContinent", %{"parameters" => %{}}) do
+case DynamicClient.call(country_client, "ListOfLanguagesByName", %{}) do
   {:ok, response} ->
-    continent_groups = get_in(response.body, ["ListOfCountryNamesGroupedByContinentResponse", "ListOfCountryNamesGroupedByContinentResult", "tCountryCodeAndNameGroupedByContinent"])
+    clean = ResponseHelper.strip_ns_keys(response)
+    languages = get_in(clean, ["ListOfLanguagesByNameResponse", "ListOfLanguagesByNameResult", "tLanguage"]) || []
 
-    IO.puts("🌏 Countries by Continent:")
-    IO.puts("")
+    IO.puts("Found #{length(languages)} languages:\n")
 
-    # Show first 3 continents as examples
-    continent_groups
-    |> Enum.take(3)
-    |> Enum.each(fn group ->
-      continent = group["Continent"]
-      countries = group["CountryCodeAndNames"]["tCountryCodeAndName"]
-      countries = if is_list(countries), do: countries, else: [countries]
-
-      IO.puts("🌍 #{continent["sName"]} (#{continent["sCode"]}) - #{length(countries)} countries:")
-
-      countries
-      |> Enum.take(5)
-      |> Enum.each(fn country ->
-        IO.puts("  🏴 #{country["sISOCode"]}: #{country["sName"]}")
-      end)
-
-      if length(countries) > 5 do
-        IO.puts("  ... and #{length(countries) - 5} more")
-      end
-      IO.puts("")
-    end)
-
-  {:error, reason} ->
-    IO.puts("❌ Error: #{inspect(reason)}")
-end
-```
-
-## 🗣️ Language Operations
-
-### Getting All Languages
-
-```elixir
-# Get all languages ordered by name
-case DynamicClient.call(country_client, "ListOfLanguagesByName", %{"parameters" => %{}}) do
-  {:ok, response} ->
-    languages = get_in(response.body, ["ListOfLanguagesByNameResponse", "ListOfLanguagesByNameResult", "tLanguage"])
-
-    IO.puts("🗣️ Found #{length(languages)} languages:")
-    IO.puts("")
-
-    # Show first 20 languages
     languages
     |> Enum.take(20)
-    |> Enum.each(fn language ->
-      code = language["sISOCode"]
-      name = language["sName"]
-      IO.puts("🗣️ #{code}: #{name}")
+    |> Enum.each(fn lang ->
+      code = lang["sISOCode"]
+      name = lang["sName"]
+      IO.puts("  #{code}: #{name}")
     end)
 
-    IO.puts("... (and #{length(languages) - 20} more)")
+    IO.puts("\n  ... and #{length(languages) - 20} more")
 
   {:error, reason} ->
-    IO.puts("❌ Error: #{inspect(reason)}")
+    IO.puts("Error: #{inspect(reason)}")
 end
 ```
 
-## 🔧 Interactive Country Lookup
+## Interactive Country Lookup
 
-Let's create an interactive section where you can look up any country:
+Change the country name below and re-run (Ctrl+Enter):
 
 ```elixir
-# Interactive country lookup function
-defmodule CountryLookup do
-  def lookup_country(client, country_input) do
-    # First, try to determine if input is a country code or name
-    country_code = if String.length(country_input) == 2 do
-      String.upcase(country_input)
-    else
-      # Try to find the country code by name
-      case DynamicClient.call(client, "CountryISOCode", %{"parameters" => %{"sCountryName" => country_input}}) do
-        {:ok, response} ->
-          get_in(response.body, ["CountryISOCodeResponse", "CountryISOCodeResult"])
-        {:error, _} ->
-          nil
-      end
-    end
+country_name = "France"  # Change this and re-run
+
+# First, get the ISO code for the country name
+case DynamicClient.call(country_client, "CountryISOCode", %{"sCountryName" => country_name}) do
+  {:ok, response} ->
+    clean = ResponseHelper.strip_ns_keys(response)
+    country_code = get_in(clean, ["CountryISOCodeResponse", "CountryISOCodeResult"])
 
     if country_code && country_code != "" do
-      # Get full country information
-      case DynamicClient.call(client, "FullCountryInfo", %{"parameters" => %{"sCountryISOCode" => country_code}}) do
-        {:ok, response} ->
-          country_info = get_in(response.body, ["FullCountryInfoResponse", "FullCountryInfoResult"])
+      IO.puts("Found: #{country_name} -> #{country_code}\n")
 
-          # Get additional specific information
-          capital_result = DynamicClient.call(client, "CapitalCity", %{"parameters" => %{"sCountryISOCode" => country_code}})
-          phone_result = DynamicClient.call(client, "CountryIntPhoneCode", %{"parameters" => %{"sCountryISOCode" => country_code}})
-          currency_result = DynamicClient.call(client, "CountryCurrency", %{"parameters" => %{"sCountryISOCode" => country_code}})
-          flag_result = DynamicClient.call(client, "CountryFlag", %{"parameters" => %{"sCountryISOCode" => country_code}})
+      # Get full info
+      case DynamicClient.call(country_client, "FullCountryInfo", %{"sCountryISOCode" => country_code}) do
+        {:ok, info_response} ->
+          info_clean = ResponseHelper.strip_ns_keys(info_response)
+          info = get_in(info_clean, ["FullCountryInfoResponse", "FullCountryInfoResult"]) || %{}
 
-          IO.puts("🔍 Country Lookup Results for: #{country_input}")
-          IO.puts("=" |> String.duplicate(50))
-          IO.puts("🏴 Country: #{country_info["sName"]} (#{country_code})")
-
-          case capital_result do
-            {:ok, cap_response} ->
-              capital = get_in(cap_response.body, ["CapitalCityResponse", "CapitalCityResult"])
-              IO.puts("🏛️ Capital: #{capital}")
-            _ -> nil
-          end
-
-          case phone_result do
-            {:ok, phone_response} ->
-              phone = get_in(phone_response.body, ["CountryIntPhoneCodeResponse", "CountryIntPhoneCodeResult"])
-              IO.puts("📞 International Phone Code: +#{phone}")
-            _ -> nil
-          end
-
-          case currency_result do
-            {:ok, curr_response} ->
-              currency = get_in(curr_response.body, ["CountryCurrencyResponse", "CountryCurrencyResult"])
-              IO.puts("💰 Currency: #{currency["sName"]} (#{currency["sISOCode"]})")
-            _ -> nil
-          end
-
-          case flag_result do
-            {:ok, flag_response} ->
-              flag_url = get_in(flag_response.body, ["CountryFlagResponse", "CountryFlagResult"])
-              IO.puts("🏴 Flag URL: #{flag_url}")
-            _ -> nil
-          end
-
-          IO.puts("🌍 Continent Code: #{country_info["sContinentCode"]}")
-
-          # Show languages
-          languages = country_info["Languages"]["tLanguage"]
-          languages = if is_list(languages), do: languages, else: [languages]
-
-          IO.puts("🗣️ Languages:")
-          Enum.each(languages, fn lang ->
-            IO.puts("   • #{lang["sName"]} (#{lang["sISOCode"]})")
-          end)
+          IO.puts("Full Information:")
+          IO.puts("  Name: #{info["sName"]}")
+          IO.puts("  Capital: #{info["sCapitalCity"]}")
+          IO.puts("  Phone Code: +#{info["sPhoneCode"]}")
+          IO.puts("  Continent: #{info["sContinentCode"]}")
+          IO.puts("  Currency: #{info["sCurrencyISOCode"]}")
 
         {:error, reason} ->
-          IO.puts("❌ Error getting detailed country info: #{inspect(reason)}")
+          IO.puts("Error getting details: #{inspect(reason)}")
       end
     else
-      IO.puts("❌ Could not find country: #{country_input}")
-      IO.puts("💡 Try using a 2-letter ISO country code (e.g., 'US', 'GB', 'DE') or full country name")
+      IO.puts("Country '#{country_name}' not found")
     end
-  end
+
+  {:error, reason} ->
+    IO.puts("Error: #{inspect(reason)}")
 end
-
-# Example lookups
-IO.puts("🔍 Example Country Lookups:")
-IO.puts("")
-
-["US", "Japan", "BR", "Germany", "AU"]
-|> Enum.each(fn country ->
-  CountryLookup.lookup_country(country_client, country)
-  IO.puts("")
-end)
 ```
 
-## 🧪 Testing SOAP Features
+## Performance Test
 
-### Testing Document/Literal Style
-
-This service uses document/literal style, which is perfect for testing our recent fixes:
+Let's measure the response times for various operations:
 
 ```elixir
-# Test the service's SOAP binding information
-service_info = DynamicClient.get_service_info(country_client)
-
-IO.puts("🔧 SOAP Service Technical Details:")
-IO.puts("")
-IO.puts("📋 Service Name: #{service_info.service_name}")
-IO.puts("🌐 Target Namespace: #{service_info.target_namespace}")
-
-# Show operation styles and uses
-operation_styles = service_info.operations
-|> Enum.map(fn op -> {op.style, op.input.use} end)
-|> Enum.uniq()
-
-IO.puts("🛠️ SOAP Styles and Uses:")
-Enum.each(operation_styles, fn {style, use} ->
-  IO.puts("   • Style: #{style}, Use: #{use}")
-end)
-
-# Show endpoints
-IO.puts("📍 Endpoints:")
-Enum.each(service_info.endpoints, fn endpoint ->
-  IO.puts("   • #{endpoint.name}: #{endpoint.address.location}")
-end)
-```
-
-### Testing Different Operations for Robustness
-
-```elixir
-# Test various operations to ensure our SOAP implementation is robust
-test_operations = [
-  {"ListOfContinentsByName", %{"parameters" => %{}}, "Testing parameter-less operation"},
-  {"CountryName", %{"parameters" => %{"sCountryISOCode" => "US"}}, "Testing single parameter operation"},
-  {"CurrencyName", %{"parameters" => %{"sCurrencyISOCode" => "USD"}}, "Testing currency lookup"},
-  {"LanguageName", %{"parameters" => %{"sISOCode" => "en"}}, "Testing language lookup"}
+operations_to_test = [
+  {"ListOfContinentsByName", %{}},
+  {"ListOfCountryNamesByName", %{}},
+  {"CountryISOCode", %{"sCountryName" => "Germany"}},
+  {"CapitalCity", %{"sCountryISOCode" => "DE"}}
 ]
 
-IO.puts("🧪 SOAP Implementation Robustness Tests:")
-IO.puts("")
+IO.puts("Performance Test:\n")
 
-Enum.each(test_operations, fn {operation, params, description} ->
-  IO.puts("🔬 #{description}")
-  IO.puts("   Operation: #{operation}")
-  IO.puts("   Parameters: #{inspect(params)}")
-
+Enum.each(operations_to_test, fn {operation, params} ->
   start_time = System.monotonic_time(:millisecond)
 
   case DynamicClient.call(country_client, operation, params) do
-    {:ok, response} ->
-      end_time = System.monotonic_time(:millisecond)
-      duration = end_time - start_time
-
-      IO.puts("   ✅ Success (#{duration}ms)")
-      IO.puts("   📊 Response size: #{byte_size(inspect(response.body))} bytes")
+    {:ok, _response} ->
+      duration = System.monotonic_time(:millisecond) - start_time
+      IO.puts("  #{operation}: #{duration}ms")
 
     {:error, reason} ->
-      end_time = System.monotonic_time(:millisecond)
-      duration = end_time - start_time
-
-      IO.puts("   ❌ Failed (#{duration}ms): #{inspect(reason)}")
+      duration = System.monotonic_time(:millisecond) - start_time
+      IO.puts("  #{operation}: ERROR (#{duration}ms) - #{inspect(reason)}")
   end
-
-  IO.puts("")
 end)
 ```
 
-## ⚡ Performance and Error Handling
+## Summary
 
-### Testing Error Conditions
+This livebook demonstrated:
 
-```elixir
-# Test error handling with invalid inputs
-error_tests = [
-  {"CountryName", %{"parameters" => %{"sCountryISOCode" => "XX"}}, "Invalid country code"},
-  {"CurrencyName", %{"parameters" => %{"sCurrencyISOCode" => "INVALID"}}, "Invalid currency code"},
-  {"LanguageName", %{"parameters" => %{"sISOCode" => "zz"}}, "Invalid language code"}
-]
+1. **Connecting** to a real-world SOAP service with Lather
+2. **Discovering** available operations via WSDL
+3. **Calling** various SOAP operations with parameters
+4. **Handling** namespace-prefixed responses
+5. **Interactive** lookups with cell re-execution
 
-IO.puts("🚨 Error Handling Tests:")
-IO.puts("")
-
-Enum.each(error_tests, fn {operation, params, description} ->
-  IO.puts("⚠️ #{description}")
-
-  case DynamicClient.call(country_client, operation, params) do
-    {:ok, response} ->
-      # Check if response contains empty or error indicators
-      result_key = "#{operation}Response"
-      result = get_in(response.body, [result_key, "#{operation}Result"])
-
-      if result == "" or is_nil(result) do
-        IO.puts("   ✅ Gracefully handled - returned empty result")
-      else
-        IO.puts("   📄 Unexpected result: #{inspect(result)}")
-      end
-
-    {:error, reason} ->
-      IO.puts("   ✅ Properly caught error: #{inspect(reason)}")
-  end
-
-  IO.puts("")
-end)
-```
-
-## 📊 Summary and Service Analysis
-
-```elixir
-# Generate a comprehensive report about the service
-service_info = DynamicClient.get_service_info(country_client)
-
-IO.puts("📊 Country Info Service Analysis Report")
-IO.puts("=" |> String.duplicate(50))
-
-# Service overview
-IO.puts("🏢 Service Overview:")
-IO.puts("   Name: #{service_info.service_name}")
-IO.puts("   Operations: #{length(service_info.operations)}")
-IO.puts("   Endpoints: #{length(service_info.endpoints)}")
-IO.puts("")
-
-# Operation categories
-operation_categories = %{
-  "Country" => Enum.filter(service_info.operations, &String.contains?(&1.name, "Country")),
-  "Currency" => Enum.filter(service_info.operations, &String.contains?(&1.name, "Currenc")),
-  "Language" => Enum.filter(service_info.operations, &String.contains?(&1.name, "Language")),
-  "Continent" => Enum.filter(service_info.operations, &String.contains?(&1.name, "Continent")),
-  "List" => Enum.filter(service_info.operations, &String.starts_with?(&1.name, "ListOf"))
-}
-
-IO.puts("📂 Operations by Category:")
-Enum.each(operation_categories, fn {category, ops} ->
-  IO.puts("   #{category}: #{length(ops)} operations")
-end)
-IO.puts("")
-
-# SOAP technical details
-IO.puts("🔧 SOAP Technical Details:")
-IO.puts("   Style: document")
-IO.puts("   Use: literal")
-IO.puts("   SOAP Versions: 1.1 and 1.2 supported")
-IO.puts("   Authentication: None required")
-IO.puts("")
-
-# Success rate from our tests
-IO.puts("✅ Lather Integration Status:")
-IO.puts("   WSDL Parsing: ✅ Successful")
-IO.puts("   Client Creation: ✅ Successful")
-IO.puts("   Operation Calls: ✅ Successful")
-IO.puts("   Error Handling: ✅ Robust")
-IO.puts("   Performance: ✅ Good")
-IO.puts("")
-
-IO.puts("🎉 The Country Info Service works perfectly with Lather!")
-IO.puts("🚀 Ready for production use in your applications.")
-```
-
-## 🎯 Conclusion
-
-This Livebook has demonstrated the successful integration of Lather with the Country Info Service SOAP API. Key achievements:
-
-- ✅ **Complete WSDL Processing** - All 20+ operations parsed correctly
-- ✅ **Document/Literal Support** - Perfect handling of document/literal SOAP style
-- ✅ **Error Handling** - Graceful handling of invalid inputs and network issues
-- ✅ **Performance** - Fast response times and efficient processing
-- ✅ **Robustness** - Reliable operation across different data types and scenarios
-
-The Country Info Service serves as an excellent validation of Lather's production readiness, demonstrating compatibility with real-world SOAP services that use different patterns and structures than the Weather Service.
-
-### Next Steps
-
-You can now use these patterns in your own applications:
-
-1. **Country/Region Applications** - Use for country selection dropdowns, currency conversion apps
-2. **International Business Tools** - Phone code lookup, currency validation
-3. **Educational Software** - Geography apps, language learning tools
-4. **Data Validation** - Validate country codes, currency codes in forms
-
-The successful integration with both the National Weather Service and Country Info Service proves that Lather is ready for diverse, production SOAP API scenarios.
+The Country Info Service is a great example of a well-structured SOAP API that Lather can work with seamlessly.
