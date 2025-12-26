@@ -234,12 +234,19 @@ defmodule TypeValidationDemo do
   end
 
   defp validate_complex(data, type_def, types) do
-    Enum.reduce_while(type_def.elements, :ok, fn {field_name, field_def}, _acc ->
-      value = Map.get(data, field_name)
+    # Get elements - handle both atom and string key access
+    elements = type_def[:elements] || type_def["elements"] || %{}
+
+    Enum.reduce_while(elements, :ok, fn {field_name, field_def}, _acc ->
+      # Handle both string and atom keys in data
+      value = Map.get(data, field_name) || Map.get(data, String.to_atom(field_name))
+
+      # Get required flag - handle both atom and string keys
+      required = field_def[:required] || field_def["required"] || false
 
       cond do
         # Check required fields
-        is_nil(value) and field_def[:required] ->
+        is_nil(value) and required == true ->
           {:halt, {:error, "Missing required field: #{field_name}"}}
 
         # Skip optional nil fields
