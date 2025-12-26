@@ -2,8 +2,7 @@
 
 ```elixir
 Mix.install([
-  {:lather, path: ".."}, # For local development
-  # {:lather, "~> 1.0"}, # Use this for hex package
+  {:lather, "~> 1.0"},
   {:finch, "~> 0.18"},
   {:kino, "~> 0.12"}
 ])

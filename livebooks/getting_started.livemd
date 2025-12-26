@@ -2,8 +2,7 @@
 
 ```elixir
 Mix.install([
-  # {:lather, path: ".."}, # For local development
-  {:lather, github: "awksedgreep/lather"}, # Use GitHub until 1.0.6 is on hex
+  {:lather, "~> 1.0"},
   {:bandit, "~> 1.0"},
   {:kino, "~> 0.12"}
 ])
