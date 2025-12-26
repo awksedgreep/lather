@@ -63,8 +63,8 @@ Let's create an interactive panel to gather information about SOAP service issue
 ```elixir
 # Create debug information inputs
 # Fill in these fields, then run the analysis cell below
-service_url_input = Kino.Input.text("Service URL", default: "http://www.webservicex.net/globalweather.asmx?WSDL")
-operation_input = Kino.Input.text("Operation Name", default: "GetWeather")
+service_url_input = Kino.Input.text("Service URL", default: "https://www.dataaccess.com/webservicesserver/NumberConversion.wso?WSDL")
+operation_input = Kino.Input.text("Operation Name", default: "NumberToWords")
 error_message_input = Kino.Input.textarea("Error Message/Details")
 issue_type_select = Kino.Input.select("Issue Type", [
   {"Connection Failed", "connection"},
