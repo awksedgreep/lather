@@ -296,7 +296,7 @@ end
 
 ## Interactive Calculator
 
-Let's create an interactive calculator widget:
+Let's create an interactive calculator widget. Run this cell after the server and client are connected:
 
 ```elixir
 # Create input widgets
@@ -310,22 +310,21 @@ operation_input = Kino.Input.select("Operation", [
 ])
 calculate_button = Kino.Control.button("Calculate")
 
-# Layout the inputs
+# Frame to display results
+result_frame = Kino.Frame.new()
+
+# Layout the inputs and result
 form = Kino.Layout.grid([
-  [a_input, b_input],
-  [operation_input],
-  [calculate_button]
-])
+  Kino.Layout.grid([a_input, b_input], columns: 2),
+  operation_input,
+  calculate_button,
+  result_frame
+], boxed: true, gap: 16)
 
-form
-```
-
-```elixir
 # Handle the button click
-client = Process.get(:calculator_client)
+Kino.listen(calculate_button, fn _event ->
+  client = Process.get(:calculator_client)
 
-Kino.Control.stream(calculate_button)
-|> Kino.listen(fn _event ->
   if client do
     a = Kino.Input.read(a_input)
     b = Kino.Input.read(b_input)
@@ -336,21 +335,21 @@ Kino.Control.stream(calculate_button)
       _ -> %{"a" => a, "b" => b}
     end
 
-    IO.puts("Calculating: #{operation}(#{a}, #{b})")
+    Kino.Frame.render(result_frame, Kino.Markdown.new("**Calculating:** #{operation}(#{a}, #{b})..."))
 
     case Lather.DynamicClient.call(client, operation, params) do
       {:ok, response} ->
         result = response["result"] || response["quotient"]
-        IO.puts("Result: #{result}")
+        Kino.Frame.render(result_frame, Kino.Markdown.new("**Result:** #{result}"))
       {:error, error} ->
-        IO.puts("Error: #{inspect(error)}")
+        Kino.Frame.render(result_frame, Kino.Markdown.new("**Error:** #{inspect(error)}"))
     end
   else
-    IO.puts("Calculator client not available")
+    Kino.Frame.render(result_frame, Kino.Markdown.new("⚠️ Calculator client not available. Run the connection cell first."))
   end
 end)
 
-:ok
+form
 ```
 
 ## Error Handling Examples
