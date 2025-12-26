@@ -3,169 +3,307 @@
 ```elixir
 Mix.install([
   # {:lather, path: ".."}, # For local development
-  {:lather, "~> 1.0"}, # Use this for hex package
-  {:finch, "~> 0.18"},
+  {:lather, github: "awksedgreep/lather"}, # Use GitHub until 1.0.6 is on hex
+  {:bandit, "~> 1.0"},
   {:kino, "~> 0.12"}
 ])
 ```
 
 ## Introduction
 
-Welcome to the **Lather SOAP Library** interactive tutorial! Lather is a generic SOAP library for Elixir that can work with any SOAP service without requiring service-specific implementations.
+Welcome to the **Lather SOAP Library** interactive tutorial! Lather is a full-featured SOAP library for Elixir that supports both client and server functionality.
 
 In this Livebook, you'll learn:
 
+* How to create a SOAP server with Lather
 * How to connect to SOAP services using WSDL
 * Making SOAP calls with dynamic parameters
 * Handling responses and errors
-* Working with different authentication methods
 
 <!-- livebook:{"break_markdown":true} -->
 
+## Creating a SOAP Server
 
-
-## Setting Up the Environment
-
-First, let's start the necessary applications and configure our HTTP client:
+First, let's define a simple Calculator SOAP service that we'll use throughout this tutorial:
 
 ```elixir
-# Start required applications (this also starts Lather.Finch automatically)
-{:ok, _} = Application.ensure_all_started(:lather)
+defmodule CalculatorService do
+  use Lather.Server
 
-IO.puts("✅ Lather environment ready!")
+  @namespace "http://example.com/calculator"
+  @service_name "CalculatorService"
+
+  soap_operation "Add" do
+    description "Adds two numbers together"
+
+    input do
+      parameter "a", :decimal, required: true, description: "First number"
+      parameter "b", :decimal, required: true, description: "Second number"
+    end
+
+    output do
+      parameter "result", :decimal, description: "Sum of a and b"
+    end
+
+    soap_action "Add"
+  end
+
+  def add(%{"a" => a, "b" => b}) do
+    num_a = parse_number(a)
+    num_b = parse_number(b)
+    {:ok, %{"result" => num_a + num_b}}
+  end
+
+  soap_operation "Subtract" do
+    description "Subtracts the second number from the first"
+
+    input do
+      parameter "a", :decimal, required: true
+      parameter "b", :decimal, required: true
+    end
+
+    output do
+      parameter "result", :decimal
+    end
+
+    soap_action "Subtract"
+  end
+
+  def subtract(%{"a" => a, "b" => b}) do
+    {:ok, %{"result" => parse_number(a) - parse_number(b)}}
+  end
+
+  soap_operation "Multiply" do
+    description "Multiplies two numbers"
+
+    input do
+      parameter "a", :decimal, required: true
+      parameter "b", :decimal, required: true
+    end
+
+    output do
+      parameter "result", :decimal
+    end
+
+    soap_action "Multiply"
+  end
+
+  def multiply(%{"a" => a, "b" => b}) do
+    {:ok, %{"result" => parse_number(a) * parse_number(b)}}
+  end
+
+  soap_operation "Divide" do
+    description "Divides the first number by the second"
+
+    input do
+      parameter "dividend", :decimal, required: true
+      parameter "divisor", :decimal, required: true
+    end
+
+    output do
+      parameter "quotient", :decimal
+    end
+
+    soap_action "Divide"
+  end
+
+  def divide(%{"dividend" => dividend, "divisor" => divisor}) do
+    d = parse_number(divisor)
+
+    if d == 0 do
+      Lather.Server.soap_fault("Client", "Division by zero is not allowed")
+    else
+      {:ok, %{"quotient" => parse_number(dividend) / d}}
+    end
+  end
+
+  defp parse_number(val) when is_number(val), do: val
+  defp parse_number(val) when is_binary(val) do
+    case Float.parse(val) do
+      {num, _} -> num
+      :error -> String.to_integer(val)
+    end
+  end
+end
+
+IO.puts("Calculator service module defined!")
 ```
 
+## Starting the SOAP Server
 
-
-## Basic SOAP Service Connection
-
-Let's start with a simple example using a public weather service:
+Now let's start our Calculator service on a local port:
 
 ```elixir
-# Define the WSDL URL for a public weather service
-weather_wsdl = "http://www.webservicex.net/globalweather.asmx?WSDL"
+# Start required applications
+{:ok, _} = Application.ensure_all_started(:lather)
+{:ok, _} = Application.ensure_all_started(:bandit)
 
-# Create a dynamic client
-case Lather.DynamicClient.new(weather_wsdl, timeout: 30_000) do
-  {:ok, weather_client} ->
-    IO.puts("✅ Successfully connected to weather service!")
+# Define a simple Plug router for our service
+defmodule CalculatorRouter do
+  use Plug.Router
+
+  plug :match
+  plug :dispatch
+
+  # Handle WSDL and SOAP requests
+  match "/calculator" do
+    Lather.Server.Plug.call(conn, Lather.Server.Plug.init(service: CalculatorService))
+  end
+
+  match _ do
+    send_resp(conn, 404, "Not found")
+  end
+end
+
+# Stop any existing server on this port
+case Process.whereis(:calculator_server) do
+  nil -> :ok
+  pid -> Supervisor.stop(pid)
+end
+
+# Start the server
+{:ok, pid} = Bandit.start_link(plug: CalculatorRouter, port: 4040, scheme: :http)
+Process.register(pid, :calculator_server)
+
+IO.puts("Calculator SOAP server started on http://localhost:4040/calculator")
+IO.puts("WSDL available at: http://localhost:4040/calculator?wsdl")
+```
+
+## Connecting as a SOAP Client
+
+Now let's connect to our own service using the DynamicClient:
+
+```elixir
+# Create a dynamic client from the WSDL
+wsdl_url = "http://localhost:4040/calculator?wsdl"
+
+case Lather.DynamicClient.new(wsdl_url, timeout: 30_000) do
+  {:ok, client} ->
+    IO.puts("Successfully connected to Calculator service!")
 
     # Store the client for use in other cells
-    Process.put(:weather_client, weather_client)
+    Process.put(:calculator_client, client)
 
     # Show available operations
-    operations = Lather.DynamicClient.list_operations(weather_client)
-    IO.puts("\n📋 Available operations:")
-    Enum.each(operations, fn op -> IO.puts("   • #{op}") end)
+    operations = Lather.DynamicClient.list_operations(client)
+    IO.puts("\nAvailable operations:")
+    Enum.each(operations, fn op -> IO.puts("   #{op}") end)
 
-    weather_client
+    client
 
   {:error, error} ->
-    IO.puts("❌ Failed to connect: #{inspect(error)}")
+    IO.puts("Failed to connect: #{inspect(error)}")
     nil
 end
 ```
-
-
 
 ## Exploring Service Operations
 
 Let's examine the details of available operations:
 
 ```elixir
-weather_client = Process.get(:weather_client)
+client = Process.get(:calculator_client)
 
-if weather_client do
+if client do
   # Get detailed information about an operation
-  case Lather.DynamicClient.get_operation_info(weather_client, "GetWeather") do
+  case Lather.DynamicClient.get_operation_info(client, "Add") do
     {:ok, info} ->
-      IO.puts("🔍 Operation: GetWeather")
-      IO.puts("\n📥 Input Parameters:")
+      IO.puts("Operation: Add")
+      IO.puts("\nInput Parameters:")
 
       Enum.each(info.input_parts, fn part ->
         required = if part.required, do: " (required)", else: " (optional)"
-        IO.puts("   • #{part.name}: #{part.type}#{required}")
+        IO.puts("   #{part.name}: #{part.type}#{required}")
       end)
 
-      IO.puts("\n📤 Output:")
+      IO.puts("\nOutput:")
       Enum.each(info.output_parts, fn part ->
-        IO.puts("   • #{part.name}: #{part.type}")
+        IO.puts("   #{part.name}: #{part.type}")
       end)
 
       if info.soap_action do
-        IO.puts("\n🎯 SOAP Action: #{info.soap_action}")
+        IO.puts("\nSOAP Action: #{info.soap_action}")
       end
 
     {:error, error} ->
-      IO.puts("❌ Error getting operation info: #{inspect(error)}")
+      IO.puts("Error getting operation info: #{inspect(error)}")
   end
 else
-  IO.puts("⚠️ No weather client available. Run the previous cell first.")
+  IO.puts("No client available. Run the connection cell first.")
 end
 ```
-
-
 
 ## Making Your First SOAP Call
 
-Now let's make an actual SOAP call to get weather information:
+Now let's make actual SOAP calls to our calculator service:
 
 ```elixir
-weather_client = Process.get(:weather_client)
+client = Process.get(:calculator_client)
 
-if weather_client do
-  # Parameters for the GetWeather operation
-  params = %{
-    "CityName" => "New York",
-    "CountryName" => "United States"
-  }
+if client do
+  IO.puts("Testing Calculator Operations\n")
 
-  IO.puts("🌤️ Getting weather for New York, United States...")
-
-  case Lather.DynamicClient.call(weather_client, "GetWeather", params) do
+  # Test Add
+  IO.puts("1. Add: 10 + 5")
+  case Lather.DynamicClient.call(client, "Add", %{"a" => 10, "b" => 5}) do
     {:ok, response} ->
-      IO.puts("✅ Weather data received!")
-      IO.puts("\n📊 Response structure:")
-      IO.inspect(response, pretty: true, limit: :infinity)
-
-      # Extract and display the weather result
-      case response do
-        %{"GetWeatherResult" => weather_xml} when is_binary(weather_xml) ->
-          if String.contains?(weather_xml, "Data Not Found") do
-            IO.puts("\n⚠️ No weather data available for this location")
-          else
-            IO.puts("\n🌡️ Weather XML (first 300 characters):")
-            IO.puts(String.slice(weather_xml, 0, 300) <> "...")
-          end
-
-        _ ->
-          IO.puts("\n💡 Raw response data shown above")
-      end
-
+      IO.puts("   Result: #{response["result"]}")
     {:error, error} ->
-      IO.puts("❌ Error calling GetWeather: #{Lather.Error.format_error(error)}")
+      IO.puts("   Error: #{inspect(error)}")
+  end
+
+  # Test Subtract
+  IO.puts("\n2. Subtract: 100 - 37")
+  case Lather.DynamicClient.call(client, "Subtract", %{"a" => 100, "b" => 37}) do
+    {:ok, response} ->
+      IO.puts("   Result: #{response["result"]}")
+    {:error, error} ->
+      IO.puts("   Error: #{inspect(error)}")
+  end
+
+  # Test Multiply
+  IO.puts("\n3. Multiply: 7 * 8")
+  case Lather.DynamicClient.call(client, "Multiply", %{"a" => 7, "b" => 8}) do
+    {:ok, response} ->
+      IO.puts("   Result: #{response["result"]}")
+    {:error, error} ->
+      IO.puts("   Error: #{inspect(error)}")
+  end
+
+  # Test Divide
+  IO.puts("\n4. Divide: 100 / 4")
+  case Lather.DynamicClient.call(client, "Divide", %{"dividend" => 100, "divisor" => 4}) do
+    {:ok, response} ->
+      IO.puts("   Result: #{response["quotient"]}")
+    {:error, error} ->
+      IO.puts("   Error: #{inspect(error)}")
   end
 else
-  IO.puts("⚠️ No weather client available. Run the connection cell first.")
+  IO.puts("No client available. Run the connection cell first.")
 end
 ```
 
+## Interactive Calculator
 
-
-## Interactive City Weather Lookup
-
-Let's create an interactive widget to look up weather for different cities:
+Let's create an interactive calculator widget:
 
 ```elixir
-# Create input widgets for city and country
-city_input = Kino.Input.text("City", default: "London")
-country_input = Kino.Input.text("Country", default: "United Kingdom")
-lookup_button = Kino.Control.button("Get Weather")
+# Create input widgets
+a_input = Kino.Input.number("First Number (a)", default: 10)
+b_input = Kino.Input.number("Second Number (b)", default: 5)
+operation_input = Kino.Input.select("Operation", [
+  {"Add", "Add"},
+  {"Subtract", "Subtract"},
+  {"Multiply", "Multiply"},
+  {"Divide", "Divide"}
+])
+calculate_button = Kino.Control.button("Calculate")
 
 # Layout the inputs
 form = Kino.Layout.grid([
-  [city_input, country_input],
-  [lookup_button]
+  [a_input, b_input],
+  [operation_input],
+  [calculate_button]
 ])
 
 form
@@ -173,181 +311,106 @@ form
 
 ```elixir
 # Handle the button click
-weather_client = Process.get(:weather_client)
+client = Process.get(:calculator_client)
 
-Kino.Control.stream(lookup_button)
+Kino.Control.stream(calculate_button)
 |> Kino.listen(fn _event ->
-  if weather_client do
-    city = Kino.Input.read(city_input)
-    country = Kino.Input.read(country_input)
+  if client do
+    a = Kino.Input.read(a_input)
+    b = Kino.Input.read(b_input)
+    operation = Kino.Input.read(operation_input)
 
-    if city != "" and country != "" do
-      IO.puts("🔍 Looking up weather for #{city}, #{country}...")
+    params = case operation do
+      "Divide" -> %{"dividend" => a, "divisor" => b}
+      _ -> %{"a" => a, "b" => b}
+    end
 
-      params = %{
-        "CityName" => city,
-        "CountryName" => country
-      }
+    IO.puts("Calculating: #{operation}(#{a}, #{b})")
 
-      case Lather.DynamicClient.call(weather_client, "GetWeather", params) do
-        {:ok, response} ->
-          case response do
-            %{"GetWeatherResult" => weather_xml} when is_binary(weather_xml) ->
-              if String.contains?(weather_xml, "Data Not Found") do
-                IO.puts("⚠️ No weather data found for #{city}, #{country}")
-              else
-                IO.puts("✅ Weather data found for #{city}, #{country}")
-                IO.puts("📄 Response: #{String.slice(weather_xml, 0, 200)}...")
-              end
-
-            _ ->
-              IO.puts("✅ Received response:")
-              IO.inspect(response, pretty: true)
-          end
-
-        {:error, error} ->
-          IO.puts("❌ Error: #{Lather.Error.format_error(error)}")
-      end
-    else
-      IO.puts("⚠️ Please enter both city and country")
+    case Lather.DynamicClient.call(client, operation, params) do
+      {:ok, response} ->
+        result = response["result"] || response["quotient"]
+        IO.puts("Result: #{result}")
+      {:error, error} ->
+        IO.puts("Error: #{inspect(error)}")
     end
   else
-    IO.puts("⚠️ Weather client not available")
+    IO.puts("Calculator client not available")
   end
 end)
 
 :ok
 ```
 
-
-
 ## Error Handling Examples
 
 Let's explore how Lather handles different types of errors:
 
 ```elixir
-weather_client = Process.get(:weather_client)
+client = Process.get(:calculator_client)
 
-if weather_client do
-  IO.puts("🧪 Testing different error scenarios...\n")
+if client do
+  IO.puts("Testing Error Scenarios\n")
 
-  # Test 1: Invalid operation name
-  IO.puts("1️⃣ Testing invalid operation name:")
-  case Lather.DynamicClient.call(weather_client, "NonExistentOperation", %{}) do
-    {:ok, _response} ->
-      IO.puts("   Unexpected success")
-    {:error, error} ->
-      IO.puts("   ❌ Expected error: #{error.type}")
-      IO.puts("   📝 Message: #{error.message}")
-  end
-
-  # Test 2: Missing required parameters
-  IO.puts("\n2️⃣ Testing missing required parameters:")
-  case Lather.DynamicClient.call(weather_client, "GetWeather", %{}) do
-    {:ok, _response} ->
-      IO.puts("   Unexpected success")
-    {:error, error} ->
-      IO.puts("   ❌ Expected error: #{error.type}")
-      IO.puts("   📝 Details: #{inspect(error.details)}")
-  end
-
-  # Test 3: Invalid parameter types
-  IO.puts("\n3️⃣ Testing with invalid parameter types:")
-  case Lather.DynamicClient.call(weather_client, "GetWeather", %{
-    "CityName" => 12345,  # Should be string
-    "CountryName" => %{}  # Should be string
-  }) do
+  # Test 1: Division by zero (SOAP fault from server)
+  IO.puts("1. Division by zero:")
+  case Lather.DynamicClient.call(client, "Divide", %{"dividend" => 100, "divisor" => 0}) do
     {:ok, response} ->
-      IO.puts("   ✅ Service accepted the parameters: #{inspect(response)}")
+      IO.puts("   Unexpected success: #{inspect(response)}")
     {:error, error} ->
-      IO.puts("   ❌ Error: #{error.type}")
-      IO.puts("   📝 Details: #{inspect(error.details)}")
+      IO.puts("   Expected error: #{error.type}")
+      IO.puts("   Message: #{error.message || inspect(error)}")
   end
 
+  # Test 2: Invalid operation name
+  IO.puts("\n2. Invalid operation name:")
+  case Lather.DynamicClient.call(client, "NonExistentOperation", %{}) do
+    {:ok, _response} ->
+      IO.puts("   Unexpected success")
+    {:error, error} ->
+      IO.puts("   Expected error: #{error.type}")
+      IO.puts("   Message: #{error.message}")
+  end
+
+  # Test 3: Missing required parameters
+  IO.puts("\n3. Missing required parameters:")
+  case Lather.DynamicClient.call(client, "Add", %{}) do
+    {:ok, response} ->
+      IO.puts("   Response: #{inspect(response)}")
+    {:error, error} ->
+      IO.puts("   Error: #{error.type}")
+      IO.puts("   Details: #{inspect(error.details || error.message)}")
+  end
 else
-  IO.puts("⚠️ No weather client available")
+  IO.puts("No client available")
 end
 ```
-
-
-
-## Working with Complex Parameters
-
-Some SOAP services require complex nested parameters. Let's see how to structure them:
-
-```elixir
-# Example of complex parameter structure for an enterprise service
-complex_params = %{
-  "request" => %{
-    "searchCriteria" => %{
-      "filters" => [
-        %{
-          "field" => "department",
-          "operator" => "equals",
-          "value" => "Engineering"
-        },
-        %{
-          "field" => "active",
-          "operator" => "equals",
-          "value" => true
-        }
-      ],
-      "sorting" => [
-        %{
-          "field" => "lastName",
-          "direction" => "asc"
-        }
-      ],
-      "pagination" => %{
-        "pageSize" => 25,
-        "pageNumber" => 1
-      }
-    },
-    "options" => %{
-      "includeMetadata" => true,
-      "format" => "detailed"
-    }
-  }
-}
-
-IO.puts("📋 Example complex parameter structure:")
-IO.inspect(complex_params, pretty: true)
-
-IO.puts("\n💡 This shows how to structure nested parameters for enterprise SOAP services")
-IO.puts("   • Use maps for complex objects")
-IO.puts("   • Use lists for arrays")
-IO.puts("   • String keys match XML element names")
-IO.puts("   • Values are automatically converted to appropriate XML types")
-```
-
-
 
 ## Performance: Concurrent Requests
 
 Let's see how Lather handles multiple concurrent requests:
 
 ```elixir
-weather_client = Process.get(:weather_client)
+client = Process.get(:calculator_client)
 
-if weather_client do
-  # List of cities to query
-  cities = [
-    {"Tokyo", "Japan"},
-    {"London", "United Kingdom"},
-    {"Sydney", "Australia"},
-    {"Toronto", "Canada"},
-    {"Berlin", "Germany"}
+if client do
+  # List of calculations to perform
+  calculations = [
+    {"Add", %{"a" => 10, "b" => 20}},
+    {"Subtract", %{"a" => 100, "b" => 45}},
+    {"Multiply", %{"a" => 7, "b" => 8}},
+    {"Divide", %{"dividend" => 144, "divisor" => 12}},
+    {"Add", %{"a" => 1000, "b" => 2000}}
   ]
 
-  IO.puts("🚀 Making concurrent weather requests for #{length(cities)} cities...")
+  IO.puts("Making #{length(calculations)} concurrent requests...")
   start_time = System.monotonic_time(:millisecond)
 
-  # Create async tasks for each city
-  tasks = Enum.map(cities, fn {city, country} ->
+  # Create async tasks for each calculation
+  tasks = Enum.map(calculations, fn {operation, params} ->
     Task.async(fn ->
-      params = %{"CityName" => city, "CountryName" => country}
-      result = Lather.DynamicClient.call(weather_client, "GetWeather", params)
-      {city, result}
+      result = Lather.DynamicClient.call(client, operation, params)
+      {operation, params, result}
     end)
   end)
 
@@ -355,130 +418,124 @@ if weather_client do
   results = Task.await_many(tasks, 30_000)
   end_time = System.monotonic_time(:millisecond)
 
-  IO.puts("\n📊 Results (completed in #{end_time - start_time}ms):")
+  IO.puts("\nResults (completed in #{end_time - start_time}ms):\n")
 
-  Enum.each(results, fn {city, result} ->
+  Enum.each(results, fn {operation, params, result} ->
     case result do
-      {:ok, _response} ->
-        IO.puts("   ✅ #{city}: Weather data received")
-      {:error, _error} ->
-        IO.puts("   ❌ #{city}: Failed to get weather")
+      {:ok, response} ->
+        value = response["result"] || response["quotient"]
+        IO.puts("   #{operation}: #{inspect(params)} = #{value}")
+      {:error, error} ->
+        IO.puts("   #{operation}: Error - #{inspect(error)}")
     end
   end)
 
-  success_count = Enum.count(results, fn {_city, result} ->
-    match?({:ok, _}, result)
-  end)
-
-  IO.puts("\n📈 Summary: #{success_count}/#{length(cities)} requests successful")
+  success_count = Enum.count(results, fn {_, _, result} -> match?({:ok, _}, result) end)
+  IO.puts("\nSummary: #{success_count}/#{length(calculations)} requests successful")
 else
-  IO.puts("⚠️ No weather client available")
+  IO.puts("No client available")
 end
 ```
-
-
 
 ## Service Information Summary
 
-Let's create a comprehensive summary of the SOAP service we've been working with:
+Let's examine the full service metadata:
 
 ```elixir
-weather_client = Process.get(:weather_client)
+client = Process.get(:calculator_client)
 
-if weather_client do
-  service_info = weather_client.service_info
+if client do
+  service_info = client.service_info
 
-  IO.puts("📋 SOAP Service Summary")
-  IO.puts("=" |> String.duplicate(50))
+  IO.puts("SOAP Service Summary")
+  IO.puts(String.duplicate("=", 50))
 
-  # Service details
+  IO.puts("Service Name: #{service_info.name}")
+  IO.puts("Namespace: #{service_info.namespace}")
+
+  # Service endpoints
   if service_info.services && length(service_info.services) > 0 do
     service = hd(service_info.services)
-    IO.puts("🌐 Service Name: #{service[:name] || "N/A"}")
-    IO.puts("🔗 Endpoint: #{service[:endpoint] || "N/A"}")
+    IO.puts("Endpoint: #{service[:endpoint] || "N/A"}")
   end
 
   # Operations
-  IO.puts("\n🔧 Available Operations (#{length(service_info.operations)}):")
+  IO.puts("\nAvailable Operations (#{length(service_info.operations)}):")
   Enum.each(service_info.operations, fn op ->
-    input_count = length(op.input_parts || [])
-    output_count = length(op.output_parts || [])
-    IO.puts("   • #{op.name} (#{input_count} inputs, #{output_count} outputs)")
+    input_count = length(op.input_parts || op.input || [])
+    output_count = length(op.output_parts || op.output || [])
+    IO.puts("   #{op.name} (#{input_count} inputs, #{output_count} outputs)")
   end)
-
-  # Namespaces
-  if service_info.namespaces && map_size(service_info.namespaces) > 0 do
-    IO.puts("\n📚 Namespaces:")
-    Enum.each(service_info.namespaces, fn {prefix, uri} ->
-      IO.puts("   • #{prefix}: #{uri}")
-    end)
-  end
-
-  # Types
-  if service_info.types && map_size(service_info.types) > 0 do
-    IO.puts("\n🏗️ Complex Types (#{map_size(service_info.types)}):")
-    Enum.each(service_info.types, fn {name, _type} ->
-      IO.puts("   • #{name}")
-    end)
-  end
-
 else
-  IO.puts("⚠️ No service information available")
+  IO.puts("No service information available")
 end
 ```
 
+## Cleanup
 
+Stop the server when done:
+
+```elixir
+case Process.whereis(:calculator_server) do
+  nil ->
+    IO.puts("Server already stopped")
+  pid ->
+    Supervisor.stop(pid)
+    IO.puts("Server stopped")
+end
+```
 
 ## Next Steps
 
-Congratulations! You've learned the basics of using the Lather SOAP library. Here's what you can explore next:
+Congratulations! You've learned the basics of using the Lather SOAP library for both server and client functionality.
 
-1. **Authentication**: Try connecting to services that require authentication
-2. **Complex Data**: Work with enterprise services that have complex data structures
-3. **Error Recovery**: Implement retry logic for production applications
-4. **Type Validation**: Use Lather's type system for safer SOAP interactions
+Here's what you can explore next:
 
-<!-- livebook:{"break_markdown":true} -->
-
-
+1. **Enhanced Server**: Check out `Lather.Server.EnhancedPlug` for web forms and multi-protocol support
+2. **Authentication**: Add WS-Security or Basic Auth to your services
+3. **Complex Types**: Define custom types with `soap_type` for structured data
+4. **MTOM Attachments**: Handle binary data with MTOM support
 
 ## Quick Reference
 
-Here are the key functions you'll use most often:
-
 ```elixir
-# Quick reference card
 reference = """
-🔧 LATHER SOAP LIBRARY - QUICK REFERENCE
+LATHER SOAP LIBRARY - QUICK REFERENCE
 
-📡 Creating Clients:
+SERVER SIDE:
+   defmodule MyService do
+     use Lather.Server
+     @namespace "http://example.com/myservice"
+     @service_name "MyService"
+
+     soap_operation "MyOp" do
+       input do
+         parameter "param1", :string, required: true
+       end
+       output do
+         parameter "result", :string
+       end
+     end
+
+     def my_op(%{"param1" => val}), do: {:ok, %{"result" => val}}
+   end
+
+CLIENT SIDE:
    {:ok, client} = Lather.DynamicClient.new(wsdl_url)
-   {:ok, client} = Lather.DynamicClient.new(wsdl_url, options)
-
-🔍 Discovering Services:
    operations = Lather.DynamicClient.list_operations(client)
    {:ok, info} = Lather.DynamicClient.get_operation_info(client, "OpName")
-
-📞 Making Calls:
    {:ok, response} = Lather.DynamicClient.call(client, "OpName", params)
-   {:ok, response} = Lather.DynamicClient.call(client, "OpName", params, options)
 
-🛡️ Error Handling:
+ERROR HANDLING:
    case result do
      {:ok, response} -> # Success
      {:error, %{type: :soap_fault}} -> # SOAP fault
      {:error, %{type: :http_error}} -> # HTTP error
      {:error, %{type: :transport_error}} -> # Network error
    end
-
-⚙️ Common Options:
-   basic_auth: {"username", "password"}
-   timeout: 30_000
-   ssl_options: [verify: :verify_peer]
-   headers: [{"Custom-Header", "value"}]
 """
 
 IO.puts(reference)
 ```
 
-Happy SOAP-ing with Lather! 🧼✨
+Happy SOAP-ing with Lather!
