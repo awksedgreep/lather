@@ -25,19 +25,14 @@ defmodule Lather.Server.Plug do
   - `:auth_handler` - Custom authentication handler
   - `:validate_params` - Enable parameter validation (default: true)
   - `:generate_wsdl` - Enable WSDL generation endpoint (default: true)
-
-  Note: This module requires the `:plug` dependency to be installed.
-  Add `{:plug, "~> 1.14"}` to your mix.exs dependencies.
   """
 
-  # Only define the Plug behavior if Plug is available
-  if Code.ensure_loaded?(Plug) do
-    import Plug.Conn
-    require Logger
+  import Plug.Conn
+  require Logger
 
-    alias Lather.Server.{RequestParser, ResponseBuilder, WSDLGenerator}
+  alias Lather.Server.{RequestParser, ResponseBuilder, WSDLGenerator}
 
-    @behaviour Plug
+  @behaviour Plug
 
   @impl Plug
   def init(opts) do
@@ -245,22 +240,5 @@ defmodule Lather.Server.Plug do
       </soap:Body>
     </soap:Envelope>
     """
-  end
-
-  else
-    @moduledoc """
-    Plug implementation for SOAP server endpoints.
-
-    This module requires the `:plug` dependency to be installed.
-    Add `{:plug, "~> 1.14"}` to your mix.exs dependencies.
-    """
-
-    def init(_opts) do
-      raise "Plug dependency not available. Add {:plug, \"~> 1.14\"} to your mix.exs dependencies."
-    end
-
-    def call(_conn, _opts) do
-      raise "Plug dependency not available. Add {:plug, \"~> 1.14\"} to your mix.exs dependencies."
-    end
   end
 end

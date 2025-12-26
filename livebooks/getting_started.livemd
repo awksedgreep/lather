@@ -2,8 +2,8 @@
 
 ```elixir
 Mix.install([
-  {:lather, path: ".."}, # For local development
-  # {:lather, "~> 1.0"}, # Use this for hex package
+  # {:lather, path: ".."}, # For local development
+  {:lather, "~> 1.0"}, # Use this for hex package
   {:finch, "~> 0.18"},
   {:kino, "~> 0.12"}
 ])
@@ -14,12 +14,15 @@ Mix.install([
 Welcome to the **Lather SOAP Library** interactive tutorial! Lather is a generic SOAP library for Elixir that can work with any SOAP service without requiring service-specific implementations.
 
 In this Livebook, you'll learn:
-- How to connect to SOAP services using WSDL
-- Making SOAP calls with dynamic parameters
-- Handling responses and errors
-- Working with different authentication methods
+
+* How to connect to SOAP services using WSDL
+* Making SOAP calls with dynamic parameters
+* Handling responses and errors
+* Working with different authentication methods
 
 <!-- livebook:{"break_markdown":true} -->
+
+
 
 ## Setting Up the Environment
 
@@ -39,7 +42,7 @@ children = [
 IO.puts("✅ Lather environment ready!")
 ```
 
-<!-- livebook:{"break_markdown":true} -->
+
 
 ## Basic SOAP Service Connection
 
@@ -70,7 +73,7 @@ case Lather.DynamicClient.new(weather_wsdl, timeout: 30_000) do
 end
 ```
 
-<!-- livebook:{"break_markdown":true} -->
+
 
 ## Exploring Service Operations
 
@@ -108,7 +111,7 @@ else
 end
 ```
 
-<!-- livebook:{"break_markdown":true} -->
+
 
 ## Making Your First SOAP Call
 
@@ -154,7 +157,7 @@ else
 end
 ```
 
-<!-- livebook:{"break_markdown":true} -->
+
 
 ## Interactive City Weather Lookup
 
@@ -223,7 +226,7 @@ end)
 :ok
 ```
 
-<!-- livebook:{"break_markdown":true} -->
+
 
 ## Error Handling Examples
 
@@ -273,7 +276,7 @@ else
 end
 ```
 
-<!-- livebook:{"break_markdown":true} -->
+
 
 ## Working with Complex Parameters
 
@@ -324,7 +327,7 @@ IO.puts("   • String keys match XML element names")
 IO.puts("   • Values are automatically converted to appropriate XML types")
 ```
 
-<!-- livebook:{"break_markdown":true} -->
+
 
 ## Performance: Concurrent Requests
 
@@ -380,7 +383,7 @@ else
 end
 ```
 
-<!-- livebook:{"break_markdown":true} -->
+
 
 ## Service Information Summary
 
@@ -431,7 +434,7 @@ else
 end
 ```
 
-<!-- livebook:{"break_markdown":true} -->
+
 
 ## Next Steps
 
@@ -443,6 +446,8 @@ Congratulations! You've learned the basics of using the Lather SOAP library. Her
 4. **Type Validation**: Use Lather's type system for safer SOAP interactions
 
 <!-- livebook:{"break_markdown":true} -->
+
+
 
 ## Quick Reference
 
@@ -482,7 +487,5 @@ reference = """
 
 IO.puts(reference)
 ```
-
-<!-- livebook:{"break_markdown":true} -->
 
 Happy SOAP-ing with Lather! 🧼✨
