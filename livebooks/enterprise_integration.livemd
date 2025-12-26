@@ -59,6 +59,7 @@ Let's create an interactive panel to configure our enterprise SOAP connection:
 
 ```elixir
 # Enterprise service configuration inputs
+# Fill in these fields, then run the configuration cell below
 wsdl_input = Kino.Input.text("WSDL URL", default: "https://enterprise.example.com/services/UserService?wsdl")
 username_input = Kino.Input.text("Username", default: "demo_user")
 password_input = Kino.Input.password("Password")
@@ -66,13 +67,11 @@ timeout_input = Kino.Input.number("Timeout (ms)", default: 60000)
 ssl_verify_input = Kino.Input.checkbox("Verify SSL", default: true)
 
 # Layout the configuration
-config_form = Kino.Layout.grid([
-  [wsdl_input],
-  [username_input, password_input],
-  [timeout_input, ssl_verify_input]
+Kino.Layout.grid([
+  wsdl_input,
+  username_input, password_input,
+  timeout_input, ssl_verify_input
 ], columns: 2)
-
-config_form
 ```
 
 ```elixir

@@ -250,6 +250,7 @@ Let's create an interactive widget to explore attachment creation:
 
 ```elixir
 # Create input widgets
+# Fill in these fields, then run the attachment creator cell below
 content_input = Kino.Input.textarea("Binary Content (text simulation)", default: "Hello, this is sample content!")
 content_type_select = Kino.Input.select("Content Type", [
   {"application/pdf", "application/pdf"},
@@ -262,52 +263,42 @@ content_type_select = Kino.Input.select("Content Type", [
 ])
 custom_id_input = Kino.Input.text("Custom Content-ID (optional)", default: "")
 
-create_button = Kino.Control.button("Create Attachment")
-
-form = Kino.Layout.grid([
+Kino.Layout.grid([
   content_input,
-  [content_type_select, custom_id_input],
-  create_button
-])
-
-form
+  content_type_select, custom_id_input
+], columns: 2)
 ```
 
 ```elixir
-# Handle button clicks
-Kino.Control.stream(create_button)
-|> Kino.listen(fn _event ->
-  content = Kino.Input.read(content_input)
-  content_type = Kino.Input.read(content_type_select)
-  custom_id = Kino.Input.read(custom_id_input)
+# Create attachment from inputs (re-run this cell after changing values above)
+content = Kino.Input.read(content_input)
+content_type = Kino.Input.read(content_type_select)
+custom_id = Kino.Input.read(custom_id_input)
 
-  options = if custom_id != "" do
-    [content_id: custom_id]
-  else
-    []
-  end
+options = if custom_id != "" do
+  [content_id: custom_id]
+else
+  []
+end
 
-  IO.puts("Creating attachment...")
-  IO.puts(String.duplicate("=", 50))
+IO.puts("Creating attachment...")
+IO.puts(String.duplicate("=", 50))
 
-  attachment = Attachment.new(content, content_type, options)
+attachment = Attachment.new(content, content_type, options)
 
-  IO.puts("Attachment Details:")
-  IO.puts("  ID: #{attachment.id}")
-  IO.puts("  Content-ID: #{attachment.content_id}")
-  IO.puts("  Content-Type: #{attachment.content_type}")
-  IO.puts("  Size: #{attachment.size} bytes")
-  IO.puts("  Encoding: #{attachment.content_transfer_encoding}")
-  IO.puts("")
-  IO.puts("Header Format: #{Attachment.content_id_header(attachment)}")
-  IO.puts("CID Reference: #{Attachment.cid_reference(attachment)}")
-  IO.puts("")
-  IO.puts("XOP Include:")
-  IO.inspect(Attachment.xop_include(attachment), pretty: true)
-  IO.puts(String.duplicate("=", 50))
-end)
-
-:ok
+IO.puts("Attachment Details:")
+IO.puts("  ID: #{attachment.id}")
+IO.puts("  Content-ID: #{attachment.content_id}")
+IO.puts("  Content-Type: #{attachment.content_type}")
+IO.puts("  Size: #{attachment.size} bytes")
+IO.puts("  Encoding: #{attachment.content_transfer_encoding}")
+IO.puts("")
+IO.puts("Header Format: #{Attachment.content_id_header(attachment)}")
+IO.puts("CID Reference: #{Attachment.cid_reference(attachment)}")
+IO.puts("")
+IO.puts("XOP Include:")
+IO.inspect(Attachment.xop_include(attachment), pretty: true)
+IO.puts(String.duplicate("=", 50))
 ```
 
 <!-- livebook:{"break_markdown":true} -->
