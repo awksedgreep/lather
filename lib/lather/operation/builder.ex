@@ -271,26 +271,23 @@ defmodule Lather.Operation.Builder do
       # Traditional document/literal - operation name as wrapper
       operation_name = operation_info.name
 
-      # Build parameter elements
+      # Build parameter elements as a map with param names as keys
       param_elements =
-        Enum.map(input_parts, fn part ->
+        Enum.reduce(input_parts, %{}, fn part, acc ->
           param_name = part.name
           param_value = Map.get(parameters, param_name)
 
-          if param_value do
-            build_parameter_element(param_name, param_value, part.type)
+          if param_value != nil do
+            element = build_parameter_element(param_name, param_value, part.type)
+            Map.put(acc, param_name, element)
           else
-            nil
+            acc
           end
         end)
-        |> Enum.reject(&is_nil/1)
 
-      # Wrap in operation element
+      # Wrap in operation element with namespace and params
       body_content = %{
-        operation_name => %{
-          "@xmlns" => namespace,
-          "#content" => param_elements
-        }
+        operation_name => Map.merge(%{"@xmlns" => namespace}, param_elements)
       }
 
       {:ok, body_content}

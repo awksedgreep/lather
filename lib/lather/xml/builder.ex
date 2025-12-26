@@ -157,21 +157,28 @@ defmodule Lather.Xml.Builder do
 
     content_map = Enum.into(content, %{})
 
-    # Handle special #text content
+    # Handle special #text and #content keys
     final_content =
-      case Map.get(content_map, "#text") do
-        nil when map_size(content_map) == 0 ->
+      cond do
+        # Handle #content - list of child elements to include directly
+        Map.has_key?(content_map, "#content") ->
+          Map.get(content_map, "#content")
+
+        # Handle #text - text content
+        Map.has_key?(content_map, "#text") ->
+          text_content = Map.get(content_map, "#text")
+          if map_size(content_map) == 1 do
+            # Only #text, no other children
+            text_content
+          else
+            # Has both #text and other children, keep the map
+            content_map
+          end
+
+        map_size(content_map) == 0 ->
           nil
 
-        nil ->
-          content_map
-
-        text_content when map_size(content_map) == 1 ->
-          # Only #text, no other children
-          text_content
-
-        _text_content ->
-          # Has both #text and other children, keep the map
+        true ->
           content_map
       end
 

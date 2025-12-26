@@ -117,11 +117,11 @@ defmodule Lather.Server.Plug do
         |> send_resp(500, fault_xml)
 
       {:error, {:parse_error, reason}} ->
-        Logger.warning("SOAP parse error: #{reason}")
+        Logger.warning("SOAP parse error: #{inspect(reason)}")
 
         conn
         |> put_resp_content_type("text/xml")
-        |> send_resp(400, soap_fault_xml("Client", "Invalid SOAP request: #{reason}"))
+        |> send_resp(400, soap_fault_xml("Client", "Invalid SOAP request"))
 
       {:error, reason} ->
         Logger.error("SOAP request failed: #{inspect(reason)}")
