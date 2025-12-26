@@ -294,35 +294,27 @@ Let's create an interactive calculator widget. Run this cell after the server an
 
 ```elixir
 if calculator_client do
-  # Create input widgets
-  a_input = Kino.Input.number("First Number (a)", default: 10)
-  b_input = Kino.Input.number("Second Number (b)", default: 5)
-  operation_input = Kino.Input.select("Operation", [
-    {"Add", "Add"},
-    {"Subtract", "Subtract"},
-    {"Multiply", "Multiply"},
-    {"Divide", "Divide"}
-  ])
-  calculate_button = Kino.Control.button("Calculate")
+  # Create a form with all inputs
+  form = Kino.Control.form(
+    [
+      a: Kino.Input.number("First Number (a)", default: 10),
+      b: Kino.Input.number("Second Number (b)", default: 5),
+      operation: Kino.Input.select("Operation", [
+        {"Add", "Add"},
+        {"Subtract", "Subtract"},
+        {"Multiply", "Multiply"},
+        {"Divide", "Divide"}
+      ])
+    ],
+    submit: "Calculate"
+  )
 
   # Frame to display results
   result_frame = Kino.Frame.new()
 
-  # Layout the inputs and result
-  form = Kino.Layout.grid([
-    Kino.Layout.grid([a_input, b_input], columns: 2),
-    operation_input,
-    calculate_button,
-    result_frame
-  ], boxed: true, gap: 16)
-
-  # Handle the button click (capture calculator_client in closure)
+  # Handle form submission (values come in the event data)
   client = calculator_client
-  Kino.listen(calculate_button, fn _event ->
-    a = Kino.Input.read(a_input)
-    b = Kino.Input.read(b_input)
-    operation = Kino.Input.read(operation_input)
-
+  Kino.listen(form, fn %{data: %{a: a, b: b, operation: operation}} ->
     params = case operation do
       "Divide" -> %{"dividend" => a, "divisor" => b}
       _ -> %{"a" => a, "b" => b}
@@ -339,7 +331,7 @@ if calculator_client do
     end
   end)
 
-  form
+  Kino.Layout.grid([form, result_frame], boxed: true, gap: 16)
 else
   Kino.Markdown.new("⚠️ **Calculator client not available.** Run the connection cell first, then re-run this cell.")
 end
