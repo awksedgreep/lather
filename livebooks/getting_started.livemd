@@ -439,26 +439,37 @@ if calculator_client do
   IO.puts("SOAP Service Summary")
   IO.puts(String.duplicate("=", 50))
 
-  IO.puts("Service Name: #{service_info.name}")
-  IO.puts("Namespace: #{service_info.namespace}")
+  # Extract info from various possible locations in the structure
+  name = service_info[:name] || service_info[:service_name] ||
+         get_in(service_info, [:services, Access.at(0), :name]) || "CalculatorService"
+  namespace = service_info[:namespace] || service_info[:target_namespace] ||
+              get_in(service_info, [:namespaces, "tns"]) || "N/A"
+  endpoint = get_in(service_info, [:services, Access.at(0), :ports, Access.at(0), :address]) ||
+             get_in(service_info, [:services, Access.at(0), :endpoint]) || "N/A"
 
-  # Service endpoints
-  if service_info.services && length(service_info.services) > 0 do
-    service = hd(service_info.services)
-    IO.puts("Endpoint: #{service[:endpoint] || "N/A"}")
-  end
+  IO.puts("Service Name: #{name}")
+  IO.puts("Namespace: #{namespace}")
+  IO.puts("Endpoint: #{endpoint}")
 
-  # Operations with details
-  IO.puts("\nAvailable Operations (#{length(service_info.operations)}):")
-  Enum.each(service_info.operations, fn op ->
-    case Lather.DynamicClient.get_operation_info(calculator_client, op.name) do
+  # Get operations from bindings or list_operations
+  operations = Lather.DynamicClient.list_operations(calculator_client)
+
+  IO.puts("\nAvailable Operations (#{length(operations)}):")
+  Enum.each(operations, fn op ->
+    op_name = if is_map(op), do: op[:name] || op.name, else: op
+    case Lather.DynamicClient.get_operation_info(calculator_client, op_name) do
       {:ok, info} ->
         param_count = length(info.required_parameters) + length(info.optional_parameters)
-        IO.puts("   • #{op.name} (#{param_count} params) - #{info.documentation}")
+        doc = info.documentation || ""
+        IO.puts("   • #{op_name} (#{param_count} params) #{doc}")
       {:error, _} ->
-        IO.puts("   • #{op.name}")
+        IO.puts("   • #{op_name}")
     end
   end)
+
+  # Show raw structure for debugging
+  IO.puts("\n" <> String.duplicate("-", 50))
+  IO.puts("Raw service_info keys: #{inspect(Map.keys(service_info))}")
 else
   IO.puts("⚠️ No service information available. Run the connection cell first.")
 end
