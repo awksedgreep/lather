@@ -29,15 +29,8 @@ In this Livebook, you'll learn:
 First, let's start the necessary applications and configure our HTTP client:
 
 ```elixir
-# Start required applications
+# Start required applications (this also starts Lather.Finch automatically)
 {:ok, _} = Application.ensure_all_started(:lather)
-
-# Configure Finch for HTTP connections
-children = [
-  {Finch, name: Lather.Finch}
-]
-
-{:ok, _supervisor} = Supervisor.start_link(children, strategy: :one_for_one)
 
 IO.puts("✅ Lather environment ready!")
 ```
