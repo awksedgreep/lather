@@ -332,6 +332,7 @@ Let's create an interactive form to build and validate user data:
 
 ```elixir
 # Create input widgets for user data
+# Change values here, then re-run the validation cell below
 first_name_input = Kino.Input.text("First Name", default: "John")
 last_name_input = Kino.Input.text("Last Name", default: "Doe")
 email_input = Kino.Input.text("Email", default: "john.doe@company.com")
@@ -345,68 +346,54 @@ department_select = Kino.Input.select("Department", [
 title_input = Kino.Input.text("Job Title", default: "Software Engineer")
 salary_input = Kino.Input.number("Salary", default: 75000)
 
-# Create form layout
-user_form = Kino.Layout.grid([
-  [first_name_input, last_name_input],
-  [email_input, department_select],
-  [title_input, salary_input]
-], columns: 2)
-
-validate_button = Kino.Control.button("Validate User Data")
-
+# Display form
 Kino.Layout.grid([
-  [user_form],
-  [validate_button]
-])
+  first_name_input, last_name_input,
+  email_input, department_select,
+  title_input, salary_input
+], columns: 2)
 ```
 
 ```elixir
-# Handle validation button clicks
+# Read form values and validate (re-run this cell after changing inputs above)
 types = SampleTypes.enterprise_types()
 
-Kino.Control.stream(validate_button)
-|> Kino.listen(fn _event ->
-  # Build user data from form inputs
-  user_data = %{
-    "id" => "USR#{:rand.uniform(999)}",
-    "personalInfo" => %{
-      "firstName" => Kino.Input.read(first_name_input),
-      "lastName" => Kino.Input.read(last_name_input),
-      "email" => Kino.Input.read(email_input)
-    },
-    "workInfo" => %{
-      "employeeId" => "EMP#{:rand.uniform(999)}",
-      "department" => Kino.Input.read(department_select),
-      "title" => Kino.Input.read(title_input),
-      "startDate" => "2024-01-01",
-      "salary" => Kino.Input.read(salary_input)
-    },
-    "permissions" => ["basic_access"],
-    "metadata" => %{
-      "created" => DateTime.utc_now() |> DateTime.to_iso8601(),
-      "version" => 1
-    }
+# Build user data from form inputs
+user_data = %{
+  "id" => "USR#{:rand.uniform(999)}",
+  "personalInfo" => %{
+    "firstName" => Kino.Input.read(first_name_input),
+    "lastName" => Kino.Input.read(last_name_input),
+    "email" => Kino.Input.read(email_input)
+  },
+  "workInfo" => %{
+    "employeeId" => "EMP#{:rand.uniform(999)}",
+    "department" => Kino.Input.read(department_select),
+    "title" => Kino.Input.read(title_input),
+    "startDate" => "2024-01-01",
+    "salary" => Kino.Input.read(salary_input)
+  },
+  "permissions" => ["basic_access"],
+  "metadata" => %{
+    "created" => DateTime.utc_now() |> DateTime.to_iso8601(),
+    "version" => 1
   }
+}
 
-  IO.puts("🔍 Validating user data...")
-  IO.puts("Data structure:")
-  IO.inspect(user_data, pretty: true)
+IO.puts("🔍 Validating user data...")
+IO.puts("Data structure:")
+IO.inspect(user_data, pretty: true)
 
-  case TypeValidationDemo.validate_user_data(user_data, types) do
-    {:valid, message} ->
-      IO.puts("\n✅ #{message}")
-      IO.puts("🎉 User data is ready for SOAP submission!")
+case TypeValidationDemo.validate_user_data(user_data, types) do
+  {:valid, message} ->
+    IO.puts("\n✅ #{message}")
+    IO.puts("🎉 User data is ready for SOAP submission!")
 
-    {:invalid, error} ->
-      IO.puts("\n❌ Validation failed:")
-      IO.puts("   #{error}")
-      IO.puts("💡 Please correct the errors and try again")
-  end
-
-  IO.puts("\n" <> String.duplicate("=", 60))
-end)
-
-:ok
+  {:invalid, error} ->
+    IO.puts("\n❌ Validation failed:")
+    IO.puts("   #{error}")
+    IO.puts("💡 Please correct the errors and try again")
+end
 ```
 
 <!-- livebook:{"break_markdown":true} -->
