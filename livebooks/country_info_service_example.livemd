@@ -102,7 +102,7 @@ end)
 ## Getting a List of All Countries
 
 ```elixir
-case DynamicClient.call(country_client, "ListOfCountryNamesByName", %{}) do
+case DynamicClient.call(country_client, "ListOfCountryNamesByName", %{"parameters" => %{}}) do
   {:ok, response} ->
     # Strip namespace prefixes for easier access
     clean = ResponseHelper.strip_ns_keys(response)
@@ -131,7 +131,7 @@ end
 ```elixir
 country_code = "NL"  # Change this to look up other countries
 
-case DynamicClient.call(country_client, "FullCountryInfo", %{"sCountryISOCode" => country_code}) do
+case DynamicClient.call(country_client, "FullCountryInfo", %{"parameters" => %{"sCountryISOCode" => country_code}}) do
   {:ok, response} ->
     clean = ResponseHelper.strip_ns_keys(response)
     info = get_in(clean, ["FullCountryInfoResponse", "FullCountryInfoResult"]) || %{}
@@ -154,7 +154,7 @@ end
 ### List All Currencies
 
 ```elixir
-case DynamicClient.call(country_client, "ListOfCurrenciesByName", %{}) do
+case DynamicClient.call(country_client, "ListOfCurrenciesByName", %{"parameters" => %{}}) do
   {:ok, response} ->
     clean = ResponseHelper.strip_ns_keys(response)
     currencies = get_in(clean, ["ListOfCurrenciesByNameResponse", "ListOfCurrenciesByNameResult", "tCurrency"]) || []
@@ -181,7 +181,7 @@ end
 ```elixir
 currency_code = "EUR"  # Change to look up other currencies
 
-case DynamicClient.call(country_client, "CountriesUsingCurrency", %{"sISOCurrencyCode" => currency_code}) do
+case DynamicClient.call(country_client, "CountriesUsingCurrency", %{"parameters" => %{"sISOCurrencyCode" => currency_code}}) do
   {:ok, response} ->
     clean = ResponseHelper.strip_ns_keys(response)
     countries = get_in(clean, ["CountriesUsingCurrencyResponse", "CountriesUsingCurrencyResult", "tCountryCodeAndName"])
@@ -206,7 +206,7 @@ end
 ### List All Continents
 
 ```elixir
-case DynamicClient.call(country_client, "ListOfContinentsByName", %{}) do
+case DynamicClient.call(country_client, "ListOfContinentsByName", %{"parameters" => %{}}) do
   {:ok, response} ->
     clean = ResponseHelper.strip_ns_keys(response)
     continents = get_in(clean, ["ListOfContinentsByNameResponse", "ListOfContinentsByNameResult", "tContinent"]) || []
@@ -227,7 +227,7 @@ end
 ## Language Operations
 
 ```elixir
-case DynamicClient.call(country_client, "ListOfLanguagesByName", %{}) do
+case DynamicClient.call(country_client, "ListOfLanguagesByName", %{"parameters" => %{}}) do
   {:ok, response} ->
     clean = ResponseHelper.strip_ns_keys(response)
     languages = get_in(clean, ["ListOfLanguagesByNameResponse", "ListOfLanguagesByNameResult", "tLanguage"]) || []
@@ -257,7 +257,7 @@ Change the country name below and re-run (Ctrl+Enter):
 country_name = "France"  # Change this and re-run
 
 # First, get the ISO code for the country name
-case DynamicClient.call(country_client, "CountryISOCode", %{"sCountryName" => country_name}) do
+case DynamicClient.call(country_client, "CountryISOCode", %{"parameters" => %{"sCountryName" => country_name}}) do
   {:ok, response} ->
     clean = ResponseHelper.strip_ns_keys(response)
     country_code = get_in(clean, ["CountryISOCodeResponse", "CountryISOCodeResult"])
@@ -266,7 +266,7 @@ case DynamicClient.call(country_client, "CountryISOCode", %{"sCountryName" => co
       IO.puts("Found: #{country_name} -> #{country_code}\n")
 
       # Get full info
-      case DynamicClient.call(country_client, "FullCountryInfo", %{"sCountryISOCode" => country_code}) do
+      case DynamicClient.call(country_client, "FullCountryInfo", %{"parameters" => %{"sCountryISOCode" => country_code}}) do
         {:ok, info_response} ->
           info_clean = ResponseHelper.strip_ns_keys(info_response)
           info = get_in(info_clean, ["FullCountryInfoResponse", "FullCountryInfoResult"]) || %{}
@@ -296,10 +296,10 @@ Let's measure the response times for various operations:
 
 ```elixir
 operations_to_test = [
-  {"ListOfContinentsByName", %{}},
-  {"ListOfCountryNamesByName", %{}},
-  {"CountryISOCode", %{"sCountryName" => "Germany"}},
-  {"CapitalCity", %{"sCountryISOCode" => "DE"}}
+  {"ListOfContinentsByName", %{"parameters" => %{}}},
+  {"ListOfCountryNamesByName", %{"parameters" => %{}}},
+  {"CountryISOCode", %{"parameters" => %{"sCountryName" => "Germany"}}},
+  {"CapitalCity", %{"parameters" => %{"sCountryISOCode" => "DE"}}}
 ]
 
 IO.puts("Performance Test:\n")
