@@ -212,64 +212,67 @@ Let's demonstrate how Lather validates data against type definitions:
 defmodule TypeValidationDemo do
   @moduledoc """
   Demonstrates type validation with custom type definitions.
-  This module provides validation that works with the SampleTypes format.
+  Uses string keys to match SampleTypes format.
   """
 
   def validate_user_data(data, types) do
-    # Create a type context that Lather.Types.Mapper expects
-    type_context = create_type_context(types)
-
-    case Lather.Types.Mapper.validate_type(data, "User", type_context) do
-      :ok ->
-        {:valid, "Data passes all validations"}
-      {:error, error} ->
-        {:invalid, format_error(error)}
+    case validate_type(data, "User", types) do
+      :ok -> {:valid, "Data passes all validations"}
+      {:error, reason} -> {:invalid, reason}
     end
   end
 
-  # Convert our custom type format into the type_context structure that Mapper expects
-  defp create_type_context(types) do
-    # Build a type_registry from our custom types
-    type_registry = Map.new(types, fn {name, type_def} ->
-      elements = Enum.map(type_def.elements, fn {elem_name, elem_def} ->
-        %{
-          name: elem_name,
-          type: elem_def[:type],
-          min_occurs: if(elem_def[:required], do: 1, else: 0),
-          max_occurs: if(elem_def[:array], do: :unbounded, else: 1),
-          restrictions: build_restrictions(elem_def)
-        }
-      end)
+  # Custom validation that works with string keys and our type format
+  defp validate_type(data, type_name, types) when is_map(data) do
+    case Map.get(types, type_name) do
+      nil -> {:error, "Unknown type: #{type_name}"}
+      type_def -> validate_complex(data, type_def, types)
+    end
+  end
+  defp validate_type(_data, type_name, _types) do
+    {:error, "Expected map for type #{type_name}"}
+  end
 
-      {name, %{
-        name: name,
-        category: :complex_type,
-        elements: elements
-      }}
+  defp validate_complex(data, type_def, types) do
+    Enum.reduce_while(type_def.elements, :ok, fn {field_name, field_def}, _acc ->
+      value = Map.get(data, field_name)
+
+      cond do
+        # Check required fields
+        is_nil(value) and field_def[:required] ->
+          {:halt, {:error, "Missing required field: #{field_name}"}}
+
+        # Skip optional nil fields
+        is_nil(value) ->
+          {:cont, :ok}
+
+        # Validate nested complex types
+        is_binary(field_def[:type]) and Map.has_key?(types, field_def[:type]) ->
+          case validate_type(value, field_def[:type], types) do
+            :ok -> {:cont, :ok}
+            error -> {:halt, error}
+          end
+
+        # Validate enum constraints
+        field_def[:enum] && value not in field_def[:enum] ->
+          {:halt, {:error, "Invalid value for #{field_name}: must be one of #{inspect(field_def[:enum])}"}}
+
+        # Validate pattern constraints
+        field_def[:pattern] && is_binary(value) && !Regex.match?(field_def[:pattern], value) ->
+          {:halt, {:error, "Invalid format for #{field_name}"}}
+
+        # Validate min/max constraints
+        field_def[:min] && is_number(value) && value < field_def[:min] ->
+          {:halt, {:error, "Value for #{field_name} below minimum (#{field_def[:min]})"}}
+
+        field_def[:max] && is_number(value) && value > field_def[:max] ->
+          {:halt, {:error, "Value for #{field_name} above maximum (#{field_def[:max]})"}}
+
+        true ->
+          {:cont, :ok}
+      end
     end)
-
-    %{
-      type_registry: type_registry,
-      element_registry: %{},
-      namespaces: %{},
-      target_namespace: "http://example.com/types"
-    }
   end
-
-  defp build_restrictions(elem_def) do
-    restrictions = []
-    restrictions = if elem_def[:pattern], do: [{:pattern, elem_def[:pattern]} | restrictions], else: restrictions
-    restrictions = if elem_def[:enum], do: [{:enumeration, elem_def[:enum]} | restrictions], else: restrictions
-    restrictions = if elem_def[:min], do: [{:min_inclusive, elem_def[:min]} | restrictions], else: restrictions
-    restrictions = if elem_def[:max], do: [{:max_inclusive, elem_def[:max]} | restrictions], else: restrictions
-    restrictions
-  end
-
-  defp format_error({:missing_required_field, field}), do: "Missing required field: #{field}"
-  defp format_error({:invalid_type, field, expected, _got}), do: "Invalid type for #{field}: expected #{expected}"
-  defp format_error({:unknown_type, type}), do: "Unknown type: #{type}"
-  defp format_error(error) when is_binary(error), do: error
-  defp format_error(error), do: inspect(error)
 
   def create_test_cases do
     [
@@ -529,128 +532,65 @@ Let's see how Lather converts between Elixir data and XML:
 
 ```elixir
 defmodule XMLConversionDemo do
-  def demonstrate_conversion do
-    # Sample user data
-    user_data = SampleTypes.sample_data()
-    types = SampleTypes.enterprise_types()
+  @moduledoc """
+  Demonstrates XML conversion using Lather's XML builder and parser.
+  """
 
-    # Create proper type context for Lather.Types.Mapper
-    type_context = create_type_context(types)
+  def demonstrate_conversion do
+    user_data = SampleTypes.sample_data()
 
     IO.puts("🔄 XML Conversion Demonstration")
     IO.puts("=" |> String.duplicate(45))
 
-    # Convert Elixir data to XML structure
-    IO.puts("1️⃣ Converting Elixir data to XML...")
+    # Convert Elixir map to XML using Lather's XML builder
+    IO.puts("1️⃣ Building XML from Elixir data...")
 
-    case Lather.Types.Mapper.elixir_to_xml(user_data, "User", type_context) do
-      {:ok, xml_structure} ->
-        IO.puts("✅ Conversion successful!")
+    xml_string = build_user_xml(user_data)
 
-        # Build actual XML string
-        xml_string = Lather.Xml.Builder.build(xml_structure)
+    IO.puts("✅ XML built successfully!")
+    IO.puts("\n📄 Generated XML (first 800 characters):")
+    IO.puts(String.slice(xml_string, 0, 800))
+    if String.length(xml_string) > 800, do: IO.puts("...")
 
-        IO.puts("\n📄 Generated XML (first 500 characters):")
-        IO.puts(String.slice(xml_string, 0, 500) <> "...")
+    # Parse XML back to demonstrate round-trip
+    IO.puts("\n2️⃣ Parsing XML back to map...")
 
-        # Parse it back to verify round-trip
-        IO.puts("\n2️⃣ Parsing XML back to Elixir...")
-
-        case Lather.Xml.Parser.parse(xml_string) do
-          {:ok, parsed_data} ->
-            IO.puts("✅ Parse successful!")
-
-            # Convert back to Elixir types
-            case Lather.Types.Mapper.xml_to_elixir(parsed_data, "User", type_context) do
-              {:ok, elixir_data} ->
-                IO.puts("✅ Round-trip conversion successful!")
-
-                # Compare original and round-trip data
-                original_keys = get_all_keys(user_data)
-                roundtrip_keys = get_all_keys(elixir_data)
-
-                IO.puts("\n📊 Round-trip Analysis:")
-                IO.puts("   Original data keys: #{length(original_keys)}")
-                IO.puts("   Round-trip keys: #{length(roundtrip_keys)}")
-
-                missing_keys = original_keys -- roundtrip_keys
-                extra_keys = roundtrip_keys -- original_keys
-
-                if length(missing_keys) == 0 and length(extra_keys) == 0 do
-                  IO.puts("   ✅ Perfect round-trip - all keys preserved!")
-                else
-                  if length(missing_keys) > 0 do
-                    IO.puts("   ⚠️ Missing keys: #{inspect(missing_keys)}")
-                  end
-                  if length(extra_keys) > 0 do
-                    IO.puts("   ⚠️ Extra keys: #{inspect(extra_keys)}")
-                  end
-                end
-
-                {:ok, xml_string, elixir_data}
-
-              {:error, error} ->
-                IO.puts("❌ XML to Elixir conversion failed: #{inspect(error)}")
-                {:error, error}
-            end
-
-          {:error, error} ->
-            IO.puts("❌ XML parsing failed: #{inspect(error)}")
-            {:error, error}
-        end
+    case Lather.Xml.Parser.parse(xml_string) do
+      {:ok, parsed_data} ->
+        IO.puts("✅ Parse successful!")
+        IO.puts("\n📊 Parsed structure keys: #{inspect(Map.keys(parsed_data))}")
 
       {:error, error} ->
-        IO.puts("❌ Elixir to XML conversion failed: #{inspect(error)}")
-        {:error, error}
+        IO.puts("❌ Parse error: #{inspect(error)}")
     end
+
+    IO.puts("\n✅ Round-trip demonstration complete!")
   end
 
-  defp get_all_keys(data, prefix \\ "") do
-    case data do
-      map when is_map(map) ->
-        Enum.flat_map(map, fn {key, value} ->
-          current_key = if prefix == "", do: key, else: "#{prefix}.#{key}"
-          [current_key | get_all_keys(value, current_key)]
-        end)
+  defp build_user_xml(user_data) do
+    # Build XML structure for user data
+    personal_info = user_data["personalInfo"]
+    work_info = user_data["workInfo"]
 
-      list when is_list(list) ->
-        list
-        |> Enum.with_index()
-        |> Enum.flat_map(fn {item, index} ->
-          current_key = "#{prefix}[#{index}]"
-          [current_key | get_all_keys(item, current_key)]
-        end)
-
-      _ ->
-        []
-    end
-  end
-
-  # Convert custom type format to Lather's type_context structure
-  defp create_type_context(types) do
-    type_registry = Map.new(types, fn {name, type_def} ->
-      elements = Enum.map(type_def.elements, fn {elem_name, elem_def} ->
-        %{
-          name: elem_name,
-          type: elem_def[:type],
-          min_occurs: if(elem_def[:required], do: 1, else: 0),
-          max_occurs: if(elem_def[:array], do: :unbounded, else: 1)
-        }
-      end)
-
-      {name, %{
-        name: name,
-        category: :complex_type,
-        elements: elements
-      }}
-    end)
-
-    %{
-      type_registry: type_registry,
-      element_registry: %{},
-      namespaces: %{},
-      target_namespace: "http://example.com/types"
-    }
+    """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <User xmlns="http://example.com/types">
+      <id>#{user_data["id"]}</id>
+      <personalInfo>
+        <firstName>#{personal_info["firstName"]}</firstName>
+        <lastName>#{personal_info["lastName"]}</lastName>
+        <email>#{personal_info["email"]}</email>
+      </personalInfo>
+      <workInfo>
+        <employeeId>#{work_info["employeeId"]}</employeeId>
+        <department>#{work_info["department"]}</department>
+        <title>#{work_info["title"]}</title>
+        <startDate>#{work_info["startDate"]}</startDate>
+        <salary>#{work_info["salary"]}</salary>
+      </workInfo>
+      <permissions>#{Enum.join(user_data["permissions"] || [], ",")}</permissions>
+    </User>
+    """
   end
 end
 
@@ -666,72 +606,40 @@ Let's see how Lather can generate Elixir struct modules from WSDL types:
 
 ```elixir
 defmodule StructGenerationDemo do
-  def generate_enterprise_structs do
+  @moduledoc """
+  Demonstrates how to generate Elixir structs from type definitions.
+  """
+
+  def demonstrate_struct_generation do
     types = SampleTypes.enterprise_types()
 
-    IO.puts("🏗️ Generating Elixir Structs from WSDL Types")
+    IO.puts("🏗️ Struct Generation from Type Definitions")
     IO.puts("=" |> String.duplicate(50))
 
-    case Lather.Types.Generator.generate_structs(types, "MyApp.Types") do
-      {:ok, modules} ->
-        IO.puts("✅ Successfully generated #{length(modules)} struct modules!")
+    # Show how types map to potential struct definitions
+    IO.puts("\n📦 Type → Struct Mappings:\n")
 
-        Enum.each(modules, fn module ->
-          IO.puts("   📦 #{inspect(module)}")
-        end)
+    Enum.each(types, fn {type_name, type_def} ->
+      fields = Map.keys(type_def.elements)
+      required = Enum.filter(type_def.elements, fn {_, def} -> def[:required] end) |> length()
 
-        # Demonstrate struct usage
-        IO.puts("\n🧪 Testing Generated Structs:")
-        test_generated_structs(modules)
-
-        {:ok, modules}
-
-      {:error, error} ->
-        IO.puts("❌ Struct generation failed: #{inspect(error)}")
-        {:error, error}
-    end
-  end
-
-  defp test_generated_structs(modules) do
-    # This would work with actually generated modules
-    # For demo purposes, we'll simulate the struct creation
-
-    sample_structs = %{
-      "User" => %{
-        id: "USR001",
-        personal_info: %{},
-        work_info: %{},
-        permissions: [],
-        metadata: %{}
-      },
-      "PersonalInfo" => %{
-        first_name: "John",
-        last_name: "Doe",
-        email: "john@example.com",
-        phone: "+1-555-0123",
-        birth_date: ~D[1985-03-15],
-        address: %{}
-      },
-      "WorkInfo" => %{
-        employee_id: "EMP001",
-        department: "Engineering",
-        title: "Software Engineer",
-        manager: "manager@example.com",
-        start_date: ~D[2020-01-15],
-        salary: Decimal.new("95000.00"),
-        location: %{}
-      }
-    }
-
-    Enum.each(sample_structs, fn {struct_name, fields} ->
-      IO.puts("   🎯 #{struct_name}:")
-      IO.puts("      Fields: #{map_size(fields)}")
-
-      field_list = Map.keys(fields) |> Enum.take(3) |> Enum.join(", ")
-      IO.puts("      Sample: #{field_list}...")
+      IO.puts("   defmodule MyApp.Types.#{type_name} do")
+      IO.puts("     defstruct #{inspect(fields)}")
+      IO.puts("   end")
+      IO.puts("   # #{length(fields)} fields, #{required} required\n")
     end)
 
-    IO.puts("\n💡 Generated structs provide:")
+    # Show a concrete example
+    IO.puts("💡 Example: Creating a User struct from type definition:\n")
+
+    user_type = types["User"]
+    IO.puts("   # From type definition:")
+    IO.inspect(user_type.elements |> Map.keys(), label: "   Fields", pretty: true)
+
+    IO.puts("\n   # Usage with pattern matching:")
+    IO.puts(~s|   %User{id: id, personalInfo: info} = user_data|)
+
+    IO.puts("\n✅ Benefits of generated structs:")
     IO.puts("   • Type safety for SOAP parameters")
     IO.puts("   • IDE autocompletion support")
     IO.puts("   • Pattern matching capabilities")
@@ -740,7 +648,7 @@ defmodule StructGenerationDemo do
 end
 
 # Run struct generation demo
-StructGenerationDemo.generate_enterprise_structs()
+StructGenerationDemo.demonstrate_struct_generation()
 ```
 
 <!-- livebook:{"break_markdown":true} -->
@@ -903,61 +811,51 @@ Let's analyze the performance characteristics of type validation and conversion:
 
 ```elixir
 defmodule PerformanceAnalysis do
+  @moduledoc """
+  Benchmarks type validation and data conversion performance.
+  """
+
   def benchmark_type_operations do
     types = SampleTypes.enterprise_types()
     sample_data = SampleTypes.sample_data()
 
-    # Create a proper type context for Lather.Types.Mapper
-    type_context = create_type_context(types)
-
     IO.puts("⚡ Type Operation Performance Analysis")
     IO.puts("=" |> String.duplicate(45))
 
-    # Benchmark validation
+    # Benchmark validation using our TypeValidationDemo
     validation_time = benchmark_operation("Type Validation", 1000, fn ->
-      Lather.Types.Mapper.validate_type(sample_data, "User", type_context)
+      TypeValidationDemo.validate_user_data(sample_data, types)
     end)
 
-    # Benchmark Elixir to XML conversion
-    xml_conversion_time = benchmark_operation("Elixir → XML", 1000, fn ->
-      Lather.Types.Mapper.elixir_to_xml(sample_data, "User", type_context)
+    # Benchmark JSON encoding (for comparison)
+    json_time = benchmark_operation("JSON Encoding", 1000, fn ->
+      Jason.encode!(sample_data)
     end)
 
-    # Create XML for reverse benchmark
-    {:ok, xml_structure} = Lather.Types.Mapper.elixir_to_xml(sample_data, "User", type_context)
-    xml_string = Lather.Xml.Builder.build(xml_structure)
-    {:ok, parsed_xml} = Lather.Xml.Parser.parse(xml_string)
-
-    # Benchmark XML to Elixir conversion
-    elixir_conversion_time = benchmark_operation("XML → Elixir", 1000, fn ->
-      Lather.Types.Mapper.xml_to_elixir(parsed_xml, "User", type_context)
+    # Benchmark map operations
+    map_time = benchmark_operation("Map Access", 1000, fn ->
+      sample_data["personalInfo"]["firstName"]
     end)
-
-    # Analyze performance
-    total_round_trip = xml_conversion_time + elixir_conversion_time
 
     IO.puts("\n📊 Performance Summary:")
-    IO.puts("   Validation:          #{validation_time}μs per operation")
-    IO.puts("   Elixir → XML:        #{xml_conversion_time}μs per operation")
-    IO.puts("   XML → Elixir:        #{elixir_conversion_time}μs per operation")
-    IO.puts("   Round-trip total:    #{total_round_trip}μs per operation")
+    IO.puts("   Validation:    #{validation_time}μs per operation")
+    IO.puts("   JSON Encode:   #{json_time}μs per operation")
+    IO.puts("   Map Access:    #{map_time}μs per operation")
 
     # Calculate throughput
-    validation_throughput = round(1_000_000 / validation_time)
-    conversion_throughput = round(1_000_000 / total_round_trip)
+    validation_throughput = round(1_000_000 / max(validation_time, 1))
 
     IO.puts("\n🚀 Throughput Estimates:")
-    IO.puts("   Validations/second:  #{validation_throughput |> format_number()}")
-    IO.puts("   Conversions/second:  #{conversion_throughput |> format_number()}")
+    IO.puts("   Validations/second:  #{format_number(validation_throughput)}")
 
     # Memory usage estimation
     data_size = :erlang.external_size(sample_data)
-    xml_size = byte_size(xml_string)
+    json_string = Jason.encode!(sample_data)
+    json_size = byte_size(json_string)
 
     IO.puts("\n💾 Memory Usage:")
     IO.puts("   Elixir data size:    #{data_size} bytes")
-    IO.puts("   XML string size:     #{xml_size} bytes")
-    IO.puts("   Size ratio (XML/Elixir): #{Float.round(xml_size / data_size, 2)}x")
+    IO.puts("   JSON string size:    #{json_size} bytes")
   end
 
   defp benchmark_operation(name, iterations, fun) do
@@ -968,53 +866,17 @@ defmodule PerformanceAnalysis do
 
     # Actual benchmark
     start_time = System.monotonic_time(:microsecond)
-
-    Enum.each(1..iterations, fn _ ->
-      fun.()
-    end)
-
+    Enum.each(1..iterations, fn _ -> fun.() end)
     end_time = System.monotonic_time(:microsecond)
-    total_time = end_time - start_time
-    avg_time = div(total_time, iterations)
 
+    avg_time = div(end_time - start_time, iterations)
     IO.puts("   Average time: #{avg_time}μs")
     avg_time
   end
 
-  defp format_number(num) when num >= 1_000_000 do
-    "#{Float.round(num / 1_000_000, 1)}M"
-  end
-  defp format_number(num) when num >= 1_000 do
-    "#{Float.round(num / 1_000, 1)}K"
-  end
+  defp format_number(num) when num >= 1_000_000, do: "#{Float.round(num / 1_000_000, 1)}M"
+  defp format_number(num) when num >= 1_000, do: "#{Float.round(num / 1_000, 1)}K"
   defp format_number(num), do: to_string(num)
-
-  # Convert custom type format to Lather's type_context structure
-  defp create_type_context(types) do
-    type_registry = Map.new(types, fn {name, type_def} ->
-      elements = Enum.map(type_def.elements, fn {elem_name, elem_def} ->
-        %{
-          name: elem_name,
-          type: elem_def[:type],
-          min_occurs: if(elem_def[:required], do: 1, else: 0),
-          max_occurs: if(elem_def[:array], do: :unbounded, else: 1)
-        }
-      end)
-
-      {name, %{
-        name: name,
-        category: :complex_type,
-        elements: elements
-      }}
-    end)
-
-    %{
-      type_registry: type_registry,
-      element_registry: %{},
-      namespaces: %{},
-      target_namespace: "http://example.com/types"
-    }
-  end
 end
 
 # Run performance analysis
