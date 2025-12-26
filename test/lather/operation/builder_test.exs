@@ -120,6 +120,51 @@ defmodule Lather.Operation.BuilderTest do
     end
   end
 
+  describe "parse_response/3 - response parsing" do
+    test "parses response when output.message has namespace prefix" do
+      # WSDL analyzer produces output.message like "tns:AddResponse"
+      # but the actual XML response has just "AddResponse"
+      operation_info = %{
+        name: "Add",
+        output: %{
+          message: "tns:AddResponse",
+          parts: [%{name: "result", type: "xsd:decimal"}]
+        }
+      }
+
+      response_body = %{
+        "soap:Envelope" => %{
+          "@xmlns:soap" => "http://schemas.xmlsoap.org/soap/envelope/",
+          "soap:Body" => %{"AddResponse" => %{"result" => "15.0"}}
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_body, style: :document)
+
+      # Should extract the inner response, not return the wrapped version
+      assert result == %{"result" => "15.0"}
+    end
+
+    test "parses response when output.message has no namespace prefix" do
+      operation_info = %{
+        name: "Subtract",
+        output: %{
+          message: "SubtractResponse",
+          parts: [%{name: "result", type: "xsd:decimal"}]
+        }
+      }
+
+      response_body = %{
+        "soap:Envelope" => %{
+          "soap:Body" => %{"SubtractResponse" => %{"result" => "37.5"}}
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_body, style: :document)
+      assert result == %{"result" => "37.5"}
+    end
+  end
+
   describe "build_request/3 - round-trip compatibility" do
     test "client request can be parsed by server" do
       # Simulates what happens in the livebook: client builds request, server parses it

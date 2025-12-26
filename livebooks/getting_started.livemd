@@ -234,43 +234,6 @@ else
 end
 ```
 
-## Debug: Raw HTTP Response
-
-Let's verify the server is responding correctly by making a direct HTTP request:
-
-```elixir
-# Build a simple SOAP request manually to test raw communication
-soap_request = """
-<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <Add xmlns="http://example.com/calculator">
-      <a>10</a>
-      <b>5</b>
-    </Add>
-  </soap:Body>
-</soap:Envelope>
-"""
-
-{:ok, response} = Finch.build(:post, "http://localhost:4040/calculator",
-  [{"Content-Type", "text/xml; charset=utf-8"}, {"SOAPAction", "Add"}],
-  soap_request)
-|> Finch.request(Lather.Finch)
-
-IO.puts("Raw HTTP Response Status: #{response.status}")
-IO.puts("\nRaw Response Body:")
-IO.puts(response.body)
-
-# Parse the response XML to see its structure
-case Lather.Xml.Parser.parse(response.body) do
-  {:ok, parsed} ->
-    IO.puts("\nParsed XML structure:")
-    IO.inspect(parsed, pretty: true, limit: :infinity)
-  {:error, err} ->
-    IO.puts("\nParse error: #{inspect(err)}")
-end
-```
-
 ## Making Your First SOAP Call
 
 Now let's make actual SOAP calls to our calculator service:
@@ -283,16 +246,11 @@ if client do
 
   # Test Add
   IO.puts("1. Add: 10 + 5")
-  result = Lather.DynamicClient.call(client, "Add", %{"a" => 10, "b" => 5})
-  IO.inspect(result, label: "   Raw DynamicClient.call result")
-
-  case result do
+  case Lather.DynamicClient.call(client, "Add", %{"a" => 10, "b" => 5}) do
     {:ok, response} ->
-      IO.inspect(response, label: "   Parsed response map")
-      IO.inspect(Map.keys(response), label: "   Response keys")
       IO.puts("   Result: #{response["result"]}")
     {:error, error} ->
-      IO.inspect(error, label: "   Error details")
+      IO.puts("   Error: #{inspect(error)}")
   end
 
   # Test Subtract

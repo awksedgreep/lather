@@ -642,12 +642,20 @@ defmodule Lather.Operation.Builder do
     # Try to determine response element name from operation info
     output_message = operation_info.output.message
 
-    cond do
-      String.ends_with?(output_message, "Response") ->
-        output_message
+    # Strip namespace prefix if present (e.g., "tns:AddResponse" -> "AddResponse")
+    base_name =
+      case String.split(output_message, ":") do
+        [_ns_prefix, name] -> name
+        [name] -> name
+        _ -> output_message
+      end
 
-      String.ends_with?(output_message, "Output") ->
-        output_message
+    cond do
+      String.ends_with?(base_name, "Response") ->
+        base_name
+
+      String.ends_with?(base_name, "Output") ->
+        base_name
 
       true ->
         operation_info.name <> "Response"
