@@ -62,6 +62,7 @@ Let's create an interactive panel to gather information about SOAP service issue
 
 ```elixir
 # Create debug information inputs
+# Fill in these fields, then run the analysis cell below
 service_url_input = Kino.Input.text("Service URL", default: "http://www.webservicex.net/globalweather.asmx?WSDL")
 operation_input = Kino.Input.text("Operation Name", default: "GetWeather")
 error_message_input = Kino.Input.textarea("Error Message/Details")
@@ -75,19 +76,12 @@ issue_type_select = Kino.Input.select("Issue Type", [
   {"Other", "other"}
 ])
 
-# Layout the debug form
-debug_form = Kino.Layout.grid([
-  [service_url_input],
-  [operation_input, issue_type_select],
-  [error_message_input]
-], columns: 2)
-
-debug_button = Kino.Control.button("Analyze Issue")
-
+# Layout all inputs in a grid
 Kino.Layout.grid([
-  [debug_form],
-  [debug_button]
-])
+  service_url_input,
+  operation_input, issue_type_select,
+  error_message_input
+], columns: 2)
 ```
 
 ```elixir
