@@ -31,7 +31,7 @@ defmodule Lather.Server.FormGenerator do
             <div class="header">
                 <h1>#{service_name}</h1>
                 <p class="service-description">Powered by Lather SOAP Library</p>
-                <p><a href="?wsdl">Click here for a complete list of operations.</a></p>
+                <p><a href="?">Click here for a complete list of operations.</a></p>
             </div>
 
             <div class="operation-section">
