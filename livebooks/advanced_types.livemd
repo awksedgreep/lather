@@ -27,9 +27,10 @@ This Livebook explores Lather's advanced type mapping and validation capabilitie
 # Start applications
 {:ok, _} = Application.ensure_all_started(:lather)
 
-# Configure Finch
-children = [{Finch, name: Lather.Finch}]
-{:ok, _supervisor} = Supervisor.start_link(children, strategy: :one_for_one)
+# Start Finch if not already running (safe to re-run this cell)
+if Process.whereis(Lather.Finch) == nil do
+  {:ok, _} = Supervisor.start_link([{Finch, name: Lather.Finch}], strategy: :one_for_one)
+end
 
 IO.puts("🔧 Type mapping environment ready!")
 ```

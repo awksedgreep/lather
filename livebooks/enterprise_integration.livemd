@@ -27,24 +27,26 @@ This Livebook demonstrates how to integrate with enterprise SOAP services using 
 # Start applications
 {:ok, _} = Application.ensure_all_started(:lather)
 
-# Configure Finch with enterprise-grade connection pooling
-children = [
-  {Finch,
-   name: Lather.Finch,
-   pools: %{
-     # High-traffic enterprise endpoints
-     "https://enterprise.example.com" => [
-       size: 25,
-       count: 4,
-       protocols: [:http2, :http1]
-     ],
-     # Default pool for other endpoints
-     :default => [size: 10, count: 2]
-   }
-  }
-]
+# Start Finch if not already running (safe to re-run this cell)
+if Process.whereis(Lather.Finch) == nil do
+  children = [
+    {Finch,
+     name: Lather.Finch,
+     pools: %{
+       # High-traffic enterprise endpoints
+       "https://enterprise.example.com" => [
+         size: 25,
+         count: 4,
+         protocols: [:http2, :http1]
+       ],
+       # Default pool for other endpoints
+       :default => [size: 10, count: 2]
+     }
+    }
+  ]
 
-{:ok, _supervisor} = Supervisor.start_link(children, strategy: :one_for_one)
+  {:ok, _} = Supervisor.start_link(children, strategy: :one_for_one)
+end
 
 IO.puts("🏢 Enterprise Lather environment ready!")
 ```
