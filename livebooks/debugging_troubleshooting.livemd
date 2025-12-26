@@ -85,16 +85,53 @@ Kino.Layout.grid([
 ```
 
 ```elixir
-# Debug information collector
-debug_info = %{
-  service_url: Kino.Input.read(service_url_input),
-  operation: Kino.Input.read(operation_input),
-  error_message: Kino.Input.read(error_message_input),
-  issue_type: Kino.Input.read(issue_type_select)
-}
+# Debug information collector - reads inputs and runs basic connectivity test
+service_url = Kino.Input.read(service_url_input)
+operation = Kino.Input.read(operation_input)
 
-IO.puts("🔍 Debug Information Collected:")
-IO.inspect(debug_info, pretty: true)
+IO.puts("🔍 Testing SOAP Service Connection")
+IO.puts("=" |> String.duplicate(50))
+IO.puts("URL: #{service_url}")
+IO.puts("Operation: #{operation}")
+IO.puts("")
+
+# Ensure Finch is started
+if Process.whereis(Lather.Finch) == nil do
+  {:ok, _} = Supervisor.start_link([{Finch, name: Lather.Finch}], strategy: :one_for_one)
+end
+
+# Test actual connectivity
+case Finch.build(:get, service_url) |> Finch.request(Lather.Finch, receive_timeout: 10_000) do
+  {:ok, %{status: status, body: body}} when status in 200..299 ->
+    if String.contains?(body, "definitions") or String.contains?(body, "wsdl") do
+      IO.puts("✅ WSDL retrieved successfully (#{status})")
+      IO.puts("   Response size: #{byte_size(body)} bytes")
+
+      # Try to extract service name
+      case Regex.run(~r/<wsdl:service[^>]*name="([^"]+)"/, body) ||
+           Regex.run(~r/<service[^>]*name="([^"]+)"/, body) do
+        [_, name] -> IO.puts("   Service name: #{name}")
+        _ -> :ok
+      end
+
+      # Count operations
+      op_count = length(Regex.scan(~r/<wsdl:operation|<operation/, body))
+      IO.puts("   Operations found: ~#{op_count}")
+    else
+      IO.puts("⚠️ Got response (#{status}) but doesn't appear to be WSDL")
+      IO.puts("   First 200 chars: #{String.slice(body, 0, 200)}...")
+    end
+
+  {:ok, %{status: status, body: body}} ->
+    IO.puts("❌ HTTP Error #{status}")
+    IO.puts("   Response: #{String.slice(body, 0, 300)}...")
+
+  {:error, %{reason: reason}} ->
+    IO.puts("❌ Connection failed: #{inspect(reason)}")
+
+  {:error, error} ->
+    IO.puts("❌ Error: #{inspect(error)}")
+end
 ```
 
 <!-- livebook:{"break_markdown":true} -->
