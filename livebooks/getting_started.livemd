@@ -290,50 +290,35 @@ end
 
 ## Interactive Calculator
 
-Let's create an interactive calculator widget. Run this cell after the server and client are connected:
+Try different calculations by changing the values below and re-running the cell (Ctrl+Enter):
+
+<!-- livebook:{"reevaluate_automatically":true} -->
 
 ```elixir
+# Change these values and re-run (Ctrl+Enter)
+a = 10
+b = 5
+operation = "Add"  # Options: "Add", "Subtract", "Multiply", "Divide"
+
 if calculator_client do
-  # Create a form with all inputs
-  form = Kino.Control.form(
-    [
-      a: Kino.Input.number("First Number (a)", default: 10),
-      b: Kino.Input.number("Second Number (b)", default: 5),
-      operation: Kino.Input.select("Operation", [
-        {"Add", "Add"},
-        {"Subtract", "Subtract"},
-        {"Multiply", "Multiply"},
-        {"Divide", "Divide"}
-      ])
-    ],
-    submit: "Calculate"
-  )
+  params = case operation do
+    "Divide" -> %{"dividend" => a, "divisor" => b}
+    _ -> %{"a" => a, "b" => b}
+  end
 
-  # Frame to display results
-  result_frame = Kino.Frame.new()
+  case Lather.DynamicClient.call(calculator_client, operation, params) do
+    {:ok, response} ->
+      result = response["result"] || response["quotient"]
+      Kino.Markdown.new("""
+      ## 🧮 #{operation}(#{a}, #{b})
 
-  # Handle form submission (values come in the event data)
-  client = calculator_client
-  Kino.listen(form, fn %{data: %{a: a, b: b, operation: operation}} ->
-    params = case operation do
-      "Divide" -> %{"dividend" => a, "divisor" => b}
-      _ -> %{"a" => a, "b" => b}
-    end
-
-    Kino.Frame.render(result_frame, Kino.Markdown.new("**Calculating:** #{operation}(#{a}, #{b})..."))
-
-    case Lather.DynamicClient.call(client, operation, params) do
-      {:ok, response} ->
-        result = response["result"] || response["quotient"]
-        Kino.Frame.render(result_frame, Kino.Markdown.new("✅ **Result:** #{result}"))
-      {:error, error} ->
-        Kino.Frame.render(result_frame, Kino.Markdown.new("❌ **Error:** #{inspect(error)}"))
-    end
-  end)
-
-  Kino.Layout.grid([form, result_frame], boxed: true, gap: 16)
+      **Result: #{result}**
+      """)
+    {:error, error} ->
+      Kino.Markdown.new("❌ **Error:** #{inspect(error)}")
+  end
 else
-  Kino.Markdown.new("⚠️ **Calculator client not available.** Run the connection cell first, then re-run this cell.")
+  Kino.Markdown.new("⚠️ **Run the connection cell first**, then re-run this cell.")
 end
 ```
 
