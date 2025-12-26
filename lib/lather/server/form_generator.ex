@@ -138,11 +138,15 @@ defmodule Lather.Server.FormGenerator do
   end
 
   # Generate the test form for an operation
-  defp generate_test_form(operation, base_url, service_name) do
-    form_action = "#{base_url}soap/v1.1/#{service_name}"
+  defp generate_test_form(operation, base_url, _service_name) do
+    # The form posts to the base URL (not a sub-path) for SOAP 1.1
+    # Remove trailing slash and use as-is
+    form_action = String.trim_trailing(base_url, "/")
+    namespace = operation[:namespace] || "http://tempuri.org/"
+    soap_action = operation.soap_action || operation.name
 
     """
-    <form id="testForm" class="test-form">
+    <form id="testForm" class="test-form" data-namespace="#{namespace}" data-soap-action="#{soap_action}">
         <table class="parameter-table">
             <thead>
                 <tr>
@@ -721,8 +725,20 @@ defmodule Lather.Server.FormGenerator do
             color: #ffffff;
         }
 
+        .header p {
+            color: #b0b0b0;
+        }
+
+        .header a {
+            color: #64b5f6;
+        }
+
         .service-description {
             color: #b0b0b0;
+        }
+
+        h2, h3, h4 {
+            color: #ffffff;
         }
 
         .operation-section h2 {
@@ -740,6 +756,14 @@ defmodule Lather.Server.FormGenerator do
             border-color: #555;
         }
 
+        .test-section h3 {
+            color: #ffffff;
+        }
+
+        .test-section p {
+            color: #b0b0b0;
+        }
+
         .parameter-table th {
             background-color: #404040;
             color: #ffffff;
@@ -754,10 +778,28 @@ defmodule Lather.Server.FormGenerator do
             color: #e0e0e0;
         }
 
+        .param-input {
+            background-color: #404040;
+            border-color: #666;
+            color: #ffffff;
+        }
+
+        .param-input::placeholder {
+            color: #888;
+        }
+
+        .param-input:focus {
+            border-color: #64b5f6;
+            box-shadow: 0 0 0 2px rgba(100, 181, 246, 0.2);
+            outline: none;
+        }
+
         input[type="text"],
         input[type="number"],
         input[type="email"],
         input[type="date"],
+        input[type="datetime-local"],
+        input[type="time"],
         select {
             background-color: #404040;
             border-color: #666;
@@ -768,30 +810,63 @@ defmodule Lather.Server.FormGenerator do
         input[type="number"]:focus,
         input[type="email"]:focus,
         input[type="date"]:focus,
+        input[type="datetime-local"]:focus,
+        input[type="time"]:focus,
         select:focus {
             border-color: #64b5f6;
             box-shadow: 0 0 0 2px rgba(100, 181, 246, 0.2);
         }
 
-        .invoke-button {
+        .invoke-btn {
             background-color: #1976d2;
         }
 
-        .invoke-button:hover {
+        .invoke-btn:hover {
             background-color: #1565c0;
         }
 
+        .json-btn {
+            background-color: #2e7d32;
+        }
+
+        .json-btn:hover {
+            background-color: #1b5e20;
+        }
+
         .examples-section {
+            background-color: #2d2d2d;
+        }
+
+        .protocol-section {
             background-color: #333333;
+            border-color: #555;
         }
 
         .protocol-section h3 {
             color: #ffffff;
+            border-bottom-color: #555;
         }
 
-        .code-example {
-            background-color: #2a2a2a;
+        .protocol-section p {
+            color: #b0b0b0;
+        }
+
+        .protocol-card {
+            background-color: #333333;
             border-color: #555;
+        }
+
+        .protocol-card h3 {
+            color: #ffffff;
+        }
+
+        .protocol-card p {
+            color: #b0b0b0;
+        }
+
+        .protocol-card code {
+            background-color: #404040;
+            color: #64b5f6;
         }
 
         .code-example h4 {
@@ -800,21 +875,34 @@ defmodule Lather.Server.FormGenerator do
 
         .code-example pre {
             background-color: #1e1e1e;
+            border-color: #555;
+            color: #f8f8f2;
+        }
+
+        .code-example code {
             color: #f8f8f2;
         }
 
         .result-section {
-            background-color: #2a2a2a;
-            border-color: #555;
+            background-color: #2a3a2a;
+            border-color: #4a7c4a;
         }
 
-        .result-section h3 {
-            color: #ffffff;
+        .result-section h4 {
+            color: #90ee90;
         }
 
         .result-section pre {
             background-color: #1e1e1e;
             color: #f8f8f2;
+        }
+
+        .protocols-section h2 {
+            color: #ffffff;
+        }
+
+        .operations-section h2 {
+            color: #ffffff;
         }
 
         .operation-item {
@@ -836,11 +924,12 @@ defmodule Lather.Server.FormGenerator do
 
         .param-count {
             background-color: #404040;
-            color: #ffffff;
+            color: #e0e0e0;
         }
 
         .wsdl-section {
             background-color: #333333;
+            border-color: #555;
         }
 
         .wsdl-section h2 {
@@ -848,12 +937,12 @@ defmodule Lather.Server.FormGenerator do
         }
 
         .wsdl-link {
-            background-color: #1976d2;
+            background-color: #555;
             color: #ffffff;
         }
 
         .wsdl-link:hover {
-            background-color: #1565c0;
+            background-color: #666;
         }
 
         .required-indicator {
@@ -862,6 +951,14 @@ defmodule Lather.Server.FormGenerator do
 
         small {
             color: #999;
+        }
+
+        a {
+            color: #64b5f6;
+        }
+
+        a:hover {
+            color: #90caf9;
         }
     }
     """
@@ -874,6 +971,8 @@ defmodule Lather.Server.FormGenerator do
         const form = document.getElementById('testForm');
         const formData = new FormData(form);
         const params = {};
+        const namespace = form.dataset.namespace || 'http://tempuri.org/';
+        const soapAction = form.dataset.soapAction || operationName;
 
         for (let [key, value] of formData.entries()) {
             if (value.trim() !== '') {
@@ -881,8 +980,8 @@ defmodule Lather.Server.FormGenerator do
             }
         }
 
-        // Build SOAP envelope
-        const soapEnvelope = buildSoapEnvelope(operationName, params);
+        // Build SOAP envelope with namespace
+        const soapEnvelope = buildSoapEnvelope(operationName, params, namespace);
 
         // Show loading
         const resultSection = document.getElementById('resultSection');
@@ -895,7 +994,7 @@ defmodule Lather.Server.FormGenerator do
             method: 'POST',
             headers: {
                 'Content-Type': 'text/xml; charset=utf-8',
-                'SOAPAction': operationName
+                'SOAPAction': soapAction
             },
             body: soapEnvelope
         })
@@ -908,19 +1007,20 @@ defmodule Lather.Server.FormGenerator do
         });
     }
 
-    function buildSoapEnvelope(operationName, params) {
+    function buildSoapEnvelope(operationName, params, namespace) {
         let paramElements = '';
         for (const [key, value] of Object.entries(params)) {
-            paramElements += `      <${key}>${escapeXml(value)}</${key}>\\n`;
+            paramElements += '      <' + key + '>' + escapeXml(value) + '</' + key + '>\\n';
         }
 
-        return `<?xml version="1.0" encoding="utf-8"?>
-    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-    <soap:Body>
-    <${operationName}>
-    ${paramElements}    </${operationName}>
-    </soap:Body>
-    </soap:Envelope>`;
+        return '<?xml version="1.0" encoding="utf-8"?>\\n' +
+            '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">\\n' +
+            '  <soap:Body>\\n' +
+            '    <' + operationName + ' xmlns="' + namespace + '">\\n' +
+            paramElements +
+            '    </' + operationName + '>\\n' +
+            '  </soap:Body>\\n' +
+            '</soap:Envelope>';
     }
 
     function escapeXml(text) {
@@ -937,11 +1037,10 @@ defmodule Lather.Server.FormGenerator do
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(xml, 'text/xml');
             const serializer = new XMLSerializer();
-            return serializer.serializeToString(xmlDoc)
-                .replace(/></g, '>\\n<')
-                .split('\\n')
-                .map((line, index) => '  '.repeat(Math.max(0, line.split('<').length - line.split('</').length - 1)) + line)
-                .join('\\n');
+            let formatted = serializer.serializeToString(xmlDoc);
+            // Simple formatting: add newlines after closing tags
+            formatted = formatted.replace(/></g, '>\\n<');
+            return formatted;
         } catch (e) {
             return xml;
         }
