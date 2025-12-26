@@ -471,7 +471,7 @@ defmodule Lather.Server.EnhancedPlug do
   # JSON encoding with graceful fallback
   defp encode_json(data) do
     if @jason_available do
-      Jason.encode!(data)
+      apply(Jason, :encode!, [data])
     else
       # Fallback to basic JSON-like string representation
       inspect(data, pretty: true)
@@ -481,7 +481,7 @@ defmodule Lather.Server.EnhancedPlug do
   # JSON decoding with graceful fallback
   defp decode_json(body) do
     if @jason_available do
-      Jason.decode(body)
+      apply(Jason, :decode, [body])
     else
       {:error, :jason_not_available}
     end
