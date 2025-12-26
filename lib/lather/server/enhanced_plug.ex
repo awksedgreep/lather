@@ -373,23 +373,13 @@ defmodule Lather.Server.EnhancedPlug do
   end
 
   defp extract_operation_name(parsed_request) do
-    # Implementation depends on RequestParser format
-    # This is a simplified version
-    case get_in(parsed_request, ["soap:Envelope", "soap:Body"]) do
-      body when is_map(body) ->
-        operation_key =
-          body
-          |> Map.keys()
-          |> Enum.find(&(not String.starts_with?(&1, "soap:")))
-
-        if operation_key do
-          {:ok, operation_key}
-        else
-          {:error, :operation_not_found}
-        end
+    # RequestParser returns %{operation: name, params: params}
+    case parsed_request do
+      %{operation: operation_name} when is_binary(operation_name) ->
+        {:ok, operation_name}
 
       _ ->
-        {:error, :invalid_soap_body}
+        {:error, :operation_not_found}
     end
   end
 
@@ -432,20 +422,13 @@ defmodule Lather.Server.EnhancedPlug do
   end
 
   defp extract_soap_parameters(parsed_request) do
-    # Simplified parameter extraction
-    case get_in(parsed_request, ["soap:Envelope", "soap:Body"]) do
-      body when is_map(body) ->
-        operation_key =
-          body
-          |> Map.keys()
-          |> Enum.find(&(not String.starts_with?(&1, "soap:")))
+    # RequestParser returns %{operation: name, params: params}
+    case parsed_request do
+      %{params: params} when is_map(params) ->
+        {:ok, params}
 
-        if operation_key do
-          params = get_in(body, [operation_key])
-          {:ok, params || %{}}
-        else
-          {:ok, %{}}
-        end
+      %{params: _} ->
+        {:ok, %{}}
 
       _ ->
         {:error, :invalid_soap_body}
