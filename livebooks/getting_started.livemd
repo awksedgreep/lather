@@ -208,22 +208,23 @@ if client do
   # Get detailed information about an operation
   case Lather.DynamicClient.get_operation_info(client, "Add") do
     {:ok, info} ->
-      IO.puts("Operation: Add")
-      IO.puts("\nInput Parameters:")
+      IO.puts("Operation: #{info.name}")
+      IO.puts("Description: #{info.documentation}")
 
-      Enum.each(info.input_parts, fn part ->
-        required = if part.required, do: " (required)", else: " (optional)"
-        IO.puts("   #{part.name}: #{part.type}#{required}")
+      IO.puts("\nRequired Parameters:")
+      Enum.each(info.required_parameters, fn param ->
+        IO.puts("   #{param}")
       end)
 
-      IO.puts("\nOutput:")
-      Enum.each(info.output_parts, fn part ->
-        IO.puts("   #{part.name}: #{part.type}")
-      end)
-
-      if info.soap_action do
-        IO.puts("\nSOAP Action: #{info.soap_action}")
+      if info.optional_parameters != [] do
+        IO.puts("\nOptional Parameters:")
+        Enum.each(info.optional_parameters, fn param ->
+          IO.puts("   #{param}")
+        end)
       end
+
+      IO.puts("\nReturn Type: #{info.return_type}")
+      IO.puts("SOAP Action: #{info.soap_action}")
 
     {:error, error} ->
       IO.puts("Error getting operation info: #{inspect(error)}")
@@ -459,12 +460,16 @@ if client do
     IO.puts("Endpoint: #{service[:endpoint] || "N/A"}")
   end
 
-  # Operations
+  # Operations with details
   IO.puts("\nAvailable Operations (#{length(service_info.operations)}):")
   Enum.each(service_info.operations, fn op ->
-    input_count = length(op.input_parts || op.input || [])
-    output_count = length(op.output_parts || op.output || [])
-    IO.puts("   #{op.name} (#{input_count} inputs, #{output_count} outputs)")
+    case Lather.DynamicClient.get_operation_info(client, op.name) do
+      {:ok, info} ->
+        param_count = length(info.required_parameters) + length(info.optional_parameters)
+        IO.puts("   #{op.name} (#{param_count} params) - #{info.documentation}")
+      {:error, _} ->
+        IO.puts("   #{op.name}")
+    end
   end)
 else
   IO.puts("No service information available")
