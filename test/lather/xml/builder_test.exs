@@ -525,6 +525,70 @@ defmodule Lather.Xml.BuilderTest do
     end
   end
 
+  describe "build/1 - #content special key handling" do
+    test "renders #content list as child elements" do
+      {:ok, xml} =
+        Builder.build(%{
+          "Operation" => %{
+            "@xmlns" => "http://example.com",
+            "#content" => [
+              {"a", "5"},
+              {"b", "3"}
+            ]
+          }
+        })
+
+      assert String.contains?(xml, "<Operation")
+      assert String.contains?(xml, "<a>5</a>")
+      assert String.contains?(xml, "<b>3</b>")
+      # Should NOT contain literal #content element
+      refute String.contains?(xml, "<#content>")
+      refute String.contains?(xml, "</#content>")
+    end
+
+    test "renders #content list of maps as child elements" do
+      {:ok, xml} =
+        Builder.build(%{
+          "Add" => %{
+            "@xmlns" => "http://example.com/calculator",
+            "#content" => [
+              %{"param1" => "value1"},
+              %{"param2" => "value2"}
+            ]
+          }
+        })
+
+      assert String.contains?(xml, "<param1>value1</param1>")
+      assert String.contains?(xml, "<param2>value2</param2>")
+      refute String.contains?(xml, "#content")
+    end
+
+    test "handles empty #content list" do
+      {:ok, xml} =
+        Builder.build(%{
+          "Operation" => %{
+            "@xmlns" => "http://example.com",
+            "#content" => []
+          }
+        })
+
+      assert String.contains?(xml, "<Operation")
+      refute String.contains?(xml, "#content")
+    end
+
+    test "#content takes precedence over other content" do
+      {:ok, xml} =
+        Builder.build(%{
+          "Operation" => %{
+            "#content" => [{"child", "value"}]
+          }
+        })
+
+      assert String.contains?(xml, "<child>value</child>")
+      refute String.contains?(xml, "#content")
+    end
+  end
+
   describe "Indentation and formatting" do
     test "produces properly indented nested XML" do
       {:ok, xml} =
