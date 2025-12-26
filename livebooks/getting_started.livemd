@@ -187,22 +187,20 @@ Now let's connect to our own service using the DynamicClient:
 # Create a dynamic client from the WSDL
 wsdl_url = "http://localhost:4040/calculator?wsdl"
 
-case Lather.DynamicClient.new(wsdl_url, timeout: 30_000) do
+calculator_client = case Lather.DynamicClient.new(wsdl_url, timeout: 30_000) do
   {:ok, client} ->
-    IO.puts("Successfully connected to Calculator service!")
-
-    # Store the client for use in other cells
-    Process.put(:calculator_client, client)
+    IO.puts("✅ Successfully connected to Calculator service!")
 
     # Show available operations
     operations = Lather.DynamicClient.list_operations(client)
     IO.puts("\nAvailable operations:")
-    Enum.each(operations, fn op -> IO.puts("   #{op.name}") end)
+    Enum.each(operations, fn op -> IO.puts("   • #{op.name}") end)
 
     client
 
   {:error, error} ->
-    IO.puts("Failed to connect: #{inspect(error)}")
+    IO.puts("❌ Failed to connect: #{inspect(error)}")
+    IO.puts("\nMake sure the server cell above has been run first!")
     nil
 end
 ```
@@ -212,24 +210,22 @@ end
 Let's examine the details of available operations:
 
 ```elixir
-client = Process.get(:calculator_client)
-
-if client do
+if calculator_client do
   # Get detailed information about an operation
-  case Lather.DynamicClient.get_operation_info(client, "Add") do
+  case Lather.DynamicClient.get_operation_info(calculator_client, "Add") do
     {:ok, info} ->
       IO.puts("Operation: #{info.name}")
       IO.puts("Description: #{info.documentation}")
 
       IO.puts("\nRequired Parameters:")
       Enum.each(info.required_parameters, fn param ->
-        IO.puts("   #{param}")
+        IO.puts("   • #{param}")
       end)
 
       if info.optional_parameters != [] do
         IO.puts("\nOptional Parameters:")
         Enum.each(info.optional_parameters, fn param ->
-          IO.puts("   #{param}")
+          IO.puts("   • #{param}")
         end)
       end
 
@@ -240,7 +236,7 @@ if client do
       IO.puts("Error getting operation info: #{inspect(error)}")
   end
 else
-  IO.puts("No client available. Run the connection cell first.")
+  IO.puts("⚠️ No client available. Run the connection cell first.")
 end
 ```
 
@@ -249,14 +245,12 @@ end
 Now let's make actual SOAP calls to our calculator service:
 
 ```elixir
-client = Process.get(:calculator_client)
-
-if client do
+if calculator_client do
   IO.puts("Testing Calculator Operations\n")
 
   # Test Add
   IO.puts("1. Add: 10 + 5")
-  case Lather.DynamicClient.call(client, "Add", %{"a" => 10, "b" => 5}) do
+  case Lather.DynamicClient.call(calculator_client, "Add", %{"a" => 10, "b" => 5}) do
     {:ok, response} ->
       IO.puts("   Result: #{response["result"]}")
     {:error, error} ->
@@ -265,7 +259,7 @@ if client do
 
   # Test Subtract
   IO.puts("\n2. Subtract: 100 - 37")
-  case Lather.DynamicClient.call(client, "Subtract", %{"a" => 100, "b" => 37}) do
+  case Lather.DynamicClient.call(calculator_client, "Subtract", %{"a" => 100, "b" => 37}) do
     {:ok, response} ->
       IO.puts("   Result: #{response["result"]}")
     {:error, error} ->
@@ -274,7 +268,7 @@ if client do
 
   # Test Multiply
   IO.puts("\n3. Multiply: 7 * 8")
-  case Lather.DynamicClient.call(client, "Multiply", %{"a" => 7, "b" => 8}) do
+  case Lather.DynamicClient.call(calculator_client, "Multiply", %{"a" => 7, "b" => 8}) do
     {:ok, response} ->
       IO.puts("   Result: #{response["result"]}")
     {:error, error} ->
@@ -283,14 +277,14 @@ if client do
 
   # Test Divide
   IO.puts("\n4. Divide: 100 / 4")
-  case Lather.DynamicClient.call(client, "Divide", %{"dividend" => 100, "divisor" => 4}) do
+  case Lather.DynamicClient.call(calculator_client, "Divide", %{"dividend" => 100, "divisor" => 4}) do
     {:ok, response} ->
       IO.puts("   Result: #{response["quotient"]}")
     {:error, error} ->
       IO.puts("   Error: #{inspect(error)}")
   end
 else
-  IO.puts("No client available. Run the connection cell first.")
+  IO.puts("⚠️ No client available. Run the connection cell first.")
 end
 ```
 
@@ -299,33 +293,32 @@ end
 Let's create an interactive calculator widget. Run this cell after the server and client are connected:
 
 ```elixir
-# Create input widgets
-a_input = Kino.Input.number("First Number (a)", default: 10)
-b_input = Kino.Input.number("Second Number (b)", default: 5)
-operation_input = Kino.Input.select("Operation", [
-  {"Add", "Add"},
-  {"Subtract", "Subtract"},
-  {"Multiply", "Multiply"},
-  {"Divide", "Divide"}
-])
-calculate_button = Kino.Control.button("Calculate")
+if calculator_client do
+  # Create input widgets
+  a_input = Kino.Input.number("First Number (a)", default: 10)
+  b_input = Kino.Input.number("Second Number (b)", default: 5)
+  operation_input = Kino.Input.select("Operation", [
+    {"Add", "Add"},
+    {"Subtract", "Subtract"},
+    {"Multiply", "Multiply"},
+    {"Divide", "Divide"}
+  ])
+  calculate_button = Kino.Control.button("Calculate")
 
-# Frame to display results
-result_frame = Kino.Frame.new()
+  # Frame to display results
+  result_frame = Kino.Frame.new()
 
-# Layout the inputs and result
-form = Kino.Layout.grid([
-  Kino.Layout.grid([a_input, b_input], columns: 2),
-  operation_input,
-  calculate_button,
-  result_frame
-], boxed: true, gap: 16)
+  # Layout the inputs and result
+  form = Kino.Layout.grid([
+    Kino.Layout.grid([a_input, b_input], columns: 2),
+    operation_input,
+    calculate_button,
+    result_frame
+  ], boxed: true, gap: 16)
 
-# Handle the button click
-Kino.listen(calculate_button, fn _event ->
-  client = Process.get(:calculator_client)
-
-  if client do
+  # Handle the button click (capture calculator_client in closure)
+  client = calculator_client
+  Kino.listen(calculate_button, fn _event ->
     a = Kino.Input.read(a_input)
     b = Kino.Input.read(b_input)
     operation = Kino.Input.read(operation_input)
@@ -340,16 +333,16 @@ Kino.listen(calculate_button, fn _event ->
     case Lather.DynamicClient.call(client, operation, params) do
       {:ok, response} ->
         result = response["result"] || response["quotient"]
-        Kino.Frame.render(result_frame, Kino.Markdown.new("**Result:** #{result}"))
+        Kino.Frame.render(result_frame, Kino.Markdown.new("✅ **Result:** #{result}"))
       {:error, error} ->
-        Kino.Frame.render(result_frame, Kino.Markdown.new("**Error:** #{inspect(error)}"))
+        Kino.Frame.render(result_frame, Kino.Markdown.new("❌ **Error:** #{inspect(error)}"))
     end
-  else
-    Kino.Frame.render(result_frame, Kino.Markdown.new("⚠️ Calculator client not available. Run the connection cell first."))
-  end
-end)
+  end)
 
-form
+  form
+else
+  Kino.Markdown.new("⚠️ **Calculator client not available.** Run the connection cell first, then re-run this cell.")
+end
 ```
 
 ## Error Handling Examples
@@ -357,14 +350,12 @@ form
 Let's explore how Lather handles different types of errors:
 
 ```elixir
-client = Process.get(:calculator_client)
-
-if client do
+if calculator_client do
   IO.puts("Testing Error Scenarios\n")
 
   # Test 1: Division by zero (SOAP fault from server)
   IO.puts("1. Division by zero:")
-  case Lather.DynamicClient.call(client, "Divide", %{"dividend" => 100, "divisor" => 0}) do
+  case Lather.DynamicClient.call(calculator_client, "Divide", %{"dividend" => 100, "divisor" => 0}) do
     {:ok, response} ->
       IO.puts("   Unexpected success: #{inspect(response)}")
     {:error, error} ->
@@ -374,7 +365,7 @@ if client do
 
   # Test 2: Invalid operation name
   IO.puts("\n2. Invalid operation name:")
-  case Lather.DynamicClient.call(client, "NonExistentOperation", %{}) do
+  case Lather.DynamicClient.call(calculator_client, "NonExistentOperation", %{}) do
     {:ok, _response} ->
       IO.puts("   Unexpected success")
     {:error, error} ->
@@ -384,7 +375,7 @@ if client do
 
   # Test 3: Missing required parameters
   IO.puts("\n3. Missing required parameters:")
-  case Lather.DynamicClient.call(client, "Add", %{}) do
+  case Lather.DynamicClient.call(calculator_client, "Add", %{}) do
     {:ok, response} ->
       IO.puts("   Response: #{inspect(response)}")
     {:error, error} ->
@@ -392,7 +383,7 @@ if client do
       IO.puts("   Details: #{inspect(error.details || error.message)}")
   end
 else
-  IO.puts("No client available")
+  IO.puts("⚠️ No client available. Run the connection cell first.")
 end
 ```
 
@@ -401,9 +392,7 @@ end
 Let's see how Lather handles multiple concurrent requests:
 
 ```elixir
-client = Process.get(:calculator_client)
-
-if client do
+if calculator_client do
   # List of calculations to perform
   calculations = [
     {"Add", %{"a" => 10, "b" => 20}},
@@ -417,6 +406,7 @@ if client do
   start_time = System.monotonic_time(:millisecond)
 
   # Create async tasks for each calculation
+  client = calculator_client
   tasks = Enum.map(calculations, fn {operation, params} ->
     Task.async(fn ->
       result = Lather.DynamicClient.call(client, operation, params)
@@ -443,7 +433,7 @@ if client do
   success_count = Enum.count(results, fn {_, _, result} -> match?({:ok, _}, result) end)
   IO.puts("\nSummary: #{success_count}/#{length(calculations)} requests successful")
 else
-  IO.puts("No client available")
+  IO.puts("⚠️ No client available. Run the connection cell first.")
 end
 ```
 
@@ -452,10 +442,8 @@ end
 Let's examine the full service metadata:
 
 ```elixir
-client = Process.get(:calculator_client)
-
-if client do
-  service_info = client.service_info
+if calculator_client do
+  service_info = calculator_client.service_info
 
   IO.puts("SOAP Service Summary")
   IO.puts(String.duplicate("=", 50))
@@ -472,16 +460,16 @@ if client do
   # Operations with details
   IO.puts("\nAvailable Operations (#{length(service_info.operations)}):")
   Enum.each(service_info.operations, fn op ->
-    case Lather.DynamicClient.get_operation_info(client, op.name) do
+    case Lather.DynamicClient.get_operation_info(calculator_client, op.name) do
       {:ok, info} ->
         param_count = length(info.required_parameters) + length(info.optional_parameters)
-        IO.puts("   #{op.name} (#{param_count} params) - #{info.documentation}")
+        IO.puts("   • #{op.name} (#{param_count} params) - #{info.documentation}")
       {:error, _} ->
-        IO.puts("   #{op.name}")
+        IO.puts("   • #{op.name}")
     end
   end)
 else
-  IO.puts("No service information available")
+  IO.puts("⚠️ No service information available. Run the connection cell first.")
 end
 ```
 
