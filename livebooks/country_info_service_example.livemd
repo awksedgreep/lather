@@ -54,11 +54,11 @@ defmodule ResponseHelper do
   def get(_, _), do: nil
 
   @doc "Navigate nested path, handling namespace prefixes"
-  def get_in(map, []), do: map
-  def get_in(map, [key | rest]) when is_map(map) do
-    get_in(get(map, key), rest)
+  def get_path(map, []), do: map
+  def get_path(map, [key | rest]) when is_map(map) do
+    get_path(get(map, key), rest)
   end
-  def get_in(_, _), do: nil
+  def get_path(_, _), do: nil
 
   @doc "Strip namespace prefix from a key"
   def strip_ns(key) when is_binary(key) do
