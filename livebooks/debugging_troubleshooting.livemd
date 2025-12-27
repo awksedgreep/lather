@@ -1145,76 +1145,35 @@ ErrorPatternAnalysis.analyze_error_log(sample_errors)
 Let's create an interactive debugging checklist:
 
 ```elixir
-# Create debugging checklist
+# SOAP Debugging Checklist
+# Check items as you complete each debugging step, then re-run this cell to see progress
+
 debug_checklist = [
-  "✅ URL Format Validation",
-  "✅ Network Connectivity Test",
-  "✅ DNS Resolution Check",
-  "✅ SSL Certificate Validation",
-  "✅ WSDL Accessibility Test",
-  "✅ WSDL Parsing Verification",
-  "✅ Operation Discovery",
-  "✅ Parameter Validation",
-  "✅ Authentication Testing",
-  "✅ Error Pattern Analysis",
-  "✅ Performance Benchmarking",
-  "✅ Memory Usage Analysis"
+  "URL Format Validation",
+  "Network Connectivity Test",
+  "DNS Resolution Check",
+  "SSL Certificate Validation",
+  "WSDL Accessibility Test",
+  "WSDL Parsing Verification",
+  "Operation Discovery",
+  "Parameter Validation",
+  "Authentication Testing",
+  "Error Pattern Analysis",
+  "Performance Benchmarking",
+  "Memory Usage Analysis"
 ]
 
-# Create checkboxes for each item
-debug_widgets = Enum.map(debug_checklist, fn item ->
-  Kino.Input.checkbox(item, default: false)
-end)
-
-# Layout the checklist
-debug_checklist_form = Kino.Layout.grid(debug_widgets, columns: 2)
-
 IO.puts("🔧 SOAP Debugging Checklist")
-debug_checklist_form
-```
+IO.puts("=" |> String.duplicate(40))
+IO.puts("")
 
-```elixir
-# Check debugging progress
-completed_checks = Enum.count(debug_widgets, fn widget ->
-  Kino.Input.read(widget)
+Enum.each(debug_checklist, fn item ->
+  IO.puts("☐ #{item}")
 end)
 
-total_checks = length(debug_checklist)
-completion_percentage = completed_checks / total_checks * 100
-
-IO.puts("📊 Debugging Progress: #{completed_checks}/#{total_checks} (#{Float.round(completion_percentage, 1)}%)")
-
-case completion_percentage do
-  p when p == 100.0 ->
-    IO.puts("🎉 Complete debugging session finished!")
-    IO.puts("   Your SOAP integration should be well-diagnosed")
-
-  p when p >= 80.0 ->
-    IO.puts("🚀 Nearly complete! Just a few more checks to go")
-
-  p when p >= 60.0 ->
-    IO.puts("⚡ Good progress! You're more than halfway there")
-
-  p when p >= 40.0 ->
-    IO.puts("🔧 Making progress! Keep going with the debugging")
-
-  _ ->
-    IO.puts("🏗️ Just getting started! Work through the checklist systematically")
-end
-
-# Provide next steps based on completion
-if completion_percentage < 100.0 do
-  IO.puts("\n💡 Next steps:")
-  incomplete_items =
-    Enum.zip(debug_checklist, debug_widgets)
-    |> Enum.reject(fn {_item, widget} -> Kino.Input.read(widget) end)
-    |> Enum.map(fn {item, _widget} -> item end)
-    |> Enum.take(3)
-
-  Enum.each(incomplete_items, fn item ->
-    IO.puts("   • #{item}")
-  end)
-end
+IO.puts("")
+IO.puts("💡 Use the debugging tools above to work through each item.")
+IO.puts("   Mark items complete in your notes as you verify each one.")
 ```
 
 <!-- livebook:{"break_markdown":true} -->
