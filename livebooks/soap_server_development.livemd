@@ -57,6 +57,15 @@ defmodule CalculatorService do
   @namespace "http://calculator.example.com"
   @service_name "CalculatorService"
 
+  # Helper to parse numbers (handles both "5" and "5.0")
+  defp parse_number(str) when is_binary(str) do
+    case Float.parse(str) do
+      {num, _} -> num
+      :error -> 0.0
+    end
+  end
+  defp parse_number(num) when is_number(num), do: num / 1
+
   # Add operation
   soap_operation "Add" do
     description "Adds two numbers"
@@ -74,11 +83,7 @@ defmodule CalculatorService do
   end
 
   def add(%{"a" => a, "b" => b}) do
-    # Convert strings to numbers and add them
-    num_a = String.to_float(a)
-    num_b = String.to_float(b)
-    result = num_a + num_b
-
+    result = parse_number(a) + parse_number(b)
     {:ok, %{"result" => Float.to_string(result)}}
   end
 
@@ -99,10 +104,7 @@ defmodule CalculatorService do
   end
 
   def subtract(%{"a" => a, "b" => b}) do
-    num_a = String.to_float(a)
-    num_b = String.to_float(b)
-    result = num_a - num_b
-
+    result = parse_number(a) - parse_number(b)
     {:ok, %{"result" => Float.to_string(result)}}
   end
 
@@ -123,10 +125,7 @@ defmodule CalculatorService do
   end
 
   def multiply(%{"a" => a, "b" => b}) do
-    num_a = String.to_float(a)
-    num_b = String.to_float(b)
-    result = num_a * num_b
-
+    result = parse_number(a) * parse_number(b)
     {:ok, %{"result" => Float.to_string(result)}}
   end
 
@@ -147,14 +146,12 @@ defmodule CalculatorService do
   end
 
   def divide(%{"a" => a, "b" => b}) do
-    num_a = String.to_float(a)
-    num_b = String.to_float(b)
+    num_b = parse_number(b)
 
     if num_b == 0.0 do
-      # Return a SOAP fault for division by zero
       soap_fault("Client", "Division by zero is not allowed")
     else
-      result = num_a / num_b
+      result = parse_number(a) / num_b
       {:ok, %{"result" => Float.to_string(result)}}
     end
   end
@@ -283,6 +280,15 @@ defmodule BookstoreService do
 
   @namespace "http://bookstore.example.com"
   @service_name "BookstoreService"
+
+  # Helper to parse numbers (handles both "5" and "5.0")
+  defp parse_number(str) when is_binary(str) do
+    case Float.parse(str) do
+      {num, _} -> num
+      :error -> 0.0
+    end
+  end
+  defp parse_number(num) when is_number(num), do: num / 1
 
   # Define complex types
   soap_type "Book" do
@@ -507,7 +513,7 @@ defmodule BookDatabase do
         "category" -> Enum.any?(book["categories"], fn cat ->
           String.contains?(String.downcase(cat), String.downcase(value))
         end)
-        "maxPrice" -> String.to_float(book["price"]) <= String.to_float(value)
+        "maxPrice" -> parse_number(book["price"]) <= parse_number(value)
         _ -> true
       end
     end)
