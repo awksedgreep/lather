@@ -679,16 +679,21 @@ defmodule LiveDebuggingSession do
         case Lather.DynamicClient.get_operation_info(client, test_operation) do
           {:ok, op_info} ->
             IO.puts("✅ Operation info retrieved")
-            IO.puts("   Input parameters: #{length(op_info.input_parts)}")
-            IO.puts("   Output parameters: #{length(op_info.output_parts)}")
 
-            # Show parameter details
-            if length(op_info.input_parts) > 0 do
-              IO.puts("   Required parameters:")
-              Enum.each(op_info.input_parts, fn part ->
-                required = if part.required, do: "*", else: ""
-                IO.puts("   • #{part.name}#{required}: #{part.type}")
-              end)
+            required = Map.get(op_info, :required_parameters) || Map.get(op_info, "required_parameters") || []
+            optional = Map.get(op_info, :optional_parameters) || Map.get(op_info, "optional_parameters") || []
+
+            IO.puts("   Required parameters: #{length(required)}")
+            IO.puts("   Optional parameters: #{length(optional)}")
+
+            if length(required) > 0 do
+              IO.puts("   Required:")
+              Enum.each(required, fn param -> IO.puts("   • #{param}") end)
+            end
+
+            if length(optional) > 0 do
+              IO.puts("   Optional:")
+              Enum.each(optional, fn param -> IO.puts("   • #{param}") end)
             end
 
           {:error, error} ->
