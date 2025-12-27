@@ -637,7 +637,11 @@ defmodule LiveDebuggingSession do
         IO.puts("   Available operations:")
         operations
         |> Enum.take(5)
-        |> Enum.each(fn op -> IO.puts("   • #{op}") end)
+        |> Enum.each(fn op ->
+          # Handle both map format and string format
+          name = if is_map(op), do: op[:name] || op["name"], else: op
+          IO.puts("   • #{name}")
+        end)
 
         if length(operations) > 5 do
           IO.puts("   ... and #{length(operations) - 5} more")
@@ -672,7 +676,9 @@ defmodule LiveDebuggingSession do
 
       # Test first operation
       if length(operations) > 0 do
-        test_operation = hd(operations)
+        first_op = hd(operations)
+        # Handle both map format and string format
+        test_operation = if is_map(first_op), do: first_op[:name] || first_op["name"], else: first_op
         IO.puts("Testing operation: #{test_operation}")
 
         case Lather.DynamicClient.get_operation_info(client, test_operation) do
