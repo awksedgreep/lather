@@ -55,14 +55,15 @@ defmodule Lather.Server.DSL do
   """
   defmacro description(text) do
     quote do
-      cond do
-        Module.has_attribute?(__MODULE__, :current_operation) and
-          Module.get_attribute(__MODULE__, :current_operation) != nil ->
-          @current_operation Map.put(@current_operation, :description, unquote(text))
+      current_op = @current_operation
+      current_type = @current_type
 
-        Module.has_attribute?(__MODULE__, :current_type) and
-          Module.get_attribute(__MODULE__, :current_type) != nil ->
-          @current_type Map.put(@current_type, :description, unquote(text))
+      cond do
+        is_map(current_op) ->
+          @current_operation Map.put(current_op, :description, unquote(text))
+
+        is_map(current_type) ->
+          @current_type Map.put(current_type, :description, unquote(text))
 
         true ->
           :ok

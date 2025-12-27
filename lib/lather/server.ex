@@ -64,6 +64,10 @@ defmodule Lather.Server do
       Module.register_attribute(__MODULE__, :service_name, persist: true)
       Module.register_attribute(__MODULE__, :target_namespace, persist: true)
 
+      # Initialize current context attributes (used by DSL macros)
+      @current_operation nil
+      @current_type nil
+
       # Set defaults
       @namespace unquote(opts[:namespace] || "http://tempuri.org/")
       @service_name unquote(opts[:service_name] || to_string(__MODULE__))
