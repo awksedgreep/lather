@@ -4,7 +4,7 @@ defmodule Lather.MixProject do
   def project do
     [
       app: :lather,
-      version: "1.0.42",
+      version: "1.0.43",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       description:

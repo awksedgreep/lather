@@ -281,15 +281,6 @@ defmodule BookstoreService do
   @namespace "http://bookstore.example.com"
   @service_name "BookstoreService"
 
-  # Helper to parse numbers (handles both "5" and "5.0")
-  defp parse_number(str) when is_binary(str) do
-    case Float.parse(str) do
-      {num, _} -> num
-      :error -> 0.0
-    end
-  end
-  defp parse_number(num) when is_number(num), do: num / 1
-
   # Define complex types
   soap_type "Book" do
     description "Book information"
@@ -443,6 +434,15 @@ end
 
 # Mock book database
 defmodule BookDatabase do
+  # Helper to parse numbers (handles both "5" and "5.0")
+  defp parse_number(str) when is_binary(str) do
+    case Float.parse(str) do
+      {num, _} -> num
+      :error -> 0.0
+    end
+  end
+  defp parse_number(num) when is_number(num), do: num / 1
+
   def get_book("1") do
     {:ok, %{
       "id" => "1",
@@ -499,8 +499,8 @@ defmodule BookDatabase do
     {:ok, result_books, length(filtered_books)}
   end
 
-  def add_book(book_data) do
-    # Generate a new ID
+  def add_book(_book_data) do
+    # Generate a new ID (in a real app, would store the book_data)
     new_id = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
     {:ok, new_id}
   end
