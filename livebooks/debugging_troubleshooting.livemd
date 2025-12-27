@@ -463,15 +463,8 @@ defmodule TroubleshootingGuide do
         code_example: """
         # Get operation info to see expected parameters
         {:ok, info} = Lather.DynamicClient.get_operation_info(client, "OperationName")
-        IO.inspect(info.input_parts)
-
-        # Validate parameters before calling
-        case Lather.DynamicClient.validate_parameters(client, "OperationName", params) do
-          :ok ->
-            # Parameters are valid
-          {:error, error} ->
-            # Fix parameters
-        end
+        IO.inspect(info.required_parameters)
+        IO.inspect(info.optional_parameters)
         """
       },
 
