@@ -1057,11 +1057,12 @@ defmodule SOAPPerformanceMonitor do
     min_time = Enum.min(times) / 1000
     max_time = Enum.max(times) / 1000
 
-    # Calculate percentiles
+    # Calculate percentiles (clamp index to valid range)
     sorted_times = Enum.sort(times)
-    p50 = Enum.at(sorted_times, round(length(sorted_times) * 0.5)) / 1000
-    p95 = Enum.at(sorted_times, round(length(sorted_times) * 0.95)) / 1000
-    p99 = Enum.at(sorted_times, round(length(sorted_times) * 0.99)) / 1000
+    max_idx = length(sorted_times) - 1
+    p50 = Enum.at(sorted_times, min(round(length(sorted_times) * 0.5), max_idx)) / 1000
+    p95 = Enum.at(sorted_times, min(round(length(sorted_times) * 0.95), max_idx)) / 1000
+    p99 = Enum.at(sorted_times, min(round(length(sorted_times) * 0.99), max_idx)) / 1000
 
     IO.puts("📊 Results:")
     IO.puts("  Total Time: #{Float.round(total_time / 1_000_000, 2)} seconds")
