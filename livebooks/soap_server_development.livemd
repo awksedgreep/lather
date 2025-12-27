@@ -1028,6 +1028,15 @@ Let's add some performance monitoring to our services:
 
 ```elixir
 defmodule SOAPPerformanceMonitor do
+  # Convert "GetBook" to :get_book
+  defp to_snake_case(name) do
+    name
+    |> String.replace(~r/([A-Z])/, "_\\1")
+    |> String.downcase()
+    |> String.trim_leading("_")
+    |> String.to_atom()
+  end
+
   def benchmark_operation(service_module, operation_name, params, iterations \\ 100) do
     IO.puts("⚡ Performance Benchmark")
     IO.puts("Service: #{service_module}")
@@ -1035,7 +1044,7 @@ defmodule SOAPPerformanceMonitor do
     IO.puts("Iterations: #{iterations}")
     IO.puts("=" |> String.duplicate(40))
 
-    function_name = operation_name |> String.downcase() |> String.to_atom()
+    function_name = to_snake_case(operation_name)
 
     # Warm up
     apply(service_module, function_name, [params])
