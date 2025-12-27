@@ -353,17 +353,14 @@ defmodule BookstoreService do
   def search_books(%{"criteria" => criteria} = params) do
     max_results = Map.get(params, "maxResults", "10") |> String.to_integer()
 
-    case BookDatabase.search_books(criteria, max_results) do
-      {:ok, books, total_count} ->
-        {:ok, %{
-          "bookList" => %{
-            "books" => books,
-            "totalCount" => total_count
-          }
-        }}
-      {:error, reason} ->
-        soap_fault("Server", "Search failed: #{reason}")
-    end
+    {:ok, books, total_count} = BookDatabase.search_books(criteria, max_results)
+
+    {:ok, %{
+      "bookList" => %{
+        "books" => books,
+        "totalCount" => total_count
+      }
+    }}
   end
 
   # AddBook operation
