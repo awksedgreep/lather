@@ -1167,10 +1167,7 @@ debug_widgets = Enum.map(debug_checklist, fn item ->
 end)
 
 # Layout the checklist
-debug_checklist_form = Kino.Layout.grid(
-  Enum.map(debug_widgets, fn widget -> [widget] end),
-  columns: 2
-)
+debug_checklist_form = Kino.Layout.grid(debug_widgets, columns: 2)
 
 IO.puts("🔧 SOAP Debugging Checklist")
 debug_checklist_form
