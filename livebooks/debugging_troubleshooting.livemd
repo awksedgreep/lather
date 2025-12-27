@@ -572,11 +572,12 @@ defmodule LiveDebuggingSession do
     IO.puts("-" |> String.duplicate(40))
 
     # URL validation
-    with :ok <- Lather.Http.Transport.validate_url(url) do
+    uri = URI.parse(url)
+    if uri.scheme in ["http", "https"] and uri.host != nil do
       IO.puts("✅ URL format is valid")
 
-      # HTTP connectivity test
-      case Lather.Http.Transport.post(url, "", timeout: 10_000) do
+      # HTTP connectivity test - use GET for WSDL endpoints
+      case Finch.build(:get, url) |> Finch.request(Lather.Finch, receive_timeout: 10_000) do
         {:ok, %{status: status}} when status in 200..299 ->
           IO.puts("✅ HTTP connectivity successful (#{status})")
           IO.puts("")
@@ -589,31 +590,15 @@ defmodule LiveDebuggingSession do
           {:error, :http_error}
 
         {:error, error} ->
-          IO.puts("❌ Connection failed: #{Lather.Error.format_error(error)}")
-
-          # Provide specific guidance
-          case error do
-            %{type: :transport_error, reason: :nxdomain} ->
-              IO.puts("💡 DNS resolution failed - check the hostname")
-
-            %{type: :transport_error, reason: :timeout} ->
-              IO.puts("💡 Connection timeout - check network connectivity")
-
-            %{type: :http_error, status: 404} ->
-              IO.puts("💡 WSDL not found - verify the URL path")
-
-            _ ->
-              IO.puts("💡 Check network settings and service availability")
-          end
-
+          IO.puts("❌ Connection failed: #{inspect(error)}")
+          IO.puts("💡 Check network settings and service availability")
           IO.puts("")
           {:error, error}
       end
     else
-      {:error, :invalid_url} ->
-        IO.puts("❌ Invalid URL format")
-        IO.puts("")
-        {:error, :invalid_url}
+      IO.puts("❌ Invalid URL format")
+      IO.puts("")
+      {:error, :invalid_url}
     end
   end
 
@@ -639,7 +624,12 @@ defmodule LiveDebuggingSession do
         |> Enum.take(5)
         |> Enum.each(fn op ->
           # Handle both map format and string format
-          name = if is_map(op), do: op[:name] || op["name"], else: op
+          name = cond do
+            is_map(op) and Map.has_key?(op, :name) -> op.name
+            is_map(op) and Map.has_key?(op, "name") -> op["name"]
+            is_binary(op) -> op
+            true -> inspect(op)
+          end
           IO.puts("   • #{name}")
         end)
 
@@ -665,7 +655,7 @@ defmodule LiveDebuggingSession do
     IO.puts("")
   end
 
-  defp step_3_operation_testing(url) do
+  defp step_3_operation_testing(_url) do
     IO.puts("🧪 STEP 3: Operation Testing")
     IO.puts("-" |> String.duplicate(40))
 
@@ -678,7 +668,12 @@ defmodule LiveDebuggingSession do
       if length(operations) > 0 do
         first_op = hd(operations)
         # Handle both map format and string format
-        test_operation = if is_map(first_op), do: first_op[:name] || first_op["name"], else: first_op
+        test_operation = cond do
+          is_map(first_op) and Map.has_key?(first_op, :name) -> first_op.name
+          is_map(first_op) and Map.has_key?(first_op, "name") -> first_op["name"]
+          is_binary(first_op) -> first_op
+          true -> inspect(first_op)
+        end
         IO.puts("Testing operation: #{test_operation}")
 
         case Lather.DynamicClient.get_operation_info(client, test_operation) do
