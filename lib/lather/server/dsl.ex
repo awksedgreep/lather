@@ -50,16 +50,28 @@ defmodule Lather.Server.DSL do
   end
 
   @doc """
-  Sets the description for the current operation.
+  Sets the description for the current operation or type.
+  Works in both soap_operation and soap_type blocks.
   """
   defmacro description(text) do
     quote do
-      @current_operation Map.put(@current_operation, :description, unquote(text))
+      cond do
+        Module.has_attribute?(__MODULE__, :current_operation) and
+          Module.get_attribute(__MODULE__, :current_operation) != nil ->
+          @current_operation Map.put(@current_operation, :description, unquote(text))
+
+        Module.has_attribute?(__MODULE__, :current_type) and
+          Module.get_attribute(__MODULE__, :current_type) != nil ->
+          @current_type Map.put(@current_type, :description, unquote(text))
+
+        true ->
+          :ok
+      end
     end
   end
 
   @doc """
-  Sets the description for the current type.
+  Sets the description for the current type (deprecated, use description/1).
   """
   defmacro type_description(text) do
     quote do
