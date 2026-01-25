@@ -50,11 +50,35 @@ defmodule Lather.Wsdl.Analyzer do
 
   @doc """
   Loads and analyzes a WSDL from a URL or file path.
+
+  ## Options
+
+  * `:http_options` - Options for HTTP requests when loading from URL:
+    * `:headers` - List of `{name, value}` tuples for request headers
+    * `:receive_timeout` - Timeout for receiving response (milliseconds)
+    * `:pool_timeout` - Timeout for checking out a connection (milliseconds)
+
+  All other options are passed to `analyze/2`.
+
+  ## Examples
+
+      # Load with custom timeout
+      Analyzer.load_and_analyze(url, http_options: [receive_timeout: 30_000])
+
+      # Load with authentication header
+      Analyzer.load_and_analyze(url,
+        http_options: [
+          headers: [{"Authorization", "Basic " <> Base.encode64("user:pass")}]
+        ]
+      )
+
   """
   @spec load_and_analyze(String.t(), keyword()) :: {:ok, map()} | {:error, any()}
   def load_and_analyze(source, options \\ []) do
-    with {:ok, wsdl_content} <- load_wsdl(source),
-         {:ok, service_info} <- analyze(wsdl_content, options) do
+    {http_options, analysis_options} = Keyword.pop(options, :http_options, [])
+
+    with {:ok, wsdl_content} <- load_wsdl(source, http_options),
+         {:ok, service_info} <- analyze(wsdl_content, analysis_options) do
       {:ok, service_info}
     end
   end
@@ -107,12 +131,17 @@ defmodule Lather.Wsdl.Analyzer do
 
   # Private functions
 
-  defp load_wsdl("http" <> _ = url) do
+  defp load_wsdl("http" <> _ = url, http_options) do
     # Load WSDL from URL using Finch directly
     try do
-      request = Finch.build(:get, url)
+      headers = Keyword.get(http_options, :headers, [])
+      request = Finch.build(:get, url, headers)
 
-      case Finch.request(request, Lather.Finch) do
+      request_options =
+        http_options
+        |> Keyword.take([:receive_timeout, :pool_timeout])
+
+      case Finch.request(request, Lather.Finch, request_options) do
         {:ok, %Finch.Response{status: 200, body: content}} -> {:ok, content}
         {:ok, %Finch.Response{status: status}} -> {:error, {:http_error, status}}
         {:error, reason} -> {:error, {:transport_error, reason}}
@@ -126,7 +155,7 @@ defmodule Lather.Wsdl.Analyzer do
     end
   end
 
-  defp load_wsdl(file_path) do
+  defp load_wsdl(file_path, _http_options) do
     # Load WSDL from file
     case File.read(file_path) do
       {:ok, content} -> {:ok, content}
