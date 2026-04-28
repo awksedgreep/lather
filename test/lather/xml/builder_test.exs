@@ -516,6 +516,80 @@ defmodule Lather.Xml.BuilderTest do
     end
   end
 
+  describe "build/1 - Ordered list input" do
+    test "builds XML from a list of {key, value} pairs preserving order" do
+      {:ok, xml} =
+        Builder.build([
+          {"first", "1"},
+          {"second", "2"},
+          {"third", "3"}
+        ])
+
+      first_pos = :binary.match(xml, "first") |> elem(0)
+      second_pos = :binary.match(xml, "second") |> elem(0)
+      third_pos = :binary.match(xml, "third") |> elem(0)
+
+      assert first_pos < second_pos
+      assert second_pos < third_pos
+    end
+
+    test "promotes @-prefixed entries as XML attributes" do
+      {:ok, xml} =
+        Builder.build([
+          {"root", [
+            {"@xmlns", "http://example.com"},
+            {"@id", "42"},
+            {"child", "value"}
+          ]}
+        ])
+
+      assert String.contains?(xml, ~s(xmlns="http://example.com"))
+      assert String.contains?(xml, ~s(id="42"))
+      assert String.contains?(xml, "<child>value</child>")
+      refute String.contains?(xml, "<xmlns>")
+      refute String.contains?(xml, "<@xmlns>")
+    end
+
+    test "builds SOAP envelope with Header before Body via ordered list" do
+      {:ok, xml} =
+        Builder.build([
+          {"soap:Envelope", [
+            {"@xmlns:soap", "http://schemas.xmlsoap.org/soap/envelope/"},
+            {"soap:Header", nil},
+            {"soap:Body", %{"op" => "value"}}
+          ]}
+        ])
+
+      header_pos = :binary.match(xml, "soap:Header") |> elem(0)
+      body_pos = :binary.match(xml, "soap:Body") |> elem(0)
+
+      assert header_pos < body_pos
+    end
+
+    test "includes XML declaration" do
+      {:ok, xml} = Builder.build([{"root", "content"}])
+      assert String.starts_with?(xml, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
+    end
+
+    test "rejects list of non-pairs as invalid_data_structure" do
+      assert {:error, :invalid_data_structure} = Builder.build([1, 2, 3])
+      assert {:error, :invalid_data_structure} = Builder.build(["a", "b"])
+    end
+  end
+
+  describe "build_fragment/1 - Ordered list input" do
+    test "builds fragment from ordered list without XML declaration" do
+      {:ok, xml} = Builder.build_fragment([{"root", "content"}])
+
+      assert String.contains?(xml, "<root>content</root>")
+      refute String.contains?(xml, "<?xml")
+    end
+
+    test "rejects list of non-pairs as invalid_data_structure" do
+      assert {:error, :invalid_data_structure} = Builder.build_fragment([1, 2, 3])
+    end
+  end
+
   describe "Error handling" do
     test "handles rescue exception gracefully" do
       # Test that exceptions are caught and returned as errors

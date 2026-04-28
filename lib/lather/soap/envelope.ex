@@ -49,20 +49,16 @@ defmodule Lather.Soap.Envelope do
         build_body(operation, params, namespace)
       end
 
-    soap_ns = namespace_for_version(version)
-    header_content = build_header(headers)
+    envelope = [
+      {"soap:Envelope", [
+        {"@xmlns:soap", namespace_for_version(version)},
+        {"soap:Header", build_header(headers)},
+        {"soap:Body", body_content}
+      ]}
+    ]
 
-    with {:ok, header_xml} <- build_header_xml(header_content),
-         {:ok, body_xml} <- Builder.build_fragment(%{"soap:Body" => body_content}) do
-      xml =
-        ~s(<?xml version="1.0" encoding="UTF-8"?>\n) <>
-          ~s(<soap:Envelope xmlns:soap="#{soap_ns}">\n) <>
-          header_xml <> "\n" <>
-          indent(body_xml) <> "\n" <>
-          ~s(</soap:Envelope>)
-
-      {:ok, xml}
-    else
+    case Builder.build(envelope) do
+      {:ok, xml} -> {:ok, xml}
       {:error, reason} -> {:error, {:envelope_build_error, reason}}
     end
   end
@@ -123,24 +119,6 @@ defmodule Lather.Soap.Envelope do
       {key, value}, acc -> Map.put(acc, key, value)
       header_map, acc when is_map(header_map) -> Map.merge(acc, header_map)
     end)
-  end
-
-  defp build_header_xml(nil) do
-    {:ok, "  <soap:Header/>"}
-  end
-
-  defp build_header_xml(content) do
-    case Builder.build_fragment(%{"soap:Header" => content}) do
-      {:ok, fragment} -> {:ok, indent(fragment)}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp indent(text) do
-    text
-    |> String.split("\n")
-    |> Enum.map(&("  " <> &1))
-    |> Enum.join("\n")
   end
 
   defp build_body(operation, params, namespace) do
