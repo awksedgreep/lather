@@ -615,13 +615,21 @@ defmodule Lather.Operation.Builder do
     # For document style, look for the response element
     response_name = get_response_element_name(operation_info)
 
-    case Map.get(body_content, response_name) do
+    # Match the key exactly, or by local-name suffix to handle namespace prefixes
+    # (e.g. "ns0:MT_Movilidad_Registro_Rp" should match response_name "MT_Movilidad_Registro_Rp")
+    matched_key =
+      Map.keys(body_content)
+      |> Enum.find(fn k ->
+        k == response_name or String.ends_with?(k, ":#{response_name}")
+      end)
+
+    case matched_key do
       nil ->
-        # Try without operation name wrapper
+        # No matching element found — return the whole body
         {:ok, body_content}
 
-      response_element ->
-        {:ok, response_element}
+      key ->
+        {:ok, Map.get(body_content, key)}
     end
   end
 
@@ -657,8 +665,10 @@ defmodule Lather.Operation.Builder do
       String.ends_with?(base_name, "Output") ->
         base_name
 
+      # For non-standard naming (e.g. SAP "_Rp" suffix), the stripped message
+      # name is the correct element name — don't replace it with a guessed default.
       true ->
-        operation_info.name <> "Response"
+        base_name
     end
   end
 

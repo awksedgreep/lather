@@ -594,8 +594,7 @@ defmodule Lather.Xml.BuilderTest do
     test "handles rescue exception gracefully" do
       # Test that exceptions are caught and returned as errors
       result = Builder.build(%{"root" => %{"nested" => :bad_value}})
-      # Should either succeed or return error tuple
-      assert is_tuple(result) and elem(result, 0) in [:ok, :error]
+      assert match?({:ok, _}, result) or match?({:error, _}, result)
     end
   end
 

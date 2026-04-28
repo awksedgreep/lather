@@ -163,6 +163,68 @@ defmodule Lather.Operation.BuilderTest do
       {:ok, result} = Builder.parse_response(operation_info, response_body, style: :document)
       assert result == %{"result" => "37.5"}
     end
+
+    test "unwraps response element when body key has namespace prefix (SAP-style)" do
+      # Enterprise SOAP servers use namespace-prefixed element names such as
+      # "ns0:MT_Employee_Lookup_Rp" in the body, while the WSDL output
+      # message is "tns:MT_Employee_Lookup_Rp". The local name matches but
+      # the body prefix is different — the parser must use suffix matching.
+      operation_info = %{
+        name: "MT_Employee_Lookup",
+        output: %{
+          message: "tns:MT_Employee_Lookup_Rp",
+          parts: [%{name: "MESSAGE", type: "xsd:string"}]
+        }
+      }
+
+      response_body = %{
+        "SOAP:Envelope" => %{
+          "@xmlns:SOAP" => "http://schemas.xmlsoap.org/soap/envelope/",
+          "SOAP:Body" => %{
+            "ns0:MT_Employee_Lookup_Rp" => %{
+              "@xmlns:ns0" => "http://example.com/HR/Employee/Lookup",
+              "TENANT" => "ACME_CORP",
+              "REQ_ID" => "001",
+              "REQ_DATE" => "28042026",
+              "MESSAGE" => "Employee not found"
+            }
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_body, style: :document)
+
+      assert result["TENANT"] == "ACME_CORP"
+      assert result["REQ_ID"] == "001"
+      assert result["REQ_DATE"] == "28042026"
+      assert result["MESSAGE"] == "Employee not found"
+      refute Map.has_key?(result, "ns0:MT_Employee_Lookup_Rp"),
+             "response should be unwrapped from the operation element"
+    end
+
+    test "unwraps response element with non-standard suffix (no Response/Output ending)" do
+      # Ensures get_response_element_name uses base_name directly instead of
+      # appending "Response" when the output message name doesn't match known suffixes.
+      operation_info = %{
+        name: "SendData",
+        output: %{
+          message: "tns:SendData_Rp",
+          parts: [%{name: "status", type: "xsd:string"}]
+        }
+      }
+
+      response_body = %{
+        "soap:Envelope" => %{
+          "soap:Body" => %{
+            "SendData_Rp" => %{"status" => "ok"}
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_body, style: :document)
+
+      assert result == %{"status" => "ok"}
+    end
   end
 
   describe "build_request/3 - round-trip compatibility" do
