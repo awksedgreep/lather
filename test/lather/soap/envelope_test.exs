@@ -84,6 +84,37 @@ defmodule Lather.Soap.EnvelopeTest do
                String.contains?(xml, "<soap:Header/>")
     end
 
+    test "soap:Header appears before soap:Body in generated XML (SOAP 1.1 spec compliance)" do
+      {:ok, xml} = Envelope.build(:GetUser, %{id: "123"})
+
+      header_pos = :binary.match(xml, "soap:Header") |> elem(0)
+      body_pos = :binary.match(xml, "soap:Body") |> elem(0)
+
+      assert header_pos < body_pos,
+             "Expected soap:Header to appear before soap:Body, but got:\n#{xml}"
+    end
+
+    test "soap:Header appears before soap:Body when headers are provided" do
+      headers = [{"Action", "http://example.com/GetUser"}]
+      {:ok, xml} = Envelope.build(:GetUser, %{id: "123"}, headers: headers)
+
+      header_pos = :binary.match(xml, "soap:Header") |> elem(0)
+      body_pos = :binary.match(xml, "soap:Body") |> elem(0)
+
+      assert header_pos < body_pos,
+             "Expected soap:Header to appear before soap:Body, but got:\n#{xml}"
+    end
+
+    test "soap:Header appears before soap:Body for SOAP 1.2 envelopes" do
+      {:ok, xml} = Envelope.build(:GetUser, %{id: "123"}, version: :v1_2)
+
+      header_pos = :binary.match(xml, "soap:Header") |> elem(0)
+      body_pos = :binary.match(xml, "soap:Body") |> elem(0)
+
+      assert header_pos < body_pos,
+             "Expected soap:Header to appear before soap:Body in SOAP 1.2 envelope, but got:\n#{xml}"
+    end
+
     test "includes namespace in operation when specified" do
       {:ok, xml} = Envelope.build(:GetUser, %{id: "123"}, namespace: "http://example.com/service")
 
