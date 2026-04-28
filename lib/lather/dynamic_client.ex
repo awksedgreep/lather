@@ -387,7 +387,7 @@ defmodule Lather.DynamicClient do
             # Check if this is a SOAP fault
             case extract_soap_fault(parsed_response) do
               {:ok, fault} -> {:error, {:soap_fault, fault}}
-              :not_fault -> {:ok, parsed_response}
+              :not_fault -> {:error, %{status: 500, type: :http_error, body: body}}
             end
 
           {:error, _parse_error} ->
