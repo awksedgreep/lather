@@ -202,6 +202,73 @@ defmodule Lather.Operation.BuilderTest do
              "response should be unwrapped from the operation element"
     end
 
+    test "parses SAP PI/PO response with n0 prefix and nested complex structure" do
+      # Real-world SAP PI/PO response: the body element carries a non-standard
+      # prefix (n0:), two xmlns declarations on the same element, and a deeply
+      # nested payload with repeated child structures.
+      operation_info = %{
+        name: "SI_Movilidad_Registro_SYN_OUT",
+        output: %{
+          message: "tns:MT_Movilidad_Registro_Rp",
+          parts: [%{name: "MT_Movilidad_Registro_Rp", type: "tns:MT_Movilidad_Registro_Rp"}]
+        }
+      }
+
+      response_body = %{
+        "soap:Envelope" => %{
+          "@xmlns:soap" => "http://schemas.xmlsoap.org/soap/envelope/",
+          "soap:Body" => %{
+            "n0:MT_Movilidad_Registro_Rp" => %{
+              "@xmlns:n0" => "http://fcc.es/HRSAPECC/HCM/PA/Movilidad/Registro",
+              "@xmlns:prx" =>
+                "urn:sap.com:proxy:EHD:/1SAI/TAS820FE76BCF9B749B0AE4:750",
+              "GROUPID" => "ACME",
+              "ID_ENV" => "001",
+              "FEC_ENV" => "05052026",
+              "VIAJEROS" => %{
+                "DATOS_PERSONALES" => %{
+                  "ID_SAP" => "00015665",
+                  "VORNA" => "JOHN",
+                  "NACHN" => "DOE",
+                  "NACH2" => "SMITH"
+                },
+                "ESTRUCTURA_ORGANIZATIVA" => %{
+                  "BUKRS" => "S400",
+                  "BUTXT" => "EXAMPLE CORP S.A.",
+                  "GSBER" => "1KKR",
+                  "GTEXT" => "IT SERVICES",
+                  "NEGOCIO" => "TECH"
+                }
+              }
+            }
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_body, style: :document)
+
+      # Top-level fields are accessible directly after unwrapping the operation element
+      assert result["GROUPID"] == "ACME"
+      assert result["ID_ENV"] == "001"
+      assert result["FEC_ENV"] == "05052026"
+
+      # Nested structure is preserved intact
+      assert result["VIAJEROS"]["DATOS_PERSONALES"]["ID_SAP"] == "00015665"
+      assert result["VIAJEROS"]["DATOS_PERSONALES"]["VORNA"] == "JOHN"
+      assert result["VIAJEROS"]["DATOS_PERSONALES"]["NACHN"] == "DOE"
+      assert result["VIAJEROS"]["DATOS_PERSONALES"]["NACH2"] == "SMITH"
+
+      assert result["VIAJEROS"]["ESTRUCTURA_ORGANIZATIVA"]["BUKRS"] == "S400"
+      assert result["VIAJEROS"]["ESTRUCTURA_ORGANIZATIVA"]["BUTXT"] == "EXAMPLE CORP S.A."
+      assert result["VIAJEROS"]["ESTRUCTURA_ORGANIZATIVA"]["GSBER"] == "1KKR"
+      assert result["VIAJEROS"]["ESTRUCTURA_ORGANIZATIVA"]["GTEXT"] == "IT SERVICES"
+      assert result["VIAJEROS"]["ESTRUCTURA_ORGANIZATIVA"]["NEGOCIO"] == "TECH"
+
+      # The operation wrapper element must be unwrapped
+      refute Map.has_key?(result, "n0:MT_Movilidad_Registro_Rp"),
+             "response should be unwrapped from the n0-prefixed operation element"
+    end
+
     test "unwraps response element with non-standard suffix (no Response/Output ending)" do
       # Ensures get_response_element_name uses base_name directly instead of
       # appending "Response" when the output message name doesn't match known suffixes.
