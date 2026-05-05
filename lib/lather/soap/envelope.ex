@@ -26,6 +26,9 @@ defmodule Lather.Soap.Envelope do
   * `:version` - SOAP version (`:v1_1` or `:v1_2`, default: `:v1_1`)
   * `:headers` - SOAP headers to include
   * `:namespace` - Target namespace for the operation
+  * `:namespace_prefix` - Optional namespace prefix for the operation element (e.g. `"ns0"`).
+    When set the element is rendered as `<ns0:Op xmlns:ns0="...">` instead of the default
+    `<Op xmlns="...">`. When omitted, the existing default-namespace behaviour is preserved.
 
   ## Examples
 
@@ -38,6 +41,7 @@ defmodule Lather.Soap.Envelope do
     version = Keyword.get(options, :version, :v1_1)
     headers = Keyword.get(options, :headers, [])
     namespace = Keyword.get(options, :namespace, "")
+    namespace_prefix = Keyword.get(options, :namespace_prefix)
     # raw_body: when true, params are used directly as body content without wrapping
     # in operation element (used for document/literal with element-based parts)
     raw_body = Keyword.get(options, :raw_body, false)
@@ -46,7 +50,7 @@ defmodule Lather.Soap.Envelope do
       if raw_body do
         params
       else
-        build_body(operation, params, namespace)
+        build_body(operation, params, namespace, namespace_prefix)
       end
 
     envelope = [
@@ -121,19 +125,27 @@ defmodule Lather.Soap.Envelope do
     end)
   end
 
-  defp build_body(operation, params, namespace) do
+  defp build_body(operation, params, namespace, namespace_prefix)
+
+  defp build_body(operation, params, namespace, nil) do
     operation_name = to_string(operation)
 
-    body_content =
-      if namespace != "" do
-        %{
-          operation_name => Map.merge(%{"@xmlns" => namespace}, params)
-        }
-      else
-        %{operation_name => params}
-      end
+    if namespace != "" do
+      %{operation_name => Map.merge(%{"@xmlns" => namespace}, params)}
+    else
+      %{operation_name => params}
+    end
+  end
 
-    body_content
+  defp build_body(operation, params, namespace, prefix) when is_binary(prefix) do
+    operation_name = to_string(operation)
+    prefixed_name = "#{prefix}:#{operation_name}"
+
+    if namespace != "" do
+      %{prefixed_name => Map.merge(%{"@xmlns:#{prefix}" => namespace}, params)}
+    else
+      %{prefixed_name => params}
+    end
   end
 
   defp extract_body_or_fault(parsed_xml) do

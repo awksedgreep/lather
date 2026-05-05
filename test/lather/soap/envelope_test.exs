@@ -204,6 +204,41 @@ defmodule Lather.Soap.EnvelopeTest do
       refute String.contains?(xml, "<GetWeather ")
     end
 
+    test "uses prefixed namespace when namespace_prefix option is given" do
+      {:ok, xml} =
+        Envelope.build(:GetUser, %{"userId" => "123"},
+          namespace: "http://example.com/service",
+          namespace_prefix: "ns0"
+        )
+
+      assert String.contains?(xml, "<ns0:GetUser")
+      assert String.contains?(xml, "xmlns:ns0=\"http://example.com/service\"")
+      assert String.contains?(xml, "<userId>123</userId>")
+      assert String.contains?(xml, "</ns0:GetUser>")
+      refute String.contains?(xml, "xmlns=\"http://example.com/service\"")
+    end
+
+    test "preserves default-namespace behaviour when namespace_prefix is absent" do
+      {:ok, xml} =
+        Envelope.build(:GetUser, %{"userId" => "123"},
+          namespace: "http://example.com/service"
+        )
+
+      assert String.contains?(xml, "<GetUser")
+      assert String.contains?(xml, "xmlns=\"http://example.com/service\"")
+      refute String.contains?(xml, "xmlns:ns0")
+    end
+
+    test "uses prefixed namespace with no namespace value (prefix but empty namespace)" do
+      {:ok, xml} =
+        Envelope.build(:MyOp, %{"param" => "value"},
+          namespace_prefix: "tns"
+        )
+
+      assert String.contains?(xml, "<tns:MyOp>")
+      assert String.contains?(xml, "<param>value</param>")
+    end
+
     test "raw_body: false (default) wraps params in operation name" do
       params = %{
         "SomeElement" => %{"value" => "test"}

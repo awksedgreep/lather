@@ -227,6 +227,89 @@ defmodule Lather.Operation.BuilderTest do
     end
   end
 
+  describe "build_request/3 - namespace_prefix option" do
+    test "builds envelope with prefixed operation element when namespace_prefix is given" do
+      operation_info = %{
+        name: "GetOrder",
+        soap_action: "http://example.com/orders/GetOrder",
+        input: %{
+          message: "GetOrderRequest",
+          parts: [%{name: "orderId", type: "xsd:string"}]
+        },
+        output: %{
+          message: "tns:GetOrderResponse",
+          parts: [%{name: "status", type: "xsd:string"}]
+        }
+      }
+
+      {:ok, envelope} =
+        Builder.build_request(operation_info, %{"orderId" => "42"},
+          namespace: "http://example.com/orders",
+          namespace_prefix: "ns0"
+        )
+
+      assert String.contains?(envelope, "<ns0:GetOrder")
+      assert String.contains?(envelope, "xmlns:ns0=\"http://example.com/orders\"")
+      assert String.contains?(envelope, "<orderId>42</orderId>")
+      refute String.contains?(envelope, "xmlns=\"http://example.com/orders\"")
+    end
+
+    test "build_request without namespace_prefix preserves default-namespace behaviour" do
+      operation_info = %{
+        name: "GetOrder",
+        soap_action: "http://example.com/orders/GetOrder",
+        input: %{
+          message: "GetOrderRequest",
+          parts: [%{name: "orderId", type: "xsd:string"}]
+        },
+        output: %{
+          message: "tns:GetOrderResponse",
+          parts: [%{name: "status", type: "xsd:string"}]
+        }
+      }
+
+      {:ok, envelope} =
+        Builder.build_request(operation_info, %{"orderId" => "42"},
+          namespace: "http://example.com/orders"
+        )
+
+      assert String.contains?(envelope, "<GetOrder")
+      assert String.contains?(envelope, "xmlns=\"http://example.com/orders\"")
+      refute String.contains?(envelope, "xmlns:ns0")
+    end
+
+    test "prefixed request response still parses correctly via suffix matching" do
+      operation_info = %{
+        name: "GetOrder",
+        soap_action: "http://example.com/orders/GetOrder",
+        input: %{
+          message: "GetOrderRequest",
+          parts: [%{name: "orderId", type: "xsd:string"}]
+        },
+        output: %{
+          message: "tns:GetOrderResponse",
+          parts: [%{name: "status", type: "xsd:string"}]
+        }
+      }
+
+      response_body = %{
+        "soap:Envelope" => %{
+          "@xmlns:soap" => "http://schemas.xmlsoap.org/soap/envelope/",
+          "soap:Body" => %{
+            "ns0:GetOrderResponse" => %{
+              "@xmlns:ns0" => "http://example.com/orders",
+              "status" => "shipped"
+            }
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_body, style: :document)
+
+      assert result["status"] == "shipped"
+    end
+  end
+
   describe "build_request/3 - round-trip compatibility" do
     test "client request can be parsed by server" do
       # Simulates what happens in the livebook: client builds request, server parses it

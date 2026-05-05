@@ -25,6 +25,7 @@ defmodule Lather.Operation.Builder do
     * `:namespace` - Target namespace for the operation
     * `:headers` - Additional SOAP headers
     * `:version` - SOAP version (`:v1_1` or `:v1_2`, default: `:v1_1`)
+    * `:namespace_prefix` - Optional namespace prefix for the operation element (e.g. `"ns0"`)
 
   ## Examples
 
@@ -85,6 +86,16 @@ defmodule Lather.Operation.Builder do
               _ -> body_content
             end
 
+          # When a namespace_prefix is set, the namespace attribute will be emitted
+          # as xmlns:prefix by Envelope.build_body, so we must not also pass @xmlns
+          # (which would produce a redundant default-namespace declaration).
+          params =
+            if Keyword.get(options, :namespace_prefix) do
+              Map.delete(params, "@xmlns")
+            else
+              params
+            end
+
           {params, false}
         end
 
@@ -93,7 +104,8 @@ defmodule Lather.Operation.Builder do
         namespace: namespace,
         headers: headers,
         version: version,
-        raw_body: raw_body
+        raw_body: raw_body,
+        namespace_prefix: Keyword.get(options, :namespace_prefix)
       ]
 
       Envelope.build(operation_name, processed_params, envelope_options)
