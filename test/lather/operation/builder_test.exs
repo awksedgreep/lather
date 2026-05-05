@@ -310,6 +310,58 @@ defmodule Lather.Operation.BuilderTest do
     end
   end
 
+  describe "build_request/3 - namespace_prefix with element-based document/literal" do
+    @element_based_operation %{
+      name: "SI_CreateOrder_SYN_OUT",
+      soap_action: "http://example.com/orders",
+      style: :document,
+      documentation: "",
+      input: %{
+        message: "CreateOrderRequest",
+        parts: [
+          %{
+            name: "CreateOrderRequest",
+            type: "tns:CreateOrderRequest",
+            element: "tns:CreateOrderRequest"
+          }
+        ],
+        use: :literal
+      },
+      output: %{message: "CreateOrderResponse", parts: []}
+    }
+
+    @element_based_params %{
+      "CreateOrderRequest" => %{
+        "customerId" => "C-42",
+        "item" => "widget"
+      }
+    }
+
+    test "applies namespace_prefix to element-based body element" do
+      {:ok, envelope} =
+        Builder.build_request(@element_based_operation, @element_based_params,
+          namespace: "http://example.com/orders",
+          namespace_prefix: "ns0"
+        )
+
+      assert String.contains?(envelope, "<ns0:CreateOrderRequest")
+      assert String.contains?(envelope, ~s(xmlns:ns0="http://example.com/orders"))
+      assert String.contains?(envelope, "<customerId>C-42</customerId>")
+      refute String.contains?(envelope, ~s(xmlns="http://example.com/orders"))
+    end
+
+    test "element-based operations without namespace_prefix preserve default behaviour" do
+      {:ok, envelope} =
+        Builder.build_request(@element_based_operation, @element_based_params,
+          namespace: "http://example.com/orders"
+        )
+
+      assert String.contains?(envelope, "<CreateOrderRequest")
+      assert String.contains?(envelope, ~s(xmlns="http://example.com/orders"))
+      refute String.contains?(envelope, "ns0:")
+    end
+  end
+
   describe "build_request/3 - round-trip compatibility" do
     test "client request can be parsed by server" do
       # Simulates what happens in the livebook: client builds request, server parses it

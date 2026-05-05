@@ -76,8 +76,25 @@ defmodule Lather.Operation.Builder do
       # wrapped again in the operation name.
       {processed_params, raw_body} =
         if element_based and style in [:document, "document"] do
-          # Use body_content directly as raw body
-          {body_content, true}
+          ns_prefix = Keyword.get(options, :namespace_prefix)
+
+          body =
+            if ns_prefix do
+              Map.new(body_content, fn {element_name, element_content} ->
+                prefixed_name = "#{ns_prefix}:#{element_name}"
+
+                prefixed_content =
+                  element_content
+                  |> Map.delete("@xmlns")
+                  |> Map.put("@xmlns:#{ns_prefix}", namespace)
+
+                {prefixed_name, prefixed_content}
+              end)
+            else
+              body_content
+            end
+
+          {body, true}
         else
           # Traditional wrapping - extract params from operation wrapper if present
           params =
