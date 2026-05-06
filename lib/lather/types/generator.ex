@@ -43,16 +43,17 @@ defmodule Lather.Types.Generator do
     types_to_generate = filter_types(service_info.types, include_only, exclude_types)
 
     # Generate struct modules
-    generated_modules = Enum.map(types_to_generate, fn type_def ->
-      case type_def.category do
-        :complex_type ->
-          generate_struct_module(type_def, module_prefix, field_naming)
+    generated_modules =
+      Enum.map(types_to_generate, fn type_def ->
+        case type_def.category do
+          :complex_type ->
+            generate_struct_module(type_def, module_prefix, field_naming)
 
-        _ ->
-          nil
-      end
-    end)
-    |> Enum.reject(&is_nil/1)
+          _ ->
+            nil
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
 
     {:ok, generated_modules}
   end
@@ -175,26 +176,28 @@ defmodule Lather.Types.Generator do
     module_name = Module.concat(module_prefix, struct_name)
 
     # Convert type elements to struct fields
-    struct_fields = Enum.map(type_def.elements, fn element ->
-      field_name = convert_field_name(element.name, field_naming)
-      default_value = get_field_default_value(element)
-      {field_name, default_value}
-    end)
+    struct_fields =
+      Enum.map(type_def.elements, fn element ->
+        field_name = convert_field_name(element.name, field_naming)
+        default_value = get_field_default_value(element)
+        {field_name, default_value}
+      end)
 
     # Generate the module at runtime
-    module_ast = quote do
-      defstruct unquote(struct_fields)
+    module_ast =
+      quote do
+        defstruct unquote(struct_fields)
 
-      @type t :: %__MODULE__{
-        unquote_splicing(
-          Enum.map(struct_fields, fn {field_name, _default} ->
-            {field_name, quote(do: any())}
-          end)
-        )
-      }
+        @type t :: %__MODULE__{
+                unquote_splicing(
+                  Enum.map(struct_fields, fn {field_name, _default} ->
+                    {field_name, quote(do: any())}
+                  end)
+                )
+              }
 
-      def __type_definition__, do: unquote(Macro.escape(type_def))
-    end
+        def __type_definition__, do: unquote(Macro.escape(type_def))
+      end
 
     # Define the module
     Module.create(module_name, module_ast, Macro.Env.location(__ENV__))
@@ -286,7 +289,10 @@ defmodule Lather.Types.Generator do
   defp convert_value_to_xml(true), do: "true"
   defp convert_value_to_xml(false), do: "false"
   defp convert_value_to_xml(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
-  defp convert_value_to_xml(value) when is_list(value), do: Enum.map(value, &convert_value_to_xml/1)
+
+  defp convert_value_to_xml(value) when is_list(value),
+    do: Enum.map(value, &convert_value_to_xml/1)
+
   defp convert_value_to_xml(value), do: to_string(value)
 
   defp parse_integer(value) when is_binary(value) do
@@ -295,6 +301,7 @@ defmodule Lather.Types.Generator do
       :error -> 0
     end
   end
+
   defp parse_integer(value) when is_integer(value), do: value
   defp parse_integer(_), do: 0
 
@@ -310,6 +317,7 @@ defmodule Lather.Types.Generator do
       :error -> 0.0
     end
   end
+
   defp parse_decimal(value) when is_number(value), do: value
   defp parse_decimal(_), do: 0.0
 
@@ -319,6 +327,7 @@ defmodule Lather.Types.Generator do
       {:error, _} -> nil
     end
   end
+
   defp parse_datetime(%DateTime{} = datetime), do: datetime
   defp parse_datetime(_), do: nil
 end

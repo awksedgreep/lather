@@ -35,32 +35,32 @@ defmodule Lather.Integration.WSSecurityAuthTest do
     @service_name "SecureCalculatorService"
 
     soap_operation "SecureAdd" do
-      description "Adds two numbers securely"
+      description("Adds two numbers securely")
 
       input do
-        parameter "a", :decimal, required: true
-        parameter "b", :decimal, required: true
+        parameter("a", :decimal, required: true)
+        parameter("b", :decimal, required: true)
       end
 
       output do
-        parameter "result", :decimal
+        parameter("result", :decimal)
       end
 
-      soap_action "SecureAdd"
+      soap_action("SecureAdd")
     end
 
     soap_operation "SecureEcho" do
-      description "Echoes the input message securely"
+      description("Echoes the input message securely")
 
       input do
-        parameter "message", :string, required: true
+        parameter("message", :string, required: true)
       end
 
       output do
-        parameter "echo", :string
+        parameter("echo", :string)
       end
 
-      soap_action "SecureEcho"
+      soap_action("SecureEcho")
     end
 
     def secure_add(%{"a" => a, "b" => b}) do
@@ -704,7 +704,9 @@ defmodule Lather.Integration.WSSecurityAuthTest do
 
       # Verify the digest manually
       {:ok, nonce_decoded} = Base.decode64(nonce)
-      expected_digest = :crypto.hash(:sha, nonce_decoded <> created <> @valid_password) |> Base.encode64()
+
+      expected_digest =
+        :crypto.hash(:sha, nonce_decoded <> created <> @valid_password) |> Base.encode64()
 
       assert digest == expected_digest
     end
@@ -811,7 +813,10 @@ defmodule Lather.Integration.WSSecurityAuthTest do
 
   describe "Combined UsernameToken + Timestamp" do
     setup do
-      start_test_server(:username_with_timestamp, username: @valid_username, password: @valid_password)
+      start_test_server(:username_with_timestamp,
+        username: @valid_username,
+        password: @valid_password
+      )
     end
 
     test "combined header is accepted by server", %{base_url: base_url} do
@@ -949,6 +954,7 @@ defmodule Lather.Integration.WSSecurityAuthTest do
       {:ok, response} = make_soap_request(base_url, envelope)
 
       assert response.status == 500
+
       assert String.contains?(response.body, "FailedAuthentication") or
                String.contains?(response.body, "invalid")
     end
@@ -967,6 +973,7 @@ defmodule Lather.Integration.WSSecurityAuthTest do
       {:ok, response} = make_soap_request(base_url, envelope)
 
       assert response.status == 500
+
       assert String.contains?(response.body, "FailedAuthentication") or
                String.contains?(response.body, "invalid")
     end
@@ -1023,6 +1030,7 @@ defmodule Lather.Integration.WSSecurityAuthTest do
       {:ok, response} = make_soap_request("http://localhost:#{port}/soap", envelope)
 
       assert response.status == 500
+
       assert String.contains?(response.body, "FailedAuthentication") or
                String.contains?(response.body, "digest")
     end
@@ -1049,6 +1057,7 @@ defmodule Lather.Integration.WSSecurityAuthTest do
       {:ok, response} = make_soap_request(base_url, envelope)
 
       assert response.status == 500
+
       assert String.contains?(response.body, "Security") or
                String.contains?(response.body, "required")
     end
@@ -1139,6 +1148,7 @@ defmodule Lather.Integration.WSSecurityAuthTest do
       {:ok, response} = make_soap_request(base_url, envelope)
 
       assert response.status == 500
+
       assert String.contains?(response.body, "Expired") or
                String.contains?(response.body, "expired")
     end
@@ -1258,6 +1268,7 @@ defmodule Lather.Integration.WSSecurityAuthTest do
       {:ok, response} = make_soap_request(base_url, envelope)
 
       assert response.status == 500
+
       assert String.contains?(response.body, "Timestamp") or
                String.contains?(response.body, "required") or
                String.contains?(response.body, "Security")
@@ -1270,7 +1281,10 @@ defmodule Lather.Integration.WSSecurityAuthTest do
 
   describe "Header module compatibility" do
     setup do
-      start_test_server(:username_with_timestamp, username: @valid_username, password: @valid_password)
+      start_test_server(:username_with_timestamp,
+        username: @valid_username,
+        password: @valid_password
+      )
     end
 
     test "Header.username_token produces same structure as WSSecurity.username_token" do

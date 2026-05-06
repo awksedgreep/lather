@@ -536,11 +536,12 @@ defmodule Lather.Xml.BuilderTest do
     test "promotes @-prefixed entries as XML attributes" do
       {:ok, xml} =
         Builder.build([
-          {"root", [
-            {"@xmlns", "http://example.com"},
-            {"@id", "42"},
-            {"child", "value"}
-          ]}
+          {"root",
+           [
+             {"@xmlns", "http://example.com"},
+             {"@id", "42"},
+             {"child", "value"}
+           ]}
         ])
 
       assert String.contains?(xml, ~s(xmlns="http://example.com"))
@@ -553,11 +554,12 @@ defmodule Lather.Xml.BuilderTest do
     test "builds SOAP envelope with Header before Body via ordered list" do
       {:ok, xml} =
         Builder.build([
-          {"soap:Envelope", [
-            {"@xmlns:soap", "http://schemas.xmlsoap.org/soap/envelope/"},
-            {"soap:Header", nil},
-            {"soap:Body", %{"op" => "value"}}
-          ]}
+          {"soap:Envelope",
+           [
+             {"@xmlns:soap", "http://schemas.xmlsoap.org/soap/envelope/"},
+             {"soap:Header", nil},
+             {"soap:Body", %{"op" => "value"}}
+           ]}
         ])
 
       header_pos = :binary.match(xml, "soap:Header") |> elem(0)

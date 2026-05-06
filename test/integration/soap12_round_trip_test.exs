@@ -26,62 +26,62 @@ defmodule Lather.Integration.Soap12RoundTripTest do
     @service_name "TestSoap12Service"
 
     soap_operation "Add" do
-      description "Adds two numbers"
+      description("Adds two numbers")
 
       input do
-        parameter "a", :decimal, required: true
-        parameter "b", :decimal, required: true
+        parameter("a", :decimal, required: true)
+        parameter("b", :decimal, required: true)
       end
 
       output do
-        parameter "result", :decimal
+        parameter("result", :decimal)
       end
 
-      soap_action "Add"
+      soap_action("Add")
     end
 
     soap_operation "Subtract" do
-      description "Subtracts b from a"
+      description("Subtracts b from a")
 
       input do
-        parameter "a", :decimal, required: true
-        parameter "b", :decimal, required: true
+        parameter("a", :decimal, required: true)
+        parameter("b", :decimal, required: true)
       end
 
       output do
-        parameter "result", :decimal
+        parameter("result", :decimal)
       end
 
-      soap_action "Subtract"
+      soap_action("Subtract")
     end
 
     soap_operation "Echo" do
-      description "Echoes the input message"
+      description("Echoes the input message")
 
       input do
-        parameter "message", :string, required: true
+        parameter("message", :string, required: true)
       end
 
       output do
-        parameter "echo", :string
+        parameter("echo", :string)
       end
 
-      soap_action "Echo"
+      soap_action("Echo")
     end
 
     soap_operation "Divide" do
-      description "Divides a by b"
+      description("Divides a by b")
 
       input do
-        parameter "dividend", :decimal, required: true
-        parameter "divisor", :decimal, required: true
+        parameter("dividend", :decimal, required: true)
+        parameter("divisor", :decimal, required: true)
       end
 
       output do
-        parameter "quotient", :decimal
+        parameter("quotient", :decimal)
       end
 
-      soap_action "Divide"
+      soap_action("Divide")
     end
 
     def add(%{"a" => a, "b" => b}) do
@@ -119,8 +119,8 @@ defmodule Lather.Integration.Soap12RoundTripTest do
   # Define the router using standard Plug (same pattern as original round_trip_test)
   defmodule TestSoap12Router do
     use Plug.Router
-    plug :match
-    plug :dispatch
+    plug(:match)
+    plug(:dispatch)
 
     match "/soap" do
       Lather.Server.Plug.call(
@@ -158,7 +158,8 @@ defmodule Lather.Integration.Soap12RoundTripTest do
       wsdl_url = "#{base_url}/soap?wsdl"
 
       # Connect client and explicitly set SOAP 1.2 version
-      assert {:ok, client} = Lather.DynamicClient.new(wsdl_url, timeout: 5000, soap_version: :v1_2)
+      assert {:ok, client} =
+               Lather.DynamicClient.new(wsdl_url, timeout: 5000, soap_version: :v1_2)
 
       # Verify operations are discovered
       operations = Lather.DynamicClient.list_operations(client)
@@ -175,7 +176,8 @@ defmodule Lather.Integration.Soap12RoundTripTest do
     end
 
     test "client can call Subtract operation with SOAP 1.2", %{base_url: base_url} do
-      {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000, soap_version: :v1_2)
+      {:ok, client} =
+        Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000, soap_version: :v1_2)
 
       assert {:ok, response} =
                Lather.DynamicClient.call(client, "Subtract", %{"a" => 100, "b" => 37})
@@ -186,7 +188,8 @@ defmodule Lather.Integration.Soap12RoundTripTest do
     end
 
     test "client can call Echo operation with SOAP 1.2", %{base_url: base_url} do
-      {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000, soap_version: :v1_2)
+      {:ok, client} =
+        Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000, soap_version: :v1_2)
 
       assert {:ok, response} =
                Lather.DynamicClient.call(client, "Echo", %{"message" => "Hello SOAP 1.2"})
@@ -196,7 +199,8 @@ defmodule Lather.Integration.Soap12RoundTripTest do
     end
 
     test "client can call Divide operation with SOAP 1.2", %{base_url: base_url} do
-      {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000, soap_version: :v1_2)
+      {:ok, client} =
+        Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000, soap_version: :v1_2)
 
       assert {:ok, response} =
                Lather.DynamicClient.call(client, "Divide", %{"dividend" => 100, "divisor" => 4})
@@ -207,7 +211,8 @@ defmodule Lather.Integration.Soap12RoundTripTest do
     end
 
     test "client receives fault for division by zero with SOAP 1.2", %{base_url: base_url} do
-      {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000, soap_version: :v1_2)
+      {:ok, client} =
+        Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000, soap_version: :v1_2)
 
       assert {:error, error} =
                Lather.DynamicClient.call(client, "Divide", %{"dividend" => 100, "divisor" => 0})
@@ -262,7 +267,8 @@ defmodule Lather.Integration.Soap12RoundTripTest do
     end
 
     test "client can make multiple sequential calls with SOAP 1.2", %{base_url: base_url} do
-      {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000, soap_version: :v1_2)
+      {:ok, client} =
+        Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000, soap_version: :v1_2)
 
       # Make several calls in sequence
       assert {:ok, r1} = Lather.DynamicClient.call(client, "Add", %{"a" => 1, "b" => 2})
@@ -275,7 +281,8 @@ defmodule Lather.Integration.Soap12RoundTripTest do
     end
 
     test "client can make concurrent calls with SOAP 1.2", %{base_url: base_url} do
-      {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000, soap_version: :v1_2)
+      {:ok, client} =
+        Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000, soap_version: :v1_2)
 
       # Make concurrent calls
       tasks = [
@@ -297,7 +304,8 @@ defmodule Lather.Integration.Soap12RoundTripTest do
     end
 
     test "response contains only expected keys, not wrapper elements", %{base_url: base_url} do
-      {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000, soap_version: :v1_2)
+      {:ok, client} =
+        Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000, soap_version: :v1_2)
 
       {:ok, response} = Lather.DynamicClient.call(client, "Add", %{"a" => 5, "b" => 3})
 
@@ -359,8 +367,11 @@ defmodule Lather.Integration.Soap12RoundTripTest do
     test "SOAP 1.1 and SOAP 1.2 have different HTTP headers" do
       soap_action = "http://example.com/TestAction"
 
-      soap_1_1_headers = Lather.Http.Transport.build_headers(soap_version: :v1_1, soap_action: soap_action)
-      soap_1_2_headers = Lather.Http.Transport.build_headers(soap_version: :v1_2, soap_action: soap_action)
+      soap_1_1_headers =
+        Lather.Http.Transport.build_headers(soap_version: :v1_1, soap_action: soap_action)
+
+      soap_1_2_headers =
+        Lather.Http.Transport.build_headers(soap_version: :v1_2, soap_action: soap_action)
 
       # SOAP 1.1 should have separate SOAPAction header
       soap_1_1_soap_action =

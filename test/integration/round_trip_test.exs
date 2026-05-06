@@ -18,50 +18,62 @@ defmodule Lather.Integration.RoundTripTest do
     @service_name "TestCalculatorService"
 
     soap_operation "Add" do
-      description "Adds two numbers"
+      description("Adds two numbers")
+
       input do
-        parameter "a", :decimal, required: true
-        parameter "b", :decimal, required: true
+        parameter("a", :decimal, required: true)
+        parameter("b", :decimal, required: true)
       end
+
       output do
-        parameter "result", :decimal
+        parameter("result", :decimal)
       end
-      soap_action "Add"
+
+      soap_action("Add")
     end
 
     soap_operation "Subtract" do
-      description "Subtracts b from a"
+      description("Subtracts b from a")
+
       input do
-        parameter "a", :decimal, required: true
-        parameter "b", :decimal, required: true
+        parameter("a", :decimal, required: true)
+        parameter("b", :decimal, required: true)
       end
+
       output do
-        parameter "result", :decimal
+        parameter("result", :decimal)
       end
-      soap_action "Subtract"
+
+      soap_action("Subtract")
     end
 
     soap_operation "Echo" do
-      description "Echoes the input message"
+      description("Echoes the input message")
+
       input do
-        parameter "message", :string, required: true
+        parameter("message", :string, required: true)
       end
+
       output do
-        parameter "echo", :string
+        parameter("echo", :string)
       end
-      soap_action "Echo"
+
+      soap_action("Echo")
     end
 
     soap_operation "Divide" do
-      description "Divides a by b"
+      description("Divides a by b")
+
       input do
-        parameter "dividend", :decimal, required: true
-        parameter "divisor", :decimal, required: true
+        parameter("dividend", :decimal, required: true)
+        parameter("divisor", :decimal, required: true)
       end
+
       output do
-        parameter "quotient", :decimal
+        parameter("quotient", :decimal)
       end
-      soap_action "Divide"
+
+      soap_action("Divide")
     end
 
     def add(%{"a" => a, "b" => b}) do
@@ -99,8 +111,8 @@ defmodule Lather.Integration.RoundTripTest do
   # Define the router at compile time
   defmodule TestRouter do
     use Plug.Router
-    plug :match
-    plug :dispatch
+    plug(:match)
+    plug(:dispatch)
 
     match "/soap" do
       Lather.Server.Plug.call(

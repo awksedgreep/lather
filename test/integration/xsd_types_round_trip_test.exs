@@ -18,28 +18,34 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
 
     # String type
     soap_operation "EchoString" do
-      description "Echoes a string value"
+      description("Echoes a string value")
+
       input do
-        parameter "value", :string, required: true
+        parameter("value", :string, required: true)
       end
+
       output do
-        parameter "result", :string
+        parameter("result", :string)
       end
-      soap_action "EchoString"
+
+      soap_action("EchoString")
     end
 
     def echo_string(%{"value" => val}), do: {:ok, %{"result" => val}}
 
     # Integer type
     soap_operation "EchoInteger" do
-      description "Echoes an integer value"
+      description("Echoes an integer value")
+
       input do
-        parameter "value", :integer, required: true
+        parameter("value", :integer, required: true)
       end
+
       output do
-        parameter "result", :integer
+        parameter("result", :integer)
       end
-      soap_action "EchoInteger"
+
+      soap_action("EchoInteger")
     end
 
     def echo_integer(%{"value" => val}) do
@@ -48,14 +54,17 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
 
     # Decimal/float type
     soap_operation "EchoDecimal" do
-      description "Echoes a decimal value"
+      description("Echoes a decimal value")
+
       input do
-        parameter "value", :decimal, required: true
+        parameter("value", :decimal, required: true)
       end
+
       output do
-        parameter "result", :decimal
+        parameter("result", :decimal)
       end
-      soap_action "EchoDecimal"
+
+      soap_action("EchoDecimal")
     end
 
     def echo_decimal(%{"value" => val}) do
@@ -64,14 +73,17 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
 
     # Boolean type
     soap_operation "EchoBoolean" do
-      description "Echoes a boolean value"
+      description("Echoes a boolean value")
+
       input do
-        parameter "value", :boolean, required: true
+        parameter("value", :boolean, required: true)
       end
+
       output do
-        parameter "result", :boolean
+        parameter("result", :boolean)
       end
-      soap_action "EchoBoolean"
+
+      soap_action("EchoBoolean")
     end
 
     def echo_boolean(%{"value" => val}) do
@@ -80,57 +92,72 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
 
     # DateTime type
     soap_operation "EchoDateTime" do
-      description "Echoes a dateTime value"
+      description("Echoes a dateTime value")
+
       input do
-        parameter "value", :datetime, required: true
+        parameter("value", :datetime, required: true)
       end
+
       output do
-        parameter "result", :datetime
+        parameter("result", :datetime)
       end
-      soap_action "EchoDateTime"
+
+      soap_action("EchoDateTime")
     end
 
     def echo_date_time(%{"value" => val}), do: {:ok, %{"result" => val}}
 
     # Date type
     soap_operation "EchoDate" do
-      description "Echoes a date value"
+      description("Echoes a date value")
+
       input do
-        parameter "value", :date, required: true
+        parameter("value", :date, required: true)
       end
+
       output do
-        parameter "result", :date
+        parameter("result", :date)
       end
-      soap_action "EchoDate"
+
+      soap_action("EchoDate")
     end
 
     def echo_date(%{"value" => val}), do: {:ok, %{"result" => val}}
 
     # Multiple types in one operation
     soap_operation "ProcessMultipleTypes" do
-      description "Processes multiple types at once"
+      description("Processes multiple types at once")
+
       input do
-        parameter "stringVal", :string, required: true
-        parameter "intVal", :integer, required: true
-        parameter "decimalVal", :decimal, required: true
-        parameter "boolVal", :boolean, required: true
+        parameter("stringVal", :string, required: true)
+        parameter("intVal", :integer, required: true)
+        parameter("decimalVal", :decimal, required: true)
+        parameter("boolVal", :boolean, required: true)
       end
+
       output do
-        parameter "stringResult", :string
-        parameter "intResult", :integer
-        parameter "decimalResult", :decimal
-        parameter "boolResult", :boolean
+        parameter("stringResult", :string)
+        parameter("intResult", :integer)
+        parameter("decimalResult", :decimal)
+        parameter("boolResult", :boolean)
       end
-      soap_action "ProcessMultipleTypes"
+
+      soap_action("ProcessMultipleTypes")
     end
 
-    def process_multiple_types(%{"stringVal" => s, "intVal" => i, "decimalVal" => d, "boolVal" => b}) do
-      {:ok, %{
-        "stringResult" => s,
-        "intResult" => parse_int(i),
-        "decimalResult" => parse_float(d),
-        "boolResult" => parse_bool(b)
-      }}
+    def process_multiple_types(%{
+          "stringVal" => s,
+          "intVal" => i,
+          "decimalVal" => d,
+          "boolVal" => b
+        }) do
+      {:ok,
+       %{
+         "stringResult" => s,
+         "intResult" => parse_int(i),
+         "decimalResult" => parse_float(d),
+         "boolResult" => parse_bool(b)
+       }}
     end
 
     # Helper functions
@@ -139,6 +166,7 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
 
     defp parse_float(val) when is_float(val), do: val
     defp parse_float(val) when is_integer(val), do: val * 1.0
+
     defp parse_float(val) when is_binary(val) do
       case Float.parse(val) do
         {f, _} -> f
@@ -156,8 +184,8 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
 
   defmodule AllTypesRouter do
     use Plug.Router
-    plug :match
-    plug :dispatch
+    plug(:match)
+    plug(:dispatch)
 
     match "/soap" do
       Lather.Server.Plug.call(
@@ -173,7 +201,9 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
     test "handles simple ASCII strings", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoString", %{"value" => "Hello World"})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoString", %{"value" => "Hello World"})
+
       assert response["result"] == "Hello World"
     end
 
@@ -187,7 +217,9 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
     test "handles strings with numbers", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoString", %{"value" => "Test123"})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoString", %{"value" => "Test123"})
+
       assert response["result"] == "Test123"
     end
 
@@ -195,14 +227,18 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
       long_string = String.duplicate("a", 10000)
 
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoString", %{"value" => long_string})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoString", %{"value" => long_string})
+
       assert response["result"] == long_string
     end
 
     test "handles whitespace strings", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoString", %{"value" => "  spaces  "})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoString", %{"value" => "  spaces  "})
+
       # Note: XML may normalize whitespace differently
       assert is_binary(response["result"])
     end
@@ -228,21 +264,27 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
     test "handles negative integers", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoInteger", %{"value" => -100})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoInteger", %{"value" => -100})
+
       assert parse_int_result(response["result"]) == -100
     end
 
     test "handles large positive integers", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoInteger", %{"value" => 2_147_483_647})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoInteger", %{"value" => 2_147_483_647})
+
       assert parse_int_result(response["result"]) == 2_147_483_647
     end
 
     test "handles large negative integers", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoInteger", %{"value" => -2_147_483_648})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoInteger", %{"value" => -2_147_483_648})
+
       assert parse_int_result(response["result"]) == -2_147_483_648
     end
   end
@@ -253,7 +295,9 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
     test "handles positive decimals", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoDecimal", %{"value" => 3.14159})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoDecimal", %{"value" => 3.14159})
+
       assert_in_delta parse_float_result(response["result"]), 3.14159, 0.00001
     end
 
@@ -267,14 +311,18 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
     test "handles negative decimals", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoDecimal", %{"value" => -123.456})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoDecimal", %{"value" => -123.456})
+
       assert_in_delta parse_float_result(response["result"]), -123.456, 0.001
     end
 
     test "handles very small decimals", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoDecimal", %{"value" => 0.000001})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoDecimal", %{"value" => 0.000001})
+
       assert_in_delta parse_float_result(response["result"]), 0.000001, 0.0000001
     end
 
@@ -292,28 +340,36 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
     test "handles true boolean", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoBoolean", %{"value" => true})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoBoolean", %{"value" => true})
+
       assert parse_bool_result(response["result"]) == true
     end
 
     test "handles false boolean", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoBoolean", %{"value" => false})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoBoolean", %{"value" => false})
+
       assert parse_bool_result(response["result"]) == false
     end
 
     test "handles string 'true'", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoBoolean", %{"value" => "true"})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoBoolean", %{"value" => "true"})
+
       assert parse_bool_result(response["result"]) == true
     end
 
     test "handles string 'false'", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoBoolean", %{"value" => "false"})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoBoolean", %{"value" => "false"})
+
       assert parse_bool_result(response["result"]) == false
     end
   end
@@ -325,7 +381,10 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
       datetime = "2024-03-15T10:30:00Z"
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoDateTime", %{"value" => datetime})
+
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoDateTime", %{"value" => datetime})
+
       assert is_binary(response["result"])
       # Should contain the date components
       assert String.contains?(response["result"], "2024")
@@ -335,7 +394,10 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
       datetime = "2024-03-15T10:30:00-05:00"
-      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoDateTime", %{"value" => datetime})
+
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "EchoDateTime", %{"value" => datetime})
+
       assert is_binary(response["result"])
     end
   end
@@ -419,6 +481,7 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
 
   defp parse_float_result(val) when is_float(val), do: val
   defp parse_float_result(val) when is_integer(val), do: val * 1.0
+
   defp parse_float_result(val) when is_binary(val) do
     case Float.parse(val) do
       {f, _} -> f

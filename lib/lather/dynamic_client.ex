@@ -164,7 +164,12 @@ defmodule Lather.DynamicClient do
     with {:ok, operation_info} <- find_operation(service_info, operation_name),
          :ok <- maybe_validate_parameters(operation_info, parameters, options),
          {:ok, soap_envelope} <-
-           build_request(operation_info, parameters, service_info, default_opts ++ options),
+           build_request(
+             operation_info,
+             parameters,
+             service_info,
+             Keyword.merge(default_opts, options)
+           ),
          {:ok, response} <-
            send_request(base_client, soap_envelope, operation_info, default_opts, options),
          {:ok, parsed_response} <- parse_response(operation_info, response, options) do

@@ -28,46 +28,46 @@ defmodule Lather.Integration.TimeoutNetworkErrorsTest do
     @service_name "SlowService"
 
     soap_operation "SlowEcho" do
-      description "Echoes after a configurable delay"
+      description("Echoes after a configurable delay")
 
       input do
-        parameter "message", :string, required: true
-        parameter "delay_ms", :integer, required: true
+        parameter("message", :string, required: true)
+        parameter("delay_ms", :integer, required: true)
       end
 
       output do
-        parameter "echo", :string
+        parameter("echo", :string)
       end
 
-      soap_action "SlowEcho"
+      soap_action("SlowEcho")
     end
 
     soap_operation "FastEcho" do
-      description "Echoes immediately"
+      description("Echoes immediately")
 
       input do
-        parameter "message", :string, required: true
+        parameter("message", :string, required: true)
       end
 
       output do
-        parameter "echo", :string
+        parameter("echo", :string)
       end
 
-      soap_action "FastEcho"
+      soap_action("FastEcho")
     end
 
     soap_operation "LargeResponse" do
-      description "Returns a large response"
+      description("Returns a large response")
 
       input do
-        parameter "size_kb", :integer, required: true
+        parameter("size_kb", :integer, required: true)
       end
 
       output do
-        parameter "data", :string
+        parameter("data", :string)
       end
 
-      soap_action "LargeResponse"
+      soap_action("LargeResponse")
     end
 
     def slow_echo(%{"message" => message, "delay_ms" => delay_ms}) do
@@ -101,15 +101,13 @@ defmodule Lather.Integration.TimeoutNetworkErrorsTest do
   defmodule SlowServiceRouter do
     use Plug.Router
 
-    plug :match
-    plug :dispatch
+    plug(:match)
+    plug(:dispatch)
 
     match "/soap" do
       Lather.Server.Plug.call(
         conn,
-        Lather.Server.Plug.init(
-          service: Lather.Integration.TimeoutNetworkErrorsTest.SlowService
-        )
+        Lather.Server.Plug.init(service: Lather.Integration.TimeoutNetworkErrorsTest.SlowService)
       )
     end
   end
@@ -692,7 +690,8 @@ defmodule Lather.Integration.TimeoutNetworkErrorsTest do
         rescue
           e in RuntimeError ->
             # Finch raises RuntimeError for pool exhaustion
-            {:error, %{type: :transport_error, reason: :pool_exhausted, message: Exception.message(e)}}
+            {:error,
+             %{type: :transport_error, reason: :pool_exhausted, message: Exception.message(e)}}
         end
 
       # Clean up
@@ -875,6 +874,7 @@ defmodule Lather.Integration.TimeoutNetworkErrorsTest do
       # Format the error for display
       formatted = Lather.Error.format_error(error)
       assert is_binary(formatted)
+
       assert String.contains?(formatted, "Transport Error") or
                String.contains?(formatted, "timeout")
     end

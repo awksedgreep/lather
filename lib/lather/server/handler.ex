@@ -51,7 +51,8 @@ defmodule Lather.Server.Handler do
   """
   def handle_request(method, path, headers, body, service, opts \\ []) do
     unless function_exported?(service, :__soap_service__, 0) do
-      raise ArgumentError, "#{service} is not a valid SOAP service module. Did you forget to `use Lather.Server`?"
+      raise ArgumentError,
+            "#{service} is not a valid SOAP service module. Did you forget to `use Lather.Server`?"
     end
 
     config = %{
@@ -89,6 +90,7 @@ defmodule Lather.Server.Handler do
     rescue
       error ->
         Logger.error("WSDL generation failed: #{inspect(error)}")
+
         {:error, 500, [{"content-type", "text/xml"}],
          soap_fault_xml("Server", "WSDL generation failed")}
     end
@@ -98,7 +100,6 @@ defmodule Lather.Server.Handler do
   defp handle_soap_request(body, config) do
     with {:ok, parsed_request} <- RequestParser.parse(body),
          {:ok, result} <- dispatch_operation(parsed_request, config) do
-
       response_xml = ResponseBuilder.build_response(result, parsed_request.operation)
       {:ok, 200, [{"content-type", "text/xml"}], response_xml}
     else
@@ -108,11 +109,13 @@ defmodule Lather.Server.Handler do
 
       {:error, {:parse_error, reason}} ->
         Logger.warning("SOAP parse error: #{reason}")
+
         {:error, 400, [{"content-type", "text/xml"}],
          soap_fault_xml("Client", "Invalid SOAP request: #{reason}")}
 
       {:error, reason} ->
         Logger.error("SOAP request failed: #{inspect(reason)}")
+
         {:error, 500, [{"content-type", "text/xml"}],
          soap_fault_xml("Server", "Internal server error")}
     end
@@ -128,11 +131,13 @@ defmodule Lather.Server.Handler do
         Lather.Server.format_response(result, operation)
       end
     else
-      {:error, {:soap_fault, %{
-        fault_code: "Client",
-        fault_string: "Unknown operation: #{request.operation}",
-        detail: %{available_operations: Enum.map(service.__soap_operations__(), & &1.name)}
-      }}}
+      {:error,
+       {:soap_fault,
+        %{
+          fault_code: "Client",
+          fault_string: "Unknown operation: #{request.operation}",
+          detail: %{available_operations: Enum.map(service.__soap_operations__(), & &1.name)}
+        }}}
     end
   end
 
@@ -143,12 +148,15 @@ defmodule Lather.Server.Handler do
       {:ok, params}
     else
       {:error, reason} ->
-        {:error, {:soap_fault, %{
-          fault_code: "Client",
-          fault_string: reason
-        }}}
+        {:error,
+         {:soap_fault,
+          %{
+            fault_code: "Client",
+            fault_string: reason
+          }}}
     end
   end
+
   defp validate_operation_params(params, _operation, false), do: {:ok, params}
 
   # Call the actual operation function
@@ -157,27 +165,41 @@ defmodule Lather.Server.Handler do
 
     try do
       case apply(service, function_name, [params]) do
-        {:ok, result} -> {:ok, result}
-        {:soap_fault, fault} -> {:error, {:soap_fault, fault}}
-        {:error, reason} -> {:error, {:soap_fault, %{
-          fault_code: "Server",
-          fault_string: to_string(reason)
-        }}}
-        result -> {:ok, result}
+        {:ok, result} ->
+          {:ok, result}
+
+        {:soap_fault, fault} ->
+          {:error, {:soap_fault, fault}}
+
+        {:error, reason} ->
+          {:error,
+           {:soap_fault,
+            %{
+              fault_code: "Server",
+              fault_string: to_string(reason)
+            }}}
+
+        result ->
+          {:ok, result}
       end
     rescue
       UndefinedFunctionError ->
-        {:error, {:soap_fault, %{
-          fault_code: "Server",
-          fault_string: "Operation function #{function_name}/1 not implemented"
-        }}}
+        {:error,
+         {:soap_fault,
+          %{
+            fault_code: "Server",
+            fault_string: "Operation function #{function_name}/1 not implemented"
+          }}}
 
       error ->
         Logger.error("Operation #{operation.name} failed: #{inspect(error)}")
-        {:error, {:soap_fault, %{
-          fault_code: "Server",
-          fault_string: "Internal server error"
-        }}}
+
+        {:error,
+         {:soap_fault,
+          %{
+            fault_code: "Server",
+            fault_string: "Internal server error"
+          }}}
     end
   end
 

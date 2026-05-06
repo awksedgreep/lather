@@ -23,32 +23,32 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
     @service_name "TestCalculatorService"
 
     soap_operation "Add" do
-      description "Adds two numbers"
+      description("Adds two numbers")
 
       input do
-        parameter "a", :decimal, required: true
-        parameter "b", :decimal, required: true
+        parameter("a", :decimal, required: true)
+        parameter("b", :decimal, required: true)
       end
 
       output do
-        parameter "result", :decimal
+        parameter("result", :decimal)
       end
 
-      soap_action "Add"
+      soap_action("Add")
     end
 
     soap_operation "Echo" do
-      description "Echoes the input message"
+      description("Echoes the input message")
 
       input do
-        parameter "message", :string, required: true
+        parameter("message", :string, required: true)
       end
 
       output do
-        parameter "echo", :string
+        parameter("echo", :string)
       end
 
-      soap_action "Echo"
+      soap_action("Echo")
     end
 
     def add(%{"a" => a, "b" => b}) do
@@ -77,9 +77,9 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
     @valid_username "testuser"
     @valid_password "testpass123"
 
-    plug :fetch_query_params
-    plug :match
-    plug :dispatch
+    plug(:fetch_query_params)
+    plug(:match)
+    plug(:dispatch)
 
     # WSDL endpoint - no auth required
     get "/soap" do
@@ -166,9 +166,9 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
   defmodule SpecialCharsRouter do
     use Plug.Router
 
-    plug :fetch_query_params
-    plug :match
-    plug :dispatch
+    plug(:fetch_query_params)
+    plug(:match)
+    plug(:dispatch)
 
     # WSDL endpoint
     get "/soap" do
@@ -225,9 +225,9 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
   defmodule EmptyPasswordRouter do
     use Plug.Router
 
-    plug :fetch_query_params
-    plug :match
-    plug :dispatch
+    plug(:fetch_query_params)
+    plug(:match)
+    plug(:dispatch)
 
     get "/soap" do
       if conn.query_params["wsdl"] != nil do
@@ -326,9 +326,19 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
       ]
 
       # Make several calls in sequence
-      request1 = Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_add_request(1, 2))
-      request2 = Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_add_request(3, 4))
-      request3 = Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_add_request(10, 10))
+      request1 =
+        Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_add_request(1, 2))
+
+      request2 =
+        Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_add_request(3, 4))
+
+      request3 =
+        Finch.build(
+          :post,
+          "http://localhost:#{port}/soap",
+          base_headers,
+          build_add_request(10, 10)
+        )
 
       assert {:ok, r1} = Finch.request(request1, Lather.Finch)
       assert {:ok, r2} = Finch.request(request2, Lather.Finch)
@@ -356,7 +366,14 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
       tasks =
         Enum.map([{1, 1}, {2, 2}, {3, 3}, {5, 5}], fn {a, b} ->
           Task.async(fn ->
-            request = Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_add_request(a, b))
+            request =
+              Finch.build(
+                :post,
+                "http://localhost:#{port}/soap",
+                base_headers,
+                build_add_request(a, b)
+              )
+
             Finch.request(request, Lather.Finch)
           end)
         end)
@@ -892,9 +909,14 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
       ]
 
       # Each call should include the Authorization header
-      request1 = Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_add_request(1, 1))
-      request2 = Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_add_request(2, 2))
-      request3 = Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_add_request(3, 3))
+      request1 =
+        Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_add_request(1, 1))
+
+      request2 =
+        Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_add_request(2, 2))
+
+      request3 =
+        Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_add_request(3, 3))
 
       assert {:ok, r1} = Finch.request(request1, Lather.Finch)
       assert {:ok, r2} = Finch.request(request2, Lather.Finch)
@@ -917,7 +939,14 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
       # Make 5 sequential calls - all should succeed using stored credentials
       results =
         Enum.map(1..5, fn i ->
-          request = Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_add_request(i, i))
+          request =
+            Finch.build(
+              :post,
+              "http://localhost:#{port}/soap",
+              base_headers,
+              build_add_request(i, i)
+            )
+
           Finch.request(request, Lather.Finch)
         end)
 

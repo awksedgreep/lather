@@ -54,11 +54,12 @@ defmodule Lather.Soap.Envelope do
       end
 
     envelope = [
-      {"soap:Envelope", [
-        {"@xmlns:soap", namespace_for_version(version)},
-        {"soap:Header", build_header(headers)},
-        {"soap:Body", body_content}
-      ]}
+      {"soap:Envelope",
+       [
+         {"@xmlns:soap", namespace_for_version(version)},
+         {"soap:Header", build_header(headers)},
+         {"soap:Body", body_content}
+       ]}
     ]
 
     case Builder.build(envelope) do

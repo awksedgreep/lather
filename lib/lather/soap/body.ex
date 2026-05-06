@@ -39,7 +39,9 @@ defmodule Lather.Soap.Body do
     namespace = Keyword.get(options, :namespace)
     namespace_prefix = Keyword.get(options, :namespace_prefix)
 
-    operation_element = build_operation_element(operation_name, params, namespace, namespace_prefix)
+    operation_element =
+      build_operation_element(operation_name, params, namespace, namespace_prefix)
+
     operation_element
   end
 
@@ -106,12 +108,13 @@ defmodule Lather.Soap.Body do
   """
   @spec validate_params(map(), map()) :: :ok | {:error, [String.t()]}
   def validate_params(params, schema) do
-    errors = Enum.reduce(schema, [], fn {param_name, rules}, acc ->
-      case validate_param(params[param_name], param_name, rules) do
-        :ok -> acc
-        {:error, error} -> [error | acc]
-      end
-    end)
+    errors =
+      Enum.reduce(schema, [], fn {param_name, rules}, acc ->
+        case validate_param(params[param_name], param_name, rules) do
+          :ok -> acc
+          {:error, error} -> [error | acc]
+        end
+      end)
 
     case errors do
       [] -> :ok
@@ -124,17 +127,19 @@ defmodule Lather.Soap.Body do
   defp build_operation_element(operation_name, params, namespace, namespace_prefix) do
     serialized_params = serialize_params(params)
 
-    element_name = if namespace_prefix do
-      "#{namespace_prefix}:#{operation_name}"
-    else
-      operation_name
-    end
+    element_name =
+      if namespace_prefix do
+        "#{namespace_prefix}:#{operation_name}"
+      else
+        operation_name
+      end
 
-    element_content = if namespace do
-      Map.put(serialized_params, "@xmlns", namespace)
-    else
-      serialized_params
-    end
+    element_content =
+      if namespace do
+        Map.put(serialized_params, "@xmlns", namespace)
+      else
+        serialized_params
+      end
 
     %{element_name => element_content}
   end

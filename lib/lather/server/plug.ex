@@ -39,7 +39,8 @@ defmodule Lather.Server.Plug do
     service = Keyword.fetch!(opts, :service)
 
     unless function_exported?(service, :__soap_service__, 0) do
-      raise ArgumentError, "#{service} is not a valid SOAP service module. Did you forget to `use Lather.Server`?"
+      raise ArgumentError,
+            "#{service} is not a valid SOAP service module. Did you forget to `use Lather.Server`?"
     end
 
     %{
@@ -56,6 +57,7 @@ defmodule Lather.Server.Plug do
     case Map.get(conn.query_params, "wsdl") do
       val when val in [nil, "", "1", "true"] ->
         handle_wsdl_request(conn, config)
+
       _ ->
         handle_soap_request(conn, config)
     end
@@ -96,7 +98,6 @@ defmodule Lather.Server.Plug do
          {:ok, parsed_request} <- RequestParser.parse(body),
          {:ok, authenticated_conn} <- authenticate(conn, config),
          {:ok, result, operation} <- dispatch_operation(parsed_request, config) do
-
       response_xml = ResponseBuilder.build_response(result, operation)
 
       authenticated_conn
@@ -143,12 +144,14 @@ defmodule Lather.Server.Plug do
 
   # Authenticate the request if auth is configured
   defp authenticate(conn, %{auth_handler: nil}), do: {:ok, conn}
+
   defp authenticate(conn, %{auth_handler: handler}) do
     case handler.authenticate(conn) do
       {:ok, conn} -> {:ok, conn}
       {:error, _reason} -> {:error, :authentication_failed}
     end
   end
+
   defp authenticate(conn, _config), do: {:ok, conn}
 
   # Dispatch the operation to the service module
@@ -163,11 +166,13 @@ defmodule Lather.Server.Plug do
         {:ok, formatted_result, operation}
       end
     else
-      {:error, {:soap_fault, %{
-        fault_code: "Client",
-        fault_string: "Unknown operation: #{request.operation}",
-        detail: %{available_operations: Enum.map(service.__soap_operations__(), & &1.name)}
-      }}}
+      {:error,
+       {:soap_fault,
+        %{
+          fault_code: "Client",
+          fault_string: "Unknown operation: #{request.operation}",
+          detail: %{available_operations: Enum.map(service.__soap_operations__(), & &1.name)}
+        }}}
     end
   end
 
@@ -178,12 +183,15 @@ defmodule Lather.Server.Plug do
       {:ok, params}
     else
       {:error, reason} ->
-        {:error, {:soap_fault, %{
-          fault_code: "Client",
-          fault_string: reason
-        }}}
+        {:error,
+         {:soap_fault,
+          %{
+            fault_code: "Client",
+            fault_string: reason
+          }}}
     end
   end
+
   defp validate_operation_params(params, _operation, false), do: {:ok, params}
 
   # Call the actual operation function
@@ -192,27 +200,41 @@ defmodule Lather.Server.Plug do
 
     try do
       case apply(service, function_name, [params]) do
-        {:ok, result} -> {:ok, result}
-        {:soap_fault, fault} -> {:error, {:soap_fault, fault}}
-        {:error, reason} -> {:error, {:soap_fault, %{
-          fault_code: "Server",
-          fault_string: to_string(reason)
-        }}}
-        result -> {:ok, result}
+        {:ok, result} ->
+          {:ok, result}
+
+        {:soap_fault, fault} ->
+          {:error, {:soap_fault, fault}}
+
+        {:error, reason} ->
+          {:error,
+           {:soap_fault,
+            %{
+              fault_code: "Server",
+              fault_string: to_string(reason)
+            }}}
+
+        result ->
+          {:ok, result}
       end
     rescue
       UndefinedFunctionError ->
-        {:error, {:soap_fault, %{
-          fault_code: "Server",
-          fault_string: "Operation function #{function_name}/1 not implemented"
-        }}}
+        {:error,
+         {:soap_fault,
+          %{
+            fault_code: "Server",
+            fault_string: "Operation function #{function_name}/1 not implemented"
+          }}}
 
       error ->
         Logger.error("Operation #{operation.name} failed: #{inspect(error)}")
-        {:error, {:soap_fault, %{
-          fault_code: "Server",
-          fault_string: "Internal server error"
-        }}}
+
+        {:error,
+         {:soap_fault,
+          %{
+            fault_code: "Server",
+            fault_string: "Internal server error"
+          }}}
     end
   end
 
@@ -220,11 +242,13 @@ defmodule Lather.Server.Plug do
   defp base_url(%Plug.Conn{} = conn, path) do
     scheme = conn.scheme |> to_string()
     host = conn.host
-    port = case {scheme, conn.port} do
-      {"http", 80} -> ""
-      {"https", 443} -> ""
-      {_, port} -> ":#{port}"
-    end
+
+    port =
+      case {scheme, conn.port} do
+        {"http", 80} -> ""
+        {"https", 443} -> ""
+        {_, port} -> ":#{port}"
+      end
 
     "#{scheme}://#{host}#{port}#{path}"
   end

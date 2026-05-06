@@ -20,29 +20,35 @@ defmodule Lather.Integration.XmlEdgeCasesTest do
     @service_name "XmlEdgeCasesService"
 
     soap_operation "EchoText" do
-      description "Echoes text, testing XML special character handling"
+      description("Echoes text, testing XML special character handling")
+
       input do
-        parameter "text", :string, required: true
+        parameter("text", :string, required: true)
       end
+
       output do
-        parameter "result", :string
+        parameter("result", :string)
       end
-      soap_action "EchoText"
+
+      soap_action("EchoText")
     end
 
     def echo_text(%{"text" => text}), do: {:ok, %{"result" => text}}
 
     soap_operation "EchoMultiple" do
-      description "Echoes multiple fields"
+      description("Echoes multiple fields")
+
       input do
-        parameter "field1", :string, required: true
-        parameter "field2", :string, required: true
+        parameter("field1", :string, required: true)
+        parameter("field2", :string, required: true)
       end
+
       output do
-        parameter "result1", :string
-        parameter "result2", :string
+        parameter("result1", :string)
+        parameter("result2", :string)
       end
-      soap_action "EchoMultiple"
+
+      soap_action("EchoMultiple")
     end
 
     def echo_multiple(%{"field1" => f1, "field2" => f2}) do
@@ -52,8 +58,8 @@ defmodule Lather.Integration.XmlEdgeCasesTest do
 
   defmodule XmlEdgeCasesRouter do
     use Plug.Router
-    plug :match
-    plug :dispatch
+    plug(:match)
+    plug(:dispatch)
 
     match "/soap" do
       Lather.Server.Plug.call(

@@ -48,9 +48,15 @@ defmodule Lather.Integration.ExternalWsdlTest do
       # Verify operations are present
       operation_names = Enum.map(service_info.operations, & &1.name)
       assert "Add" in operation_names, "Expected 'Add' operation in #{inspect(operation_names)}"
-      assert "Subtract" in operation_names, "Expected 'Subtract' operation in #{inspect(operation_names)}"
-      assert "Multiply" in operation_names, "Expected 'Multiply' operation in #{inspect(operation_names)}"
-      assert "Divide" in operation_names, "Expected 'Divide' operation in #{inspect(operation_names)}"
+
+      assert "Subtract" in operation_names,
+             "Expected 'Subtract' operation in #{inspect(operation_names)}"
+
+      assert "Multiply" in operation_names,
+             "Expected 'Multiply' operation in #{inspect(operation_names)}"
+
+      assert "Divide" in operation_names,
+             "Expected 'Divide' operation in #{inspect(operation_names)}"
 
       # Verify endpoint info
       assert length(service_info.endpoints) > 0
@@ -87,8 +93,9 @@ defmodule Lather.Integration.ExternalWsdlTest do
           result = extract_add_result(response)
 
           assert result != nil, "Could not extract result from response: #{inspect(response)}"
+
           assert result == "35" or result == 35,
-            "Expected Add(10, 25) = 35, got: #{inspect(result)}"
+                 "Expected Add(10, 25) = 35, got: #{inspect(result)}"
 
         {:error, reason} ->
           flunk("Add operation failed: #{inspect(reason)}")
@@ -109,8 +116,9 @@ defmodule Lather.Integration.ExternalWsdlTest do
           result = extract_subtract_result(response)
 
           assert result != nil, "Could not extract result from response: #{inspect(response)}"
+
           assert result == "63" or result == 63,
-            "Expected Subtract(100, 37) = 63, got: #{inspect(result)}"
+                 "Expected Subtract(100, 37) = 63, got: #{inspect(result)}"
 
         {:error, reason} ->
           flunk("Subtract operation failed: #{inspect(reason)}")
@@ -131,8 +139,9 @@ defmodule Lather.Integration.ExternalWsdlTest do
           result = extract_multiply_result(response)
 
           assert result != nil, "Could not extract result from response: #{inspect(response)}"
+
           assert result == "56" or result == 56,
-            "Expected Multiply(7, 8) = 56, got: #{inspect(result)}"
+                 "Expected Multiply(7, 8) = 56, got: #{inspect(result)}"
 
         {:error, reason} ->
           flunk("Multiply operation failed: #{inspect(reason)}")
@@ -153,8 +162,9 @@ defmodule Lather.Integration.ExternalWsdlTest do
           result = extract_divide_result(response)
 
           assert result != nil, "Could not extract result from response: #{inspect(response)}"
+
           assert result == "25" or result == 25,
-            "Expected Divide(100, 4) = 25, got: #{inspect(result)}"
+                 "Expected Divide(100, 4) = 25, got: #{inspect(result)}"
 
         {:error, reason} ->
           flunk("Divide operation failed: #{inspect(reason)}")
@@ -184,7 +194,7 @@ defmodule Lather.Integration.ExternalWsdlTest do
             result_int = parse_result(result)
 
             assert result_int == expected,
-              "#{op_name}(#{a}, #{b}) expected #{expected}, got #{inspect(result)}"
+                   "#{op_name}(#{a}, #{b}) expected #{expected}, got #{inspect(result)}"
 
           {:error, reason} ->
             flunk("#{op_name}(#{a}, #{b}) failed: #{inspect(reason)}")
@@ -211,7 +221,7 @@ defmodule Lather.Integration.ExternalWsdlTest do
 
           # Should contain the result key
           assert Map.has_key?(response, "AddResult"),
-            "Expected 'AddResult' key in response: #{inspect(response)}"
+                 "Expected 'AddResult' key in response: #{inspect(response)}"
 
         {:error, reason} ->
           flunk("Call failed: #{inspect(reason)}")
@@ -274,7 +284,7 @@ defmodule Lather.Integration.ExternalWsdlTest do
           assert is_map(info)
           # Should have name in the info
           assert info[:name] == "Add" or info["name"] == "Add" or
-                 Map.get(info, :name, nil) != nil
+                   Map.get(info, :name, nil) != nil
 
         {:error, reason} ->
           flunk("get_operation_info failed for existing operation: #{inspect(reason)}")
@@ -364,19 +374,19 @@ defmodule Lather.Integration.ExternalWsdlTest do
   defp extract_result(response, operation) do
     # Try various response structure patterns
     # Pattern 1: Standard SOAP with namespace prefixes
-    get_in(response, ["m:#{operation}Response", "m:#{operation}Result"]) ||
     # Pattern 2: Without namespace prefix
-    get_in(response, ["#{operation}Response", "#{operation}Result"]) ||
     # Pattern 3: soap prefix
-    get_in(response, ["soap:#{operation}Response", "soap:#{operation}Result"]) ||
     # Pattern 4: tns prefix
-    get_in(response, ["tns:#{operation}Response", "tns:#{operation}Result"]) ||
     # Pattern 5: Direct result key (less common)
-    Map.get(response, "#{operation}Result") ||
-    Map.get(response, "result") ||
-    Map.get(response, "Result") ||
     # Pattern 6: Nested in body
-    extract_from_nested_response(response, operation)
+    get_in(response, ["m:#{operation}Response", "m:#{operation}Result"]) ||
+      get_in(response, ["#{operation}Response", "#{operation}Result"]) ||
+      get_in(response, ["soap:#{operation}Response", "soap:#{operation}Result"]) ||
+      get_in(response, ["tns:#{operation}Response", "tns:#{operation}Result"]) ||
+      Map.get(response, "#{operation}Result") ||
+      Map.get(response, "result") ||
+      Map.get(response, "Result") ||
+      extract_from_nested_response(response, operation)
   end
 
   defp extract_from_nested_response(response, operation) when is_map(response) do

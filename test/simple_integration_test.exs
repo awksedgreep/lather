@@ -6,7 +6,6 @@ defmodule Lather.SimpleIntegrationTest do
   alias Lather.DynamicClient
 
   describe "Simple client-server integration" do
-
     @tag timeout: 10_000
     test "client can fetch and parse a real WSDL" do
       # Use a public SOAP service for testing
@@ -49,12 +48,15 @@ defmodule Lather.SimpleIntegrationTest do
         {:error, %{type: :transport_error}} ->
           # This is expected
           :ok
+
         {:error, %{type: :http_error}} ->
           # This is also acceptable
           :ok
+
         {:error, error} ->
           # Any error is fine, we're testing error handling
           assert error != nil
+
         {:ok, _client} ->
           # This should not happen with an invalid URL
           flunk("Expected error but got success")
@@ -68,25 +70,29 @@ defmodule Lather.SimpleIntegrationTest do
       wsdl_url = "http://localhost:#{port}/bad.wsdl"
 
       # Start a server that returns bad XML
-      server_pid = spawn_link(fn ->
-        {:ok, listen_socket} = :gen_tcp.listen(port, [:binary, packet: :http_bin, active: false, reuseaddr: true])
-        {:ok, socket} = :gen_tcp.accept(listen_socket)
+      server_pid =
+        spawn_link(fn ->
+          {:ok, listen_socket} =
+            :gen_tcp.listen(port, [:binary, packet: :http_bin, active: false, reuseaddr: true])
 
-        # Return invalid XML
-        bad_xml = "This is not XML at all!"
-        response = """
-        HTTP/1.1 200 OK\r
-        Content-Type: text/xml\r
-        Content-Length: #{byte_size(bad_xml)}\r
-        Connection: close\r
-        \r
-        #{bad_xml}
-        """
+          {:ok, socket} = :gen_tcp.accept(listen_socket)
 
-        :gen_tcp.send(socket, response)
-        :gen_tcp.close(socket)
-        :gen_tcp.close(listen_socket)
-      end)
+          # Return invalid XML
+          bad_xml = "This is not XML at all!"
+
+          response = """
+          HTTP/1.1 200 OK\r
+          Content-Type: text/xml\r
+          Content-Length: #{byte_size(bad_xml)}\r
+          Connection: close\r
+          \r
+          #{bad_xml}
+          """
+
+          :gen_tcp.send(socket, response)
+          :gen_tcp.close(socket)
+          :gen_tcp.close(listen_socket)
+        end)
 
       # Give server time to start
       :timer.sleep(100)
@@ -96,12 +102,15 @@ defmodule Lather.SimpleIntegrationTest do
         {:error, %{type: :parse_error}} ->
           # This is expected
           :ok
+
         {:error, error} ->
           # Any parse-related error is acceptable
           error_string = inspect(error)
+
           assert String.contains?(error_string, "parse") ||
-                 String.contains?(error_string, "XML") ||
-                 String.contains?(error_string, "invalid")
+                   String.contains?(error_string, "XML") ||
+                   String.contains?(error_string, "invalid")
+
         {:ok, _client} ->
           flunk("Expected parse error but got success")
       end
@@ -118,60 +127,65 @@ defmodule Lather.SimpleIntegrationTest do
       wsdl_url = "http://localhost:#{port}/simple.wsdl"
 
       # Start a server that returns valid WSDL
-      server_pid = spawn_link(fn ->
-        {:ok, listen_socket} = :gen_tcp.listen(port, [:binary, packet: :http_bin, active: false, reuseaddr: true])
-        {:ok, socket} = :gen_tcp.accept(listen_socket)
+      server_pid =
+        spawn_link(fn ->
+          {:ok, listen_socket} =
+            :gen_tcp.listen(port, [:binary, packet: :http_bin, active: false, reuseaddr: true])
 
-        # Return a minimal valid WSDL
-        wsdl = """
-<?xml version="1.0" encoding="UTF-8"?>
-<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
-             xmlns:tns="http://test.example.com/"
-             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
-             xmlns:xsd="http://www.w3.org/2001/XMLSchema"
-             targetNamespace="http://test.example.com/"
-             name="SimpleService">
-  <message name="EchoRequest">
-    <part name="message" type="xsd:string"/>
-  </message>
-  <message name="EchoResponse">
-    <part name="response" type="xsd:string"/>
-  </message>
-  <portType name="SimplePortType">
-    <operation name="Echo">
-      <input message="tns:EchoRequest"/>
-      <output message="tns:EchoResponse"/>
-    </operation>
-  </portType>
-  <binding name="SimpleBinding" type="tns:SimplePortType">
-    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
-    <operation name="Echo">
-      <soap:operation soapAction="Echo"/>
-      <input><soap:body use="literal"/></input>
-      <output><soap:body use="literal"/></output>
-    </operation>
-  </binding>
-  <service name="SimpleService">
-    <port name="SimplePort" binding="tns:SimpleBinding">
-      <soap:address location="http://localhost:#{port}/soap"/>
-    </port>
-  </service>
-</definitions>
-""" |> String.trim()
+          {:ok, socket} = :gen_tcp.accept(listen_socket)
 
-        response = """
-        HTTP/1.1 200 OK\r
-        Content-Type: text/xml\r
-        Content-Length: #{byte_size(wsdl)}\r
-        Connection: close\r
-        \r
-        #{wsdl}
-        """
+          # Return a minimal valid WSDL
+          wsdl =
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+                         xmlns:tns="http://test.example.com/"
+                         xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                         xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                         targetNamespace="http://test.example.com/"
+                         name="SimpleService">
+              <message name="EchoRequest">
+                <part name="message" type="xsd:string"/>
+              </message>
+              <message name="EchoResponse">
+                <part name="response" type="xsd:string"/>
+              </message>
+              <portType name="SimplePortType">
+                <operation name="Echo">
+                  <input message="tns:EchoRequest"/>
+                  <output message="tns:EchoResponse"/>
+                </operation>
+              </portType>
+              <binding name="SimpleBinding" type="tns:SimplePortType">
+                <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+                <operation name="Echo">
+                  <soap:operation soapAction="Echo"/>
+                  <input><soap:body use="literal"/></input>
+                  <output><soap:body use="literal"/></output>
+                </operation>
+              </binding>
+              <service name="SimpleService">
+                <port name="SimplePort" binding="tns:SimpleBinding">
+                  <soap:address location="http://localhost:#{port}/soap"/>
+                </port>
+              </service>
+            </definitions>
+            """
+            |> String.trim()
 
-        :gen_tcp.send(socket, response)
-        :gen_tcp.close(socket)
-        :gen_tcp.close(listen_socket)
-      end)
+          response = """
+          HTTP/1.1 200 OK\r
+          Content-Type: text/xml\r
+          Content-Length: #{byte_size(wsdl)}\r
+          Connection: close\r
+          \r
+          #{wsdl}
+          """
+
+          :gen_tcp.send(socket, response)
+          :gen_tcp.close(socket)
+          :gen_tcp.close(listen_socket)
+        end)
 
       # Give server time to start
       :timer.sleep(100)

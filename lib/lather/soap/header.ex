@@ -132,22 +132,24 @@ defmodule Lather.Soap.Header do
   """
   @spec custom(String.t(), map() | String.t(), map()) :: map()
   def custom(name, content, attributes \\ %{}) do
-    element_content = case content do
-      content when is_map(content) ->
-        content
+    element_content =
+      case content do
+        content when is_map(content) ->
+          content
 
-      content when is_binary(content) ->
-        %{"#text" => content}
+        content when is_binary(content) ->
+          %{"#text" => content}
 
-      content ->
-        %{"#text" => to_string(content)}
-    end
+        content ->
+          %{"#text" => to_string(content)}
+      end
 
-    element_with_attrs = attributes
-    |> Enum.reduce(element_content, fn {key, value}, acc ->
-      attr_key = if String.starts_with?(key, "@"), do: key, else: "@#{key}"
-      Map.put(acc, attr_key, value)
-    end)
+    element_with_attrs =
+      attributes
+      |> Enum.reduce(element_content, fn {key, value}, acc ->
+        attr_key = if String.starts_with?(key, "@"), do: key, else: "@#{key}"
+        Map.put(acc, attr_key, value)
+      end)
 
     %{name => element_with_attrs}
   end

@@ -17,105 +17,117 @@ defmodule Lather.Integration.ComplexTypesRoundTripTest do
 
     # Define a complex type for User
     soap_type "User" do
-      type_description "User account information"
-      element "id", :integer, required: true
-      element "username", :string, required: true
-      element "email", :string, required: true
-      element "active", :boolean, required: false
+      type_description("User account information")
+      element("id", :integer, required: true)
+      element("username", :string, required: true)
+      element("email", :string, required: true)
+      element("active", :boolean, required: false)
     end
 
     # Define a complex type for Address
     soap_type "Address" do
-      type_description "Physical address"
-      element "street", :string, required: true
-      element "city", :string, required: true
-      element "state", :string, required: false
-      element "zipCode", :string, required: true
-      element "country", :string, required: true
+      type_description("Physical address")
+      element("street", :string, required: true)
+      element("city", :string, required: true)
+      element("state", :string, required: false)
+      element("zipCode", :string, required: true)
+      element("country", :string, required: true)
     end
 
     # Define a type with nested structure
     soap_type "Order" do
-      type_description "Customer order"
-      element "orderId", :string, required: true
-      element "customerId", :string, required: true
-      element "total", :decimal, required: true
-      element "items", :integer, required: true  # Count of items
+      type_description("Customer order")
+      element("orderId", :string, required: true)
+      element("customerId", :string, required: true)
+      element("total", :decimal, required: true)
+      # Count of items
+      element("items", :integer, required: true)
     end
 
     # Simple nested structure operation
     soap_operation "CreateUser" do
-      description "Creates a user with nested data"
+      description("Creates a user with nested data")
+
       input do
-        parameter "username", :string, required: true
-        parameter "email", :string, required: true
+        parameter("username", :string, required: true)
+        parameter("email", :string, required: true)
       end
+
       output do
-        parameter "id", :integer
-        parameter "username", :string
-        parameter "email", :string
-        parameter "created", :boolean
+        parameter("id", :integer)
+        parameter("username", :string)
+        parameter("email", :string)
+        parameter("created", :boolean)
       end
-      soap_action "CreateUser"
+
+      soap_action("CreateUser")
     end
 
     def create_user(%{"username" => username, "email" => email}) do
-      {:ok, %{
-        "id" => :rand.uniform(10000),
-        "username" => username,
-        "email" => email,
-        "created" => true
-      }}
+      {:ok,
+       %{
+         "id" => :rand.uniform(10000),
+         "username" => username,
+         "email" => email,
+         "created" => true
+       }}
     end
 
     # Operation that returns multiple related values
     soap_operation "GetUserProfile" do
-      description "Gets user profile with address"
+      description("Gets user profile with address")
+
       input do
-        parameter "userId", :integer, required: true
+        parameter("userId", :integer, required: true)
       end
+
       output do
-        parameter "userId", :integer
-        parameter "username", :string
-        parameter "email", :string
-        parameter "street", :string
-        parameter "city", :string
-        parameter "country", :string
+        parameter("userId", :integer)
+        parameter("username", :string)
+        parameter("email", :string)
+        parameter("street", :string)
+        parameter("city", :string)
+        parameter("country", :string)
       end
-      soap_action "GetUserProfile"
+
+      soap_action("GetUserProfile")
     end
 
     def get_user_profile(%{"userId" => user_id}) do
-      {:ok, %{
-        "userId" => parse_int(user_id),
-        "username" => "user_#{user_id}",
-        "email" => "user#{user_id}@example.com",
-        "street" => "123 Main St",
-        "city" => "Springfield",
-        "country" => "USA"
-      }}
+      {:ok,
+       %{
+         "userId" => parse_int(user_id),
+         "username" => "user_#{user_id}",
+         "email" => "user#{user_id}@example.com",
+         "street" => "123 Main St",
+         "city" => "Springfield",
+         "country" => "USA"
+       }}
     end
 
     # Operation with many parameters - single item order
     soap_operation "ProcessSingleItem" do
-      description "Processes a single item order"
+      description("Processes a single item order")
+
       input do
-        parameter "orderId", :string, required: true
-        parameter "customerId", :string, required: true
-        parameter "itemName", :string, required: true
-        parameter "itemQty", :integer, required: true
-        parameter "itemPrice", :decimal, required: true
-        parameter "shippingStreet", :string, required: true
-        parameter "shippingCity", :string, required: true
-        parameter "shippingCountry", :string, required: true
+        parameter("orderId", :string, required: true)
+        parameter("customerId", :string, required: true)
+        parameter("itemName", :string, required: true)
+        parameter("itemQty", :integer, required: true)
+        parameter("itemPrice", :decimal, required: true)
+        parameter("shippingStreet", :string, required: true)
+        parameter("shippingCity", :string, required: true)
+        parameter("shippingCountry", :string, required: true)
       end
+
       output do
-        parameter "orderId", :string
-        parameter "status", :string
-        parameter "total", :decimal
-        parameter "itemCount", :integer
+        parameter("orderId", :string)
+        parameter("status", :string)
+        parameter("total", :decimal)
+        parameter("itemCount", :integer)
       end
-      soap_action "ProcessSingleItem"
+
+      soap_action("ProcessSingleItem")
     end
 
     def process_single_item(params) do
@@ -123,37 +135,41 @@ defmodule Lather.Integration.ComplexTypesRoundTripTest do
       item_price = parse_float(params["itemPrice"])
       total = item_qty * item_price
 
-      {:ok, %{
-        "orderId" => params["orderId"],
-        "status" => "processed",
-        "total" => total,
-        "itemCount" => 1
-      }}
+      {:ok,
+       %{
+         "orderId" => params["orderId"],
+         "status" => "processed",
+         "total" => total,
+         "itemCount" => 1
+       }}
     end
 
     # Operation with two items
     soap_operation "ProcessTwoItems" do
-      description "Processes an order with two items"
+      description("Processes an order with two items")
+
       input do
-        parameter "orderId", :string, required: true
-        parameter "customerId", :string, required: true
-        parameter "item1Name", :string, required: true
-        parameter "item1Qty", :integer, required: true
-        parameter "item1Price", :decimal, required: true
-        parameter "item2Name", :string, required: true
-        parameter "item2Qty", :integer, required: true
-        parameter "item2Price", :decimal, required: true
-        parameter "shippingStreet", :string, required: true
-        parameter "shippingCity", :string, required: true
-        parameter "shippingCountry", :string, required: true
+        parameter("orderId", :string, required: true)
+        parameter("customerId", :string, required: true)
+        parameter("item1Name", :string, required: true)
+        parameter("item1Qty", :integer, required: true)
+        parameter("item1Price", :decimal, required: true)
+        parameter("item2Name", :string, required: true)
+        parameter("item2Qty", :integer, required: true)
+        parameter("item2Price", :decimal, required: true)
+        parameter("shippingStreet", :string, required: true)
+        parameter("shippingCity", :string, required: true)
+        parameter("shippingCountry", :string, required: true)
       end
+
       output do
-        parameter "orderId", :string
-        parameter "status", :string
-        parameter "total", :decimal
-        parameter "itemCount", :integer
+        parameter("orderId", :string)
+        parameter("status", :string)
+        parameter("total", :decimal)
+        parameter("itemCount", :integer)
       end
-      soap_action "ProcessTwoItems"
+
+      soap_action("ProcessTwoItems")
     end
 
     def process_two_items(params) do
@@ -164,62 +180,70 @@ defmodule Lather.Integration.ComplexTypesRoundTripTest do
 
       total = item1_qty * item1_price + item2_qty * item2_price
 
-      {:ok, %{
-        "orderId" => params["orderId"],
-        "status" => "processed",
-        "total" => total,
-        "itemCount" => 2
-      }}
+      {:ok,
+       %{
+         "orderId" => params["orderId"],
+         "status" => "processed",
+         "total" => total,
+         "itemCount" => 2
+       }}
     end
 
     # Operation that echoes back structured data
     soap_operation "EchoStructure" do
-      description "Echoes back a structured input"
+      description("Echoes back a structured input")
+
       input do
-        parameter "name", :string, required: true
-        parameter "count", :integer, required: true
-        parameter "amount", :decimal, required: true
-        parameter "enabled", :boolean, required: true
-        parameter "date", :string, required: true
+        parameter("name", :string, required: true)
+        parameter("count", :integer, required: true)
+        parameter("amount", :decimal, required: true)
+        parameter("enabled", :boolean, required: true)
+        parameter("date", :string, required: true)
       end
+
       output do
-        parameter "name", :string
-        parameter "count", :integer
-        parameter "amount", :decimal
-        parameter "enabled", :boolean
-        parameter "date", :string
-        parameter "received", :boolean
+        parameter("name", :string)
+        parameter("count", :integer)
+        parameter("amount", :decimal)
+        parameter("enabled", :boolean)
+        parameter("date", :string)
+        parameter("received", :boolean)
       end
-      soap_action "EchoStructure"
+
+      soap_action("EchoStructure")
     end
 
     def echo_structure(params) do
-      {:ok, %{
-        "name" => params["name"],
-        "count" => parse_int(params["count"]),
-        "amount" => parse_float(params["amount"]),
-        "enabled" => parse_bool(params["enabled"]),
-        "date" => params["date"],
-        "received" => true
-      }}
+      {:ok,
+       %{
+         "name" => params["name"],
+         "count" => parse_int(params["count"]),
+         "amount" => parse_float(params["amount"]),
+         "enabled" => parse_bool(params["enabled"]),
+         "date" => params["date"],
+         "received" => true
+       }}
     end
 
     # Operation with optional nested values
     soap_operation "GetOptionalData" do
-      description "Gets data with optional fields"
+      description("Gets data with optional fields")
+
       input do
-        parameter "includeAddress", :boolean, required: false
-        parameter "includeStats", :boolean, required: false
+        parameter("includeAddress", :boolean, required: false)
+        parameter("includeStats", :boolean, required: false)
       end
+
       output do
-        parameter "userId", :integer
-        parameter "username", :string
-        parameter "street", :string
-        parameter "city", :string
-        parameter "orderCount", :integer
-        parameter "totalSpent", :decimal
+        parameter("userId", :integer)
+        parameter("username", :string)
+        parameter("street", :string)
+        parameter("city", :string)
+        parameter("orderCount", :integer)
+        parameter("totalSpent", :decimal)
       end
-      soap_action "GetOptionalData"
+
+      soap_action("GetOptionalData")
     end
 
     def get_optional_data(params) do
@@ -262,12 +286,14 @@ defmodule Lather.Integration.ComplexTypesRoundTripTest do
 
     defp parse_float(val) when is_float(val), do: val
     defp parse_float(val) when is_integer(val), do: val * 1.0
+
     defp parse_float(val) when is_binary(val) do
       case Float.parse(val) do
         {f, _} -> f
         :error -> 0.0
       end
     end
+
     defp parse_float(nil), do: 0.0
     defp parse_float(_), do: 0.0
 
@@ -282,13 +308,15 @@ defmodule Lather.Integration.ComplexTypesRoundTripTest do
 
   defmodule ComplexTypesRouter do
     use Plug.Router
-    plug :match
-    plug :dispatch
+    plug(:match)
+    plug(:dispatch)
 
     match "/soap" do
       Lather.Server.Plug.call(
         conn,
-        Lather.Server.Plug.init(service: Lather.Integration.ComplexTypesRoundTripTest.ComplexTypesService)
+        Lather.Server.Plug.init(
+          service: Lather.Integration.ComplexTypesRoundTripTest.ComplexTypesService
+        )
       )
     end
   end
@@ -331,7 +359,8 @@ defmodule Lather.Integration.ComplexTypesRoundTripTest do
     test "retrieves complete profile", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      assert {:ok, response} = Lather.DynamicClient.call(client, "GetUserProfile", %{"userId" => 123})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "GetUserProfile", %{"userId" => 123})
 
       assert parse_int_result(response["userId"]) == 123
       assert is_binary(response["username"])
@@ -543,6 +572,7 @@ defmodule Lather.Integration.ComplexTypesRoundTripTest do
 
   defp parse_float_result(val) when is_float(val), do: val
   defp parse_float_result(val) when is_integer(val), do: val * 1.0
+
   defp parse_float_result(val) when is_binary(val) do
     case Float.parse(val) do
       {f, _} -> f

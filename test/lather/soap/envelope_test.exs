@@ -48,13 +48,16 @@ defmodule Lather.Soap.EnvelopeTest do
     test "includes SOAP headers when provided as list of maps" do
       # This format is used by WS-Security and other complex headers
       headers = [
-        %{"wsse:Security" => %{
-          "@xmlns:wsse" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
-          "wsse:UsernameToken" => %{
-            "wsse:Username" => "testuser",
-            "wsse:Password" => "testpass"
+        %{
+          "wsse:Security" => %{
+            "@xmlns:wsse" =>
+              "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
+            "wsse:UsernameToken" => %{
+              "wsse:Username" => "testuser",
+              "wsse:Password" => "testpass"
+            }
           }
-        }}
+        }
       ]
 
       {:ok, xml} = Envelope.build(:GetUser, %{id: "123"}, headers: headers)
@@ -220,9 +223,7 @@ defmodule Lather.Soap.EnvelopeTest do
 
     test "preserves default-namespace behaviour when namespace_prefix is absent" do
       {:ok, xml} =
-        Envelope.build(:GetUser, %{"userId" => "123"},
-          namespace: "http://example.com/service"
-        )
+        Envelope.build(:GetUser, %{"userId" => "123"}, namespace: "http://example.com/service")
 
       assert String.contains?(xml, "<GetUser")
       assert String.contains?(xml, "xmlns=\"http://example.com/service\"")
@@ -231,9 +232,7 @@ defmodule Lather.Soap.EnvelopeTest do
 
     test "uses prefixed namespace with no namespace value (prefix but empty namespace)" do
       {:ok, xml} =
-        Envelope.build(:MyOp, %{"param" => "value"},
-          namespace_prefix: "tns"
-        )
+        Envelope.build(:MyOp, %{"param" => "value"}, namespace_prefix: "tns")
 
       assert String.contains?(xml, "<tns:MyOp>")
       assert String.contains?(xml, "<param>value</param>")

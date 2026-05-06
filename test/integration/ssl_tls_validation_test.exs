@@ -28,31 +28,31 @@ defmodule Lather.Integration.SslTlsValidationTest do
     @service_name "TestEchoService"
 
     soap_operation "Echo" do
-      description "Echoes the input message"
+      description("Echoes the input message")
 
       input do
-        parameter "message", :string, required: true
+        parameter("message", :string, required: true)
       end
 
       output do
-        parameter "echo", :string
+        parameter("echo", :string)
       end
 
-      soap_action "Echo"
+      soap_action("Echo")
     end
 
     soap_operation "Ping" do
-      description "Simple ping operation"
+      description("Simple ping operation")
 
       input do
-        parameter "value", :string, required: true
+        parameter("value", :string, required: true)
       end
 
       output do
-        parameter "pong", :string
+        parameter("pong", :string)
       end
 
-      soap_action "Ping"
+      soap_action("Ping")
     end
 
     def echo(%{"message" => msg}) do
@@ -67,8 +67,8 @@ defmodule Lather.Integration.SslTlsValidationTest do
   # Router for SSL testing
   defmodule TestRouter do
     use Plug.Router
-    plug :match
-    plug :dispatch
+    plug(:match)
+    plug(:dispatch)
 
     match "/soap" do
       Lather.Server.Plug.call(

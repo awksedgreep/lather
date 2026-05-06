@@ -4,7 +4,6 @@ defmodule Lather.FocusedIntegrationTest do
   @moduletag :integration
 
   describe "Focused integration tests" do
-
     @tag timeout: 10_000
     test "XML parsing works correctly" do
       # Test with a minimal valid XML document first

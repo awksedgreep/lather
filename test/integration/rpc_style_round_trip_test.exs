@@ -196,62 +196,62 @@ defmodule Lather.Integration.RpcStyleRoundTripTest do
     @service_name "RpcCalculatorService"
 
     soap_operation "Multiply" do
-      description "Multiplies two numbers"
+      description("Multiplies two numbers")
 
       input do
-        parameter "x", :decimal, required: true
-        parameter "y", :decimal, required: true
+        parameter("x", :decimal, required: true)
+        parameter("y", :decimal, required: true)
       end
 
       output do
-        parameter "product", :decimal
+        parameter("product", :decimal)
       end
 
-      soap_action "Multiply"
+      soap_action("Multiply")
     end
 
     soap_operation "Concatenate" do
-      description "Concatenates two strings"
+      description("Concatenates two strings")
 
       input do
-        parameter "first", :string, required: true
-        parameter "second", :string, required: true
+        parameter("first", :string, required: true)
+        parameter("second", :string, required: true)
       end
 
       output do
-        parameter "combined", :string
+        parameter("combined", :string)
       end
 
-      soap_action "Concatenate"
+      soap_action("Concatenate")
     end
 
     soap_operation "IsPositive" do
-      description "Checks if a number is positive"
+      description("Checks if a number is positive")
 
       input do
-        parameter "number", :decimal, required: true
+        parameter("number", :decimal, required: true)
       end
 
       output do
-        parameter "positive", :boolean
+        parameter("positive", :boolean)
       end
 
-      soap_action "IsPositive"
+      soap_action("IsPositive")
     end
 
     soap_operation "Power" do
-      description "Raises base to exponent power"
+      description("Raises base to exponent power")
 
       input do
-        parameter "base", :decimal, required: true
-        parameter "exponent", :decimal, required: true
+        parameter("base", :decimal, required: true)
+        parameter("exponent", :decimal, required: true)
       end
 
       output do
-        parameter "result", :decimal
+        parameter("result", :decimal)
       end
 
-      soap_action "Power"
+      soap_action("Power")
     end
 
     def multiply(%{"x" => x, "y" => y}) do
@@ -290,8 +290,8 @@ defmodule Lather.Integration.RpcStyleRoundTripTest do
   # Custom plug that uses our RPC WSDL generator
   defmodule RpcTestRouter do
     use Plug.Router
-    plug :match
-    plug :dispatch
+    plug(:match)
+    plug(:dispatch)
 
     alias Lather.Integration.RpcStyleRoundTripTest.RpcWsdlGenerator
     alias Lather.Integration.RpcStyleRoundTripTest.RpcCalculatorService
@@ -387,7 +387,8 @@ defmodule Lather.Integration.RpcStyleRoundTripTest do
       assert "Multiply" in operation_names
 
       # Make the call
-      assert {:ok, response} = Lather.DynamicClient.call(client, "Multiply", %{"x" => 7, "y" => 6})
+      assert {:ok, response} =
+               Lather.DynamicClient.call(client, "Multiply", %{"x" => 7, "y" => 6})
 
       # Verify we get the actual result
       assert is_map(response)
@@ -451,7 +452,9 @@ defmodule Lather.Integration.RpcStyleRoundTripTest do
 
       assert {:ok, r1} = Lather.DynamicClient.call(client, "Multiply", %{"x" => 3, "y" => 4})
       assert {:ok, r2} = Lather.DynamicClient.call(client, "Multiply", %{"x" => 5, "y" => 6})
-      assert {:ok, r3} = Lather.DynamicClient.call(client, "Power", %{"base" => 2, "exponent" => 3})
+
+      assert {:ok, r3} =
+               Lather.DynamicClient.call(client, "Power", %{"base" => 2, "exponent" => 3})
 
       assert parse_result(r1["product"]) == 12.0
       assert parse_result(r2["product"]) == 30.0
@@ -462,8 +465,12 @@ defmodule Lather.Integration.RpcStyleRoundTripTest do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
       tasks = [
-        Task.async(fn -> Lather.DynamicClient.call(client, "Multiply", %{"x" => 2, "y" => 3}) end),
-        Task.async(fn -> Lather.DynamicClient.call(client, "Multiply", %{"x" => 4, "y" => 5}) end),
+        Task.async(fn ->
+          Lather.DynamicClient.call(client, "Multiply", %{"x" => 2, "y" => 3})
+        end),
+        Task.async(fn ->
+          Lather.DynamicClient.call(client, "Multiply", %{"x" => 4, "y" => 5})
+        end),
         Task.async(fn ->
           Lather.DynamicClient.call(client, "Concatenate", %{"first" => "a", "second" => "b"})
         end),

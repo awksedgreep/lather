@@ -25,17 +25,17 @@ defmodule Lather.Integration.SoapFaultHandlingIntegrationTest do
     @service_name "FaultTestService"
 
     soap_operation "TestOperation" do
-      description "A test operation that can return various fault types"
+      description("A test operation that can return various fault types")
 
       input do
-        parameter "request_type", :string, required: true
+        parameter("request_type", :string, required: true)
       end
 
       output do
-        parameter "result", :string
+        parameter("result", :string)
       end
 
-      soap_action "TestOperation"
+      soap_action("TestOperation")
     end
 
     def test_operation(%{"request_type" => "success"}) do
@@ -145,7 +145,8 @@ defmodule Lather.Integration.SoapFaultHandlingIntegrationTest do
           ""
         end
 
-      actor_xml = if fault_actor, do: "<faultactor>#{escape_xml(fault_actor)}</faultactor>", else: ""
+      actor_xml =
+        if fault_actor, do: "<faultactor>#{escape_xml(fault_actor)}</faultactor>", else: ""
 
       fault_xml = """
       <?xml version="1.0" encoding="UTF-8"?>
@@ -939,7 +940,9 @@ defmodule Lather.Integration.SoapFaultHandlingIntegrationTest do
 
       # First, configure an error
       ErrorConfig.set(:http_500_html_error, [])
-      assert {:error, _} = DynamicClient.call(client, "TestOperation", %{"request_type" => "test"})
+
+      assert {:error, _} =
+               DynamicClient.call(client, "TestOperation", %{"request_type" => "test"})
 
       # Then reset to success
       ErrorConfig.set(:success, [])

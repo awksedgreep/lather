@@ -198,6 +198,7 @@ defmodule Lather.Operation.BuilderTest do
       assert result["REQ_ID"] == "001"
       assert result["REQ_DATE"] == "28042026"
       assert result["MESSAGE"] == "Employee not found"
+
       refute Map.has_key?(result, "ns0:MT_Employee_Lookup_Rp"),
              "response should be unwrapped from the operation element"
     end
@@ -220,8 +221,7 @@ defmodule Lather.Operation.BuilderTest do
           "soap:Body" => %{
             "n0:MT_Movilidad_Registro_Rp" => %{
               "@xmlns:n0" => "http://fcc.es/HRSAPECC/HCM/PA/Movilidad/Registro",
-              "@xmlns:prx" =>
-                "urn:sap.com:proxy:EHD:/1SAI/TAS820FE76BCF9B749B0AE4:750",
+              "@xmlns:prx" => "urn:sap.com:proxy:EHD:/1SAI/TAS820FE76BCF9B749B0AE4:750",
               "GROUPID" => "ACME",
               "ID_ENV" => "001",
               "FEC_ENV" => "05052026",

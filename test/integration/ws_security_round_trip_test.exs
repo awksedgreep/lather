@@ -31,6 +31,7 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
       if :ets.whereis(@table_name) == :undefined do
         :ets.new(@table_name, [:named_table, :public, :set])
       end
+
       :ok
     end
 
@@ -41,6 +42,7 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
 
     def get do
       init()
+
       case :ets.lookup(@table_name, :config) do
         [{:config, mode, opts}] -> {mode, opts}
         [] -> {:text_password, []}
@@ -56,8 +58,8 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
     # WS-Security namespace - defined as module attribute
     @wsse_namespace "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
 
-    plug :match
-    plug :dispatch
+    plug(:match)
+    plug(:dispatch)
 
     match "/soap" do
       {:ok, body, conn} = read_full_body(conn)
@@ -70,28 +72,52 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
           handle_soap_request(conn, body)
 
         {:error, :missing_security_header} ->
-          send_soap_fault(conn, "Client", "wsse:InvalidSecurityToken",
-            "Security header is required but was not found")
+          send_soap_fault(
+            conn,
+            "Client",
+            "wsse:InvalidSecurityToken",
+            "Security header is required but was not found"
+          )
 
         {:error, :invalid_credentials} ->
-          send_soap_fault(conn, "Client", "wsse:FailedAuthentication",
-            "Authentication failed: invalid username or password")
+          send_soap_fault(
+            conn,
+            "Client",
+            "wsse:FailedAuthentication",
+            "Authentication failed: invalid username or password"
+          )
 
         {:error, :invalid_password_digest} ->
-          send_soap_fault(conn, "Client", "wsse:FailedAuthentication",
-            "Authentication failed: password digest verification failed")
+          send_soap_fault(
+            conn,
+            "Client",
+            "wsse:FailedAuthentication",
+            "Authentication failed: password digest verification failed"
+          )
 
         {:error, :timestamp_expired} ->
-          send_soap_fault(conn, "Client", "wsse:MessageExpired",
-            "Message has expired based on timestamp")
+          send_soap_fault(
+            conn,
+            "Client",
+            "wsse:MessageExpired",
+            "Message has expired based on timestamp"
+          )
 
         {:error, :missing_timestamp} ->
-          send_soap_fault(conn, "Client", "wsse:InvalidSecurityToken",
-            "Timestamp is required but was not found")
+          send_soap_fault(
+            conn,
+            "Client",
+            "wsse:InvalidSecurityToken",
+            "Timestamp is required but was not found"
+          )
 
         {:error, reason} ->
-          send_soap_fault(conn, "Client", "wsse:InvalidSecurityToken",
-            "Security validation failed: #{inspect(reason)}")
+          send_soap_fault(
+            conn,
+            "Client",
+            "wsse:InvalidSecurityToken",
+            "Security validation failed: #{inspect(reason)}"
+          )
       end
     end
 
@@ -111,7 +137,9 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
           body_content = envelope["soap:Body"] || envelope["Body"] || %{}
 
           # Extract the operation - look for SecureOperation
-          operation = body_content["SecureOperation"] || body_content["tns:SecureOperation"] || %{}
+          operation =
+            body_content["SecureOperation"] || body_content["tns:SecureOperation"] || %{}
+
           message = operation["message"] || ""
 
           # Return a successful SOAP response
@@ -162,12 +190,18 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
 
       # Handle case where header might be nil or empty string
       case header do
-        nil -> nil
-        "" -> nil
+        nil ->
+          nil
+
+        "" ->
+          nil
+
         header when is_map(header) ->
           # Security can be under wsse:Security or just Security
           header["wsse:Security"] || header["Security"] || nil
-        _ -> nil
+
+        _ ->
+          nil
       end
     end
 
@@ -355,14 +389,16 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
 
     test "client sends text password, server receives and validates", %{base_url: base_url} do
       # Build a SOAP request with WS-Security header
-      security_header = WSSecurity.username_token(@valid_username, @valid_password, password_type: :text)
+      security_header =
+        WSSecurity.username_token(@valid_username, @valid_password, password_type: :text)
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "SecureOperation",
-        %{"message" => "Hello Secure World"},
-        headers: [security_header],
-        namespace: "http://test.example.com/secure"
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "SecureOperation",
+          %{"message" => "Hello Secure World"},
+          headers: [security_header],
+          namespace: "http://test.example.com/secure"
+        )
 
       # Send the request
       {:ok, response} = make_soap_request(base_url, envelope)
@@ -374,12 +410,13 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
     test "validates username is correctly transmitted", %{base_url: base_url} do
       security_header = WSSecurity.username_token(@valid_username, @valid_password)
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "SecureOperation",
-        %{"message" => "Test"},
-        headers: [security_header],
-        namespace: "http://test.example.com/secure"
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "SecureOperation",
+          %{"message" => "Test"},
+          headers: [security_header],
+          namespace: "http://test.example.com/secure"
+        )
 
       {:ok, response} = make_soap_request(base_url, envelope)
 
@@ -389,12 +426,13 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
     test "validates password is correctly transmitted", %{base_url: base_url} do
       security_header = WSSecurity.username_token(@valid_username, @valid_password)
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "SecureOperation",
-        %{"message" => "Test"},
-        headers: [security_header],
-        namespace: "http://test.example.com/secure"
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "SecureOperation",
+          %{"message" => "Test"},
+          headers: [security_header],
+          namespace: "http://test.example.com/secure"
+        )
 
       {:ok, response} = make_soap_request(base_url, envelope)
 
@@ -425,18 +463,20 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
     end
 
     test "client sends digest password, server validates digest", %{base_url: base_url} do
-      security_header = WSSecurity.username_token(
-        @valid_username,
-        @valid_password,
-        password_type: :digest
-      )
+      security_header =
+        WSSecurity.username_token(
+          @valid_username,
+          @valid_password,
+          password_type: :digest
+        )
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "SecureOperation",
-        %{"message" => "Digest Auth Test"},
-        headers: [security_header],
-        namespace: "http://test.example.com/secure"
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "SecureOperation",
+          %{"message" => "Digest Auth Test"},
+          headers: [security_header],
+          namespace: "http://test.example.com/secure"
+        )
 
       {:ok, response} = make_soap_request(base_url, envelope)
 
@@ -491,12 +531,13 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
     test "Created/Expires validation with valid timestamp", %{base_url: base_url} do
       timestamp_header = WSSecurity.timestamp(ttl: 300)
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "SecureOperation",
-        %{"message" => "Timestamp Test"},
-        headers: [timestamp_header],
-        namespace: "http://test.example.com/secure"
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "SecureOperation",
+          %{"message" => "Timestamp Test"},
+          headers: [timestamp_header],
+          namespace: "http://test.example.com/secure"
+        )
 
       {:ok, response} = make_soap_request(base_url, envelope)
 
@@ -549,22 +590,27 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
 
   describe "Combined UsernameToken + Timestamp" do
     setup do
-      start_test_server(:username_with_timestamp, username: @valid_username, password: @valid_password)
+      start_test_server(:username_with_timestamp,
+        username: @valid_username,
+        password: @valid_password
+      )
     end
 
     test "combined header is validated correctly", %{base_url: base_url} do
-      combined_header = WSSecurity.username_token_with_timestamp(
-        @valid_username,
-        @valid_password,
-        ttl: 300
-      )
+      combined_header =
+        WSSecurity.username_token_with_timestamp(
+          @valid_username,
+          @valid_password,
+          ttl: 300
+        )
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "SecureOperation",
-        %{"message" => "Combined Test"},
-        headers: [combined_header],
-        namespace: "http://test.example.com/secure"
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "SecureOperation",
+          %{"message" => "Combined Test"},
+          headers: [combined_header],
+          namespace: "http://test.example.com/secure"
+        )
 
       {:ok, response} = make_soap_request(base_url, envelope)
 
@@ -600,11 +646,12 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
     end
 
     test "combined header with digest password" do
-      combined = WSSecurity.username_token_with_timestamp(
-        @valid_username,
-        @valid_password,
-        password_type: :digest
-      )
+      combined =
+        WSSecurity.username_token_with_timestamp(
+          @valid_username,
+          @valid_password,
+          password_type: :digest
+        )
 
       password_elem = get_in(combined, ["wsse:Security", "wsse:UsernameToken", "wsse:Password"])
 
@@ -620,35 +667,39 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
     test "wrong username is rejected", %{base_url: base_url} do
       security_header = WSSecurity.username_token("wrong_user", @valid_password)
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "SecureOperation",
-        %{"message" => "Test"},
-        headers: [security_header],
-        namespace: "http://test.example.com/secure"
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "SecureOperation",
+          %{"message" => "Test"},
+          headers: [security_header],
+          namespace: "http://test.example.com/secure"
+        )
 
       {:ok, response} = make_soap_request(base_url, envelope)
 
       assert response.status == 500
+
       assert String.contains?(response.body, "FailedAuthentication") or
-             String.contains?(response.body, "invalid")
+               String.contains?(response.body, "invalid")
     end
 
     test "wrong password is rejected", %{base_url: base_url} do
       security_header = WSSecurity.username_token(@valid_username, "wrong_password")
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "SecureOperation",
-        %{"message" => "Test"},
-        headers: [security_header],
-        namespace: "http://test.example.com/secure"
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "SecureOperation",
+          %{"message" => "Test"},
+          headers: [security_header],
+          namespace: "http://test.example.com/secure"
+        )
 
       {:ok, response} = make_soap_request(base_url, envelope)
 
       assert response.status == 500
+
       assert String.contains?(response.body, "FailedAuthentication") or
-             String.contains?(response.body, "invalid")
+               String.contains?(response.body, "invalid")
     end
 
     test "wrong digest password is rejected", %{base_url: _base_url, server_pid: server_pid} do
@@ -656,27 +707,31 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
       GenServer.stop(server_pid, :normal, 1000)
       Process.sleep(50)
 
-      {:ok, port, new_server_pid} = start_server(:digest_password, username: @valid_username, password: @valid_password)
+      {:ok, port, new_server_pid} =
+        start_server(:digest_password, username: @valid_username, password: @valid_password)
 
       # Create a digest with wrong password
-      security_header = WSSecurity.username_token(
-        @valid_username,
-        "wrong_password",
-        password_type: :digest
-      )
+      security_header =
+        WSSecurity.username_token(
+          @valid_username,
+          "wrong_password",
+          password_type: :digest
+        )
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "SecureOperation",
-        %{"message" => "Test"},
-        headers: [security_header],
-        namespace: "http://test.example.com/secure"
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "SecureOperation",
+          %{"message" => "Test"},
+          headers: [security_header],
+          namespace: "http://test.example.com/secure"
+        )
 
       {:ok, response} = make_soap_request("http://localhost:#{port}/soap", envelope)
 
       assert response.status == 500
+
       assert String.contains?(response.body, "FailedAuthentication") or
-             String.contains?(response.body, "digest")
+               String.contains?(response.body, "digest")
 
       GenServer.stop(new_server_pid, :normal, 1000)
     end
@@ -689,18 +744,20 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
 
     test "request without security header is rejected", %{base_url: base_url} do
       # Build envelope without security headers
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "SecureOperation",
-        %{"message" => "No Auth"},
-        headers: [],
-        namespace: "http://test.example.com/secure"
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "SecureOperation",
+          %{"message" => "No Auth"},
+          headers: [],
+          namespace: "http://test.example.com/secure"
+        )
 
       {:ok, response} = make_soap_request(base_url, envelope)
 
       assert response.status == 500
+
       assert String.contains?(response.body, "Security") or
-             String.contains?(response.body, "required")
+               String.contains?(response.body, "required")
     end
 
     test "request with empty security header is rejected", %{base_url: base_url} do
@@ -712,12 +769,13 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
         }
       }
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "SecureOperation",
-        %{"message" => "Empty Auth"},
-        headers: [empty_security],
-        namespace: "http://test.example.com/secure"
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "SecureOperation",
+          %{"message" => "Empty Auth"},
+          headers: [empty_security],
+          namespace: "http://test.example.com/secure"
+        )
 
       {:ok, response} = make_soap_request(base_url, envelope)
 
@@ -733,8 +791,10 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
     test "expired timestamp is rejected", %{base_url: base_url} do
       # Create a timestamp that's already expired
       now = DateTime.utc_now()
-      created = DateTime.add(now, -120, :second)  # 2 minutes ago
-      expires = DateTime.add(now, -60, :second)   # 1 minute ago (expired)
+      # 2 minutes ago
+      created = DateTime.add(now, -120, :second)
+      # 1 minute ago (expired)
+      expires = DateTime.add(now, -60, :second)
 
       expired_timestamp = %{
         "wsse:Security" => %{
@@ -747,29 +807,32 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
         }
       }
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "SecureOperation",
-        %{"message" => "Expired Test"},
-        headers: [expired_timestamp],
-        namespace: "http://test.example.com/secure"
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "SecureOperation",
+          %{"message" => "Expired Test"},
+          headers: [expired_timestamp],
+          namespace: "http://test.example.com/secure"
+        )
 
       {:ok, response} = make_soap_request(base_url, envelope)
 
       assert response.status == 500
+
       assert String.contains?(response.body, "Expired") or
-             String.contains?(response.body, "expired")
+               String.contains?(response.body, "expired")
     end
 
     test "valid timestamp is accepted", %{base_url: base_url} do
       timestamp_header = WSSecurity.timestamp(ttl: 300)
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "SecureOperation",
-        %{"message" => "Valid Timestamp"},
-        headers: [timestamp_header],
-        namespace: "http://test.example.com/secure"
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "SecureOperation",
+          %{"message" => "Valid Timestamp"},
+          headers: [timestamp_header],
+          namespace: "http://test.example.com/secure"
+        )
 
       {:ok, response} = make_soap_request(base_url, envelope)
 
@@ -779,7 +842,10 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
 
   describe "Header merging with Lather.Soap.Header" do
     setup do
-      start_test_server(:username_with_timestamp, username: @valid_username, password: @valid_password)
+      start_test_server(:username_with_timestamp,
+        username: @valid_username,
+        password: @valid_password
+      )
     end
 
     test "Header.username_token produces same structure as WSSecurity.username_token" do
@@ -811,18 +877,20 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
     end
 
     test "Headers from Header module work in actual request", %{base_url: base_url} do
-      combined_header = Header.username_token_with_timestamp(
-        @valid_username,
-        @valid_password,
-        ttl: 300
-      )
+      combined_header =
+        Header.username_token_with_timestamp(
+          @valid_username,
+          @valid_password,
+          ttl: 300
+        )
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "SecureOperation",
-        %{"message" => "Header Module Test"},
-        headers: [combined_header],
-        namespace: "http://test.example.com/secure"
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "SecureOperation",
+          %{"message" => "Header Module Test"},
+          headers: [combined_header],
+          namespace: "http://test.example.com/secure"
+        )
 
       {:ok, response} = make_soap_request(base_url, envelope)
 
@@ -850,11 +918,12 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
     test "namespaces are preserved in XML output" do
       token = WSSecurity.username_token(@valid_username, @valid_password)
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "TestOp",
-        %{},
-        headers: [token]
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "TestOp",
+          %{},
+          headers: [token]
+        )
 
       assert String.contains?(envelope, "xmlns:wsse=")
       assert String.contains?(envelope, "xmlns:wsu=")
@@ -869,12 +938,13 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
     test "special characters in username are handled", %{base_url: base_url} do
       security_header = WSSecurity.username_token("user@domain.com", "p@ss&word<>\"'")
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "SecureOperation",
-        %{"message" => "Special chars test"},
-        headers: [security_header],
-        namespace: "http://test.example.com/secure"
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "SecureOperation",
+          %{"message" => "Special chars test"},
+          headers: [security_header],
+          namespace: "http://test.example.com/secure"
+        )
 
       {:ok, response} = make_soap_request(base_url, envelope)
 
@@ -884,11 +954,12 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
     test "special characters in password are escaped in XML" do
       security_header = WSSecurity.username_token("user", "pass<>&\"'")
 
-      {:ok, envelope} = Lather.Soap.Envelope.build(
-        "TestOp",
-        %{},
-        headers: [security_header]
-      )
+      {:ok, envelope} =
+        Lather.Soap.Envelope.build(
+          "TestOp",
+          %{},
+          headers: [security_header]
+        )
 
       # Verify XML escaping - at least < and > should be escaped
       assert String.contains?(envelope, "&lt;") or String.contains?(envelope, "&gt;")

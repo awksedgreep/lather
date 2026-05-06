@@ -13,8 +13,9 @@ defmodule Lather.DebugIntegrationTest do
       :timer.sleep(200)
 
       # Fetch WSDL manually
-      {:ok, %{status: status, body: body}} = Finch.build(:get, wsdl_url)
-      |> Finch.request(Lather.Finch)
+      {:ok, %{status: status, body: body}} =
+        Finch.build(:get, wsdl_url)
+        |> Finch.request(Lather.Finch)
 
       IO.puts("Status: #{status}")
       IO.puts("Body length: #{byte_size(body)}")
@@ -28,12 +29,13 @@ defmodule Lather.DebugIntegrationTest do
   # Simplified server for debugging
   defp start_test_server(port) do
     spawn_link(fn ->
-      {:ok, listen_socket} = :gen_tcp.listen(port, [
-        :binary,
-        packet: :http_bin,
-        active: false,
-        reuseaddr: true
-      ])
+      {:ok, listen_socket} =
+        :gen_tcp.listen(port, [
+          :binary,
+          packet: :http_bin,
+          active: false,
+          reuseaddr: true
+        ])
 
       accept_loop(listen_socket)
     end)
@@ -44,6 +46,7 @@ defmodule Lather.DebugIntegrationTest do
       {:ok, socket} ->
         spawn(fn -> handle_connection(socket) end)
         accept_loop(listen_socket)
+
       {:error, _} ->
         :ok
     end
@@ -52,58 +55,64 @@ defmodule Lather.DebugIntegrationTest do
   defp handle_connection(socket) do
     case parse_http_request(socket) do
       {:ok, conn} ->
-        _response = case {conn.method, conn.request_path} do
-          {"GET", "/soap"} ->
-            case Map.get(conn.query_params || %{}, "wsdl") do
-              val when val in [nil, "", "1", "true"] ->
-                wsdl = """
-<?xml version="1.0" encoding="UTF-8"?>
-<definitions xmlns="http://schemas.xmlsoap.org/wsdl/" name="TestService">
-  <types></types>
-  <message name="echoRequest">
-    <part name="message" type="xsd:string"/>
-  </message>
-  <message name="echoResponse">
-    <part name="response" type="xsd:string"/>
-  </message>
-  <portType name="TestPortType">
-    <operation name="echo">
-      <input message="tns:echoRequest"/>
-      <output message="tns:echoResponse"/>
-    </operation>
-  </portType>
-  <binding name="TestBinding" type="tns:TestPortType">
-    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
-    <operation name="echo">
-      <soap:operation soapAction="echo"/>
-      <input><soap:body use="literal"/></input>
-      <output><soap:body use="literal"/></output>
-    </operation>
-  </binding>
-  <service name="TestService">
-    <port name="TestPort" binding="tns:TestBinding">
-      <soap:address location="http://localhost:8080/soap"/>
-    </port>
-  </service>
-</definitions>
-""" |> String.trim()
+        _response =
+          case {conn.method, conn.request_path} do
+            {"GET", "/soap"} ->
+              case Map.get(conn.query_params || %{}, "wsdl") do
+                val when val in [nil, "", "1", "true"] ->
+                  wsdl =
+                    """
+                    <?xml version="1.0" encoding="UTF-8"?>
+                    <definitions xmlns="http://schemas.xmlsoap.org/wsdl/" name="TestService">
+                      <types></types>
+                      <message name="echoRequest">
+                        <part name="message" type="xsd:string"/>
+                      </message>
+                      <message name="echoResponse">
+                        <part name="response" type="xsd:string"/>
+                      </message>
+                      <portType name="TestPortType">
+                        <operation name="echo">
+                          <input message="tns:echoRequest"/>
+                          <output message="tns:echoResponse"/>
+                        </operation>
+                      </portType>
+                      <binding name="TestBinding" type="tns:TestPortType">
+                        <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+                        <operation name="echo">
+                          <soap:operation soapAction="echo"/>
+                          <input><soap:body use="literal"/></input>
+                          <output><soap:body use="literal"/></output>
+                        </operation>
+                      </binding>
+                      <service name="TestService">
+                        <port name="TestPort" binding="tns:TestBinding">
+                          <soap:address location="http://localhost:8080/soap"/>
+                        </port>
+                      </service>
+                    </definitions>
+                    """
+                    |> String.trim()
 
-                http_response = """
-                HTTP/1.1 200 OK\r
-                Content-Type: text/xml\r
-                Content-Length: #{byte_size(wsdl)}\r
-                Connection: close\r
-                \r
-                #{wsdl}
-                """
+                  http_response = """
+                  HTTP/1.1 200 OK\r
+                  Content-Type: text/xml\r
+                  Content-Length: #{byte_size(wsdl)}\r
+                  Connection: close\r
+                  \r
+                  #{wsdl}
+                  """
 
-                :gen_tcp.send(socket, http_response)
-              _ ->
-                :gen_tcp.send(socket, "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n")
-            end
-          _ ->
-            :gen_tcp.send(socket, "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n")
-        end
+                  :gen_tcp.send(socket, http_response)
+
+                _ ->
+                  :gen_tcp.send(socket, "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n")
+              end
+
+            _ ->
+              :gen_tcp.send(socket, "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n")
+          end
+
       {:error, _} ->
         :ok
     end
@@ -124,6 +133,7 @@ defmodule Lather.DebugIntegrationTest do
         }
 
         {:ok, conn}
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -133,8 +143,10 @@ defmodule Lather.DebugIntegrationTest do
     case :gen_tcp.recv(socket, 0, 1000) do
       {:ok, {:http_header, _, _name, _, _value}} ->
         parse_headers(socket, headers)
+
       {:ok, :http_eoh} ->
         headers
+
       _ ->
         headers
     end
@@ -142,16 +154,20 @@ defmodule Lather.DebugIntegrationTest do
 
   defp parse_query_string(path) do
     case String.split(to_string(path), "?", parts: 2) do
-      [path] -> {path, %{}}
+      [path] ->
+        {path, %{}}
+
       [path, query] ->
-        params = query
-        |> String.split("&")
-        |> Enum.reduce(%{}, fn param, acc ->
-          case String.split(param, "=", parts: 2) do
-            [key] -> Map.put(acc, key, "")
-            [key, value] -> Map.put(acc, key, URI.decode(value))
-          end
-        end)
+        params =
+          query
+          |> String.split("&")
+          |> Enum.reduce(%{}, fn param, acc ->
+            case String.split(param, "=", parts: 2) do
+              [key] -> Map.put(acc, key, "")
+              [key, value] -> Map.put(acc, key, URI.decode(value))
+            end
+          end)
+
         {path, params}
     end
   end

@@ -58,7 +58,8 @@ defmodule Lather.Xml.Builder do
 
   Useful for building fragments that will be embedded in larger documents.
   """
-  @spec build_fragment(map() | [{String.t() | atom(), any()}]) :: {:ok, String.t()} | {:error, any()}
+  @spec build_fragment(map() | [{String.t() | atom(), any()}]) ::
+          {:ok, String.t()} | {:error, any()}
   def build_fragment(data) when is_map(data) do
     try do
       xml_content = build_xml_string(data)
@@ -228,6 +229,7 @@ defmodule Lather.Xml.Builder do
         # Handle #text - text content
         Map.has_key?(content_map, "#text") ->
           text_content = Map.get(content_map, "#text")
+
           if map_size(content_map) == 1 do
             # Only #text, no other children
             text_content

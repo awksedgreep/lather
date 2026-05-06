@@ -33,39 +33,48 @@ defmodule Lather.Integration.SoapHeadersTest do
     @service_name "HeaderEchoService"
 
     soap_operation "ProcessRequest" do
-      description "Processes a request and reports received headers"
+      description("Processes a request and reports received headers")
+
       input do
-        parameter "requestData", :string, required: true
+        parameter("requestData", :string, required: true)
       end
+
       output do
-        parameter "result", :string
-        parameter "receivedHeaders", :string
+        parameter("result", :string)
+        parameter("receivedHeaders", :string)
       end
-      soap_action "ProcessRequest"
+
+      soap_action("ProcessRequest")
     end
 
     soap_operation "GetSessionData" do
-      description "Returns session data based on session header"
+      description("Returns session data based on session header")
+
       input do
-        parameter "key", :string, required: true
+        parameter("key", :string, required: true)
       end
+
       output do
-        parameter "sessionId", :string
-        parameter "value", :string
+        parameter("sessionId", :string)
+        parameter("value", :string)
       end
-      soap_action "GetSessionData"
+
+      soap_action("GetSessionData")
     end
 
     soap_operation "EchoWithHeaders" do
-      description "Echoes input and includes header info in response"
+      description("Echoes input and includes header info in response")
+
       input do
-        parameter "message", :string, required: true
+        parameter("message", :string, required: true)
       end
+
       output do
-        parameter "echo", :string
-        parameter "headerCount", :integer
+        parameter("echo", :string)
+        parameter("headerCount", :integer)
       end
-      soap_action "EchoWithHeaders"
+
+      soap_action("EchoWithHeaders")
     end
 
     def process_request(%{"requestData" => data}) do
@@ -84,9 +93,9 @@ defmodule Lather.Integration.SoapHeadersTest do
   # Custom router that parses SOAP requests and echoes headers
   defmodule HeaderAwareRouter do
     use Plug.Router
-    plug :fetch_query_params
-    plug :match
-    plug :dispatch
+    plug(:fetch_query_params)
+    plug(:match)
+    plug(:dispatch)
 
     alias Lather.Xml.Parser
     alias Lather.Xml.Builder
@@ -226,12 +235,14 @@ defmodule Lather.Integration.SoapHeadersTest do
       |> Enum.reject(fn {k, _} -> String.starts_with?(to_string(k), "@xmlns") end)
       |> Enum.map(fn {k, v} ->
         k_str = to_string(k)
+
         clean_key =
           if String.starts_with?(k_str, "@") do
             "@" <> (k_str |> String.trim_leading("@") |> String.split(":") |> List.last())
           else
             k_str |> String.split(":") |> List.last()
           end
+
         {clean_key, clean_value(v)}
       end)
       |> Enum.into(%{})
@@ -247,26 +258,35 @@ defmodule Lather.Integration.SoapHeadersTest do
         "ProcessRequest" ->
           data = get_param(params, "requestData")
           header_list = headers |> Map.keys() |> Enum.sort() |> Enum.join(",")
-          %{response_name => %{
-            "result" => "Processed: #{data}",
-            "receivedHeaders" => if(header_list == "", do: "none", else: header_list)
-          }}
+
+          %{
+            response_name => %{
+              "result" => "Processed: #{data}",
+              "receivedHeaders" => if(header_list == "", do: "none", else: header_list)
+            }
+          }
 
         "GetSessionData" ->
           key = get_param(params, "key")
           session_id = get_header_value(headers, "SessionId")
-          %{response_name => %{
-            "sessionId" => session_id || "no-session",
-            "value" => "value_for_#{key}"
-          }}
+
+          %{
+            response_name => %{
+              "sessionId" => session_id || "no-session",
+              "value" => "value_for_#{key}"
+            }
+          }
 
         "EchoWithHeaders" ->
           message = get_param(params, "message")
           header_count = map_size(headers)
-          %{response_name => %{
-            "echo" => message,
-            "headerCount" => to_string(header_count)
-          }}
+
+          %{
+            response_name => %{
+              "echo" => message,
+              "headerCount" => to_string(header_count)
+            }
+          }
 
         _ ->
           %{response_name => %{"result" => "unknown"}}
@@ -335,12 +355,13 @@ defmodule Lather.Integration.SoapHeadersTest do
 
       session_header = Header.session("test-session-12345")
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "GetSessionData",
-        %{"key" => "user_preference"},
-        headers: [session_header]
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "GetSessionData",
+          %{"key" => "user_preference"},
+          headers: [session_header]
+        )
 
       assert response["sessionId"] == "test-session-12345"
       assert response["value"] == "value_for_user_preference"
@@ -351,12 +372,13 @@ defmodule Lather.Integration.SoapHeadersTest do
 
       session_header = Header.session("custom-sess-abc", header_name: "MySessionId")
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "ProcessRequest",
-        %{"requestData" => "test"},
-        headers: [session_header]
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "ProcessRequest",
+          %{"requestData" => "test"},
+          headers: [session_header]
+        )
 
       assert String.contains?(response["receivedHeaders"], "MySessionId")
     end
@@ -364,17 +386,19 @@ defmodule Lather.Integration.SoapHeadersTest do
     test "session header with namespace", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      session_header = Header.session("namespaced-session",
-        header_name: "AuthSession",
-        namespace: "http://auth.example.com/session"
-      )
+      session_header =
+        Header.session("namespaced-session",
+          header_name: "AuthSession",
+          namespace: "http://auth.example.com/session"
+        )
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "ProcessRequest",
-        %{"requestData" => "auth-test"},
-        headers: [session_header]
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "ProcessRequest",
+          %{"requestData" => "auth-test"},
+          headers: [session_header]
+        )
 
       assert String.contains?(response["receivedHeaders"], "AuthSession")
     end
@@ -386,18 +410,20 @@ defmodule Lather.Integration.SoapHeadersTest do
     test "header with xmlns attribute", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      custom_header = Header.custom(
-        "CorrelationId",
-        "corr-12345-xyz",
-        %{"xmlns" => "http://tracing.example.com/correlation"}
-      )
+      custom_header =
+        Header.custom(
+          "CorrelationId",
+          "corr-12345-xyz",
+          %{"xmlns" => "http://tracing.example.com/correlation"}
+        )
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "ProcessRequest",
-        %{"requestData" => "traced-request"},
-        headers: [custom_header]
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "ProcessRequest",
+          %{"requestData" => "traced-request"},
+          headers: [custom_header]
+        )
 
       assert String.contains?(response["receivedHeaders"], "CorrelationId")
     end
@@ -413,12 +439,13 @@ defmodule Lather.Integration.SoapHeadersTest do
         }
       }
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "ProcessRequest",
-        %{"requestData" => "traced-with-prefix"},
-        headers: [prefixed_header]
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "ProcessRequest",
+          %{"requestData" => "traced-with-prefix"},
+          headers: [prefixed_header]
+        )
 
       assert String.contains?(response["receivedHeaders"], "TraceContext")
     end
@@ -432,12 +459,13 @@ defmodule Lather.Integration.SoapHeadersTest do
         Header.custom("RequestId", "req-001", %{"xmlns" => "http://request.example.com"})
       ]
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "ProcessRequest",
-        %{"requestData" => "multi-ns-request"},
-        headers: headers
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "ProcessRequest",
+          %{"requestData" => "multi-ns-request"},
+          headers: headers
+        )
 
       received = response["receivedHeaders"]
       assert String.contains?(received, "AuthToken")
@@ -458,12 +486,13 @@ defmodule Lather.Integration.SoapHeadersTest do
 
       merged = Header.merge_headers([header1, header2, header3])
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "ProcessRequest",
-        %{"requestData" => "merged-headers-test"},
-        headers: [merged]
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "ProcessRequest",
+          %{"requestData" => "merged-headers-test"},
+          headers: [merged]
+        )
 
       received = response["receivedHeaders"]
       assert String.contains?(received, "SessionId")
@@ -480,12 +509,13 @@ defmodule Lather.Integration.SoapHeadersTest do
         Header.custom("Timezone", "America/New_York")
       ]
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "EchoWithHeaders",
-        %{"message" => "hello"},
-        headers: headers
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "EchoWithHeaders",
+          %{"message" => "hello"},
+          headers: headers
+        )
 
       # Should have received 3 headers
       assert response["headerCount"] == "3"
@@ -525,21 +555,23 @@ defmodule Lather.Integration.SoapHeadersTest do
     test "header with mustUnderstand attribute", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      header = Header.custom(
-        "CriticalInfo",
-        "important-value",
-        %{
-          "xmlns" => "http://critical.example.com",
-          "soap:mustUnderstand" => "1"
-        }
-      )
+      header =
+        Header.custom(
+          "CriticalInfo",
+          "important-value",
+          %{
+            "xmlns" => "http://critical.example.com",
+            "soap:mustUnderstand" => "1"
+          }
+        )
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "ProcessRequest",
-        %{"requestData" => "must-understand"},
-        headers: [header]
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "ProcessRequest",
+          %{"requestData" => "must-understand"},
+          headers: [header]
+        )
 
       assert String.contains?(response["receivedHeaders"], "CriticalInfo")
     end
@@ -547,21 +579,23 @@ defmodule Lather.Integration.SoapHeadersTest do
     test "header with actor/role attribute", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      header = Header.custom(
-        "RoutingHeader",
-        %{"destination" => "backend-service", "priority" => "high"},
-        %{
-          "xmlns" => "http://routing.example.com",
-          "soap:actor" => "http://schemas.xmlsoap.org/soap/actor/next"
-        }
-      )
+      header =
+        Header.custom(
+          "RoutingHeader",
+          %{"destination" => "backend-service", "priority" => "high"},
+          %{
+            "xmlns" => "http://routing.example.com",
+            "soap:actor" => "http://schemas.xmlsoap.org/soap/actor/next"
+          }
+        )
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "ProcessRequest",
-        %{"requestData" => "routed-request"},
-        headers: [header]
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "ProcessRequest",
+          %{"requestData" => "routed-request"},
+          headers: [header]
+        )
 
       assert String.contains?(response["receivedHeaders"], "RoutingHeader")
     end
@@ -569,24 +603,26 @@ defmodule Lather.Integration.SoapHeadersTest do
     test "header with multiple custom attributes", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      header = Header.custom(
-        "EnrichedHeader",
-        "enriched-data",
-        %{
-          "xmlns" => "http://enriched.example.com",
-          "version" => "2.0",
-          "encrypted" => "false",
-          "priority" => "normal",
-          "ttl" => "3600"
-        }
-      )
+      header =
+        Header.custom(
+          "EnrichedHeader",
+          "enriched-data",
+          %{
+            "xmlns" => "http://enriched.example.com",
+            "version" => "2.0",
+            "encrypted" => "false",
+            "priority" => "normal",
+            "ttl" => "3600"
+          }
+        )
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "ProcessRequest",
-        %{"requestData" => "enriched-request"},
-        headers: [header]
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "ProcessRequest",
+          %{"requestData" => "enriched-request"},
+          headers: [header]
+        )
 
       assert String.contains?(response["receivedHeaders"], "EnrichedHeader")
     end
@@ -594,25 +630,27 @@ defmodule Lather.Integration.SoapHeadersTest do
     test "header with nested content and attributes", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      header = Header.custom(
-        "ComplexHeader",
-        %{
-          "level1" => %{
-            "level2" => %{
-              "deepValue" => "nested-content"
-            }
+      header =
+        Header.custom(
+          "ComplexHeader",
+          %{
+            "level1" => %{
+              "level2" => %{
+                "deepValue" => "nested-content"
+              }
+            },
+            "metadata" => "extra-info"
           },
-          "metadata" => "extra-info"
-        },
-        %{"xmlns" => "http://complex.example.com", "id" => "hdr-001"}
-      )
+          %{"xmlns" => "http://complex.example.com", "id" => "hdr-001"}
+        )
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "ProcessRequest",
-        %{"requestData" => "complex-nested"},
-        headers: [header]
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "ProcessRequest",
+          %{"requestData" => "complex-nested"},
+          headers: [header]
+        )
 
       assert String.contains?(response["receivedHeaders"], "ComplexHeader")
     end
@@ -625,12 +663,13 @@ defmodule Lather.Integration.SoapHeadersTest do
       session_header = Header.session("envelope-test-session")
       custom_header = Header.custom("TestHeader", "test-value")
 
-      {:ok, envelope_xml} = Envelope.build(
-        "ProcessRequest",
-        %{"requestData" => "envelope-structure-test"},
-        headers: [session_header, custom_header],
-        namespace: "http://test.lather.com/headers"
-      )
+      {:ok, envelope_xml} =
+        Envelope.build(
+          "ProcessRequest",
+          %{"requestData" => "envelope-structure-test"},
+          headers: [session_header, custom_header],
+          namespace: "http://test.lather.com/headers"
+        )
 
       # Parse the envelope to verify structure
       {:ok, parsed} = Parser.parse(envelope_xml)
@@ -658,12 +697,13 @@ defmodule Lather.Integration.SoapHeadersTest do
     test "envelope structure with WS-Security header", %{base_url: base_url} do
       ws_security = Header.username_token("testuser", "testpass", password_type: :text)
 
-      {:ok, envelope_xml} = Envelope.build(
-        "ProcessRequest",
-        %{"requestData" => "ws-security-test"},
-        headers: [ws_security],
-        namespace: "http://test.lather.com/headers"
-      )
+      {:ok, envelope_xml} =
+        Envelope.build(
+          "ProcessRequest",
+          %{"requestData" => "ws-security-test"},
+          headers: [ws_security],
+          namespace: "http://test.lather.com/headers"
+        )
 
       {:ok, parsed} = Parser.parse(envelope_xml)
 
@@ -677,12 +717,13 @@ defmodule Lather.Integration.SoapHeadersTest do
     end
 
     test "envelope without headers has no Header element when empty", %{base_url: _base_url} do
-      {:ok, envelope_xml} = Envelope.build(
-        "ProcessRequest",
-        %{"requestData" => "no-headers-test"},
-        headers: [],
-        namespace: "http://test.lather.com/headers"
-      )
+      {:ok, envelope_xml} =
+        Envelope.build(
+          "ProcessRequest",
+          %{"requestData" => "no-headers-test"},
+          headers: [],
+          namespace: "http://test.lather.com/headers"
+        )
 
       {:ok, parsed} = Parser.parse(envelope_xml)
 
@@ -703,12 +744,13 @@ defmodule Lather.Integration.SoapHeadersTest do
         Header.custom("Header4", %{"nested" => "content"})
       ]
 
-      {:ok, envelope_xml} = Envelope.build(
-        "ProcessRequest",
-        %{"requestData" => "multi-header-test"},
-        headers: headers,
-        namespace: "http://test.lather.com/headers"
-      )
+      {:ok, envelope_xml} =
+        Envelope.build(
+          "ProcessRequest",
+          %{"requestData" => "multi-header-test"},
+          headers: headers,
+          namespace: "http://test.lather.com/headers"
+        )
 
       {:ok, parsed} = Parser.parse(envelope_xml)
 
@@ -738,20 +780,22 @@ defmodule Lather.Integration.SoapHeadersTest do
     test "server echoes received headers in response", %{base_url: base_url} do
       session_header = Header.session("echo-session-xyz")
 
-      {:ok, envelope} = Envelope.build(
-        "ProcessRequest",
-        %{"requestData" => "echo-test"},
-        headers: [session_header],
-        namespace: "http://test.lather.com/headers"
-      )
+      {:ok, envelope} =
+        Envelope.build(
+          "ProcessRequest",
+          %{"requestData" => "echo-test"},
+          headers: [session_header],
+          namespace: "http://test.lather.com/headers"
+        )
 
-      {:ok, response} = Finch.build(
-        :post,
-        "#{base_url}/soap",
-        [{"content-type", "text/xml; charset=utf-8"}],
-        envelope
-      )
-      |> Finch.request(Lather.Finch)
+      {:ok, response} =
+        Finch.build(
+          :post,
+          "#{base_url}/soap",
+          [{"content-type", "text/xml; charset=utf-8"}],
+          envelope
+        )
+        |> Finch.request(Lather.Finch)
 
       {:ok, parsed} = Parser.parse(response.body)
 
@@ -766,20 +810,22 @@ defmodule Lather.Integration.SoapHeadersTest do
     test "echoed header preserves value", %{base_url: base_url} do
       custom_header = Header.custom("RequestId", "req-abc-789")
 
-      {:ok, envelope} = Envelope.build(
-        "EchoWithHeaders",
-        %{"message" => "preserve-value-test"},
-        headers: [custom_header],
-        namespace: "http://test.lather.com/headers"
-      )
+      {:ok, envelope} =
+        Envelope.build(
+          "EchoWithHeaders",
+          %{"message" => "preserve-value-test"},
+          headers: [custom_header],
+          namespace: "http://test.lather.com/headers"
+        )
 
-      {:ok, response} = Finch.build(
-        :post,
-        "#{base_url}/soap",
-        [{"content-type", "text/xml; charset=utf-8"}],
-        envelope
-      )
-      |> Finch.request(Lather.Finch)
+      {:ok, response} =
+        Finch.build(
+          :post,
+          "#{base_url}/soap",
+          [{"content-type", "text/xml; charset=utf-8"}],
+          envelope
+        )
+        |> Finch.request(Lather.Finch)
 
       {:ok, parsed} = Parser.parse(response.body)
 
@@ -788,11 +834,12 @@ defmodule Lather.Integration.SoapHeadersTest do
       echo_request_id = response_header["Echo-RequestId"]
 
       # Extract value
-      value = case echo_request_id do
-        v when is_binary(v) -> v
-        %{"#text" => t} -> t
-        m when is_map(m) -> Map.get(m, "#text", inspect(m))
-      end
+      value =
+        case echo_request_id do
+          v when is_binary(v) -> v
+          %{"#text" => t} -> t
+          m when is_map(m) -> Map.get(m, "#text", inspect(m))
+        end
 
       assert value == "req-abc-789"
     end
@@ -804,20 +851,22 @@ defmodule Lather.Integration.SoapHeadersTest do
         Header.custom("RequestId", "req-002")
       ]
 
-      {:ok, envelope} = Envelope.build(
-        "ProcessRequest",
-        %{"requestData" => "multi-echo-test"},
-        headers: headers,
-        namespace: "http://test.lather.com/headers"
-      )
+      {:ok, envelope} =
+        Envelope.build(
+          "ProcessRequest",
+          %{"requestData" => "multi-echo-test"},
+          headers: headers,
+          namespace: "http://test.lather.com/headers"
+        )
 
-      {:ok, response} = Finch.build(
-        :post,
-        "#{base_url}/soap",
-        [{"content-type", "text/xml; charset=utf-8"}],
-        envelope
-      )
-      |> Finch.request(Lather.Finch)
+      {:ok, response} =
+        Finch.build(
+          :post,
+          "#{base_url}/soap",
+          [{"content-type", "text/xml; charset=utf-8"}],
+          envelope
+        )
+        |> Finch.request(Lather.Finch)
 
       {:ok, parsed} = Parser.parse(response.body)
 
@@ -838,12 +887,13 @@ defmodule Lather.Integration.SoapHeadersTest do
 
       header = Header.custom("EmptyHeader", "")
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "ProcessRequest",
-        %{"requestData" => "empty-value-test"},
-        headers: [header]
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "ProcessRequest",
+          %{"requestData" => "empty-value-test"},
+          headers: [header]
+        )
 
       assert String.contains?(response["receivedHeaders"], "EmptyHeader")
     end
@@ -853,12 +903,13 @@ defmodule Lather.Integration.SoapHeadersTest do
 
       header = Header.custom("SpecialChars", "value<with>&\"special'chars")
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "ProcessRequest",
-        %{"requestData" => "special-chars-test"},
-        headers: [header]
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "ProcessRequest",
+          %{"requestData" => "special-chars-test"},
+          headers: [header]
+        )
 
       assert String.contains?(response["receivedHeaders"], "SpecialChars")
     end
@@ -868,12 +919,13 @@ defmodule Lather.Integration.SoapHeadersTest do
 
       header = Header.custom("UnicodeHeader", "Hello World - Hola Mundo")
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "ProcessRequest",
-        %{"requestData" => "unicode-test"},
-        headers: [header]
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "ProcessRequest",
+          %{"requestData" => "unicode-test"},
+          headers: [header]
+        )
 
       assert String.contains?(response["receivedHeaders"], "UnicodeHeader")
     end
@@ -884,12 +936,13 @@ defmodule Lather.Integration.SoapHeadersTest do
       long_value = String.duplicate("x", 5000)
       header = Header.custom("LongHeader", long_value)
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "ProcessRequest",
-        %{"requestData" => "long-value-test"},
-        headers: [header]
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "ProcessRequest",
+          %{"requestData" => "long-value-test"},
+          headers: [header]
+        )
 
       assert String.contains?(response["receivedHeaders"], "LongHeader")
     end
@@ -897,24 +950,26 @@ defmodule Lather.Integration.SoapHeadersTest do
     test "deeply nested header structure", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      header = Header.custom("DeepHeader", %{
-        "l1" => %{
-          "l2" => %{
-            "l3" => %{
-              "l4" => %{
-                "value" => "deep"
+      header =
+        Header.custom("DeepHeader", %{
+          "l1" => %{
+            "l2" => %{
+              "l3" => %{
+                "l4" => %{
+                  "value" => "deep"
+                }
               }
             }
           }
-        }
-      })
+        })
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "ProcessRequest",
-        %{"requestData" => "deep-nest-test"},
-        headers: [header]
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "ProcessRequest",
+          %{"requestData" => "deep-nest-test"},
+          headers: [header]
+        )
 
       assert String.contains?(response["receivedHeaders"], "DeepHeader")
     end
@@ -922,11 +977,12 @@ defmodule Lather.Integration.SoapHeadersTest do
     test "request without any headers", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "GetSessionData",
-        %{"key" => "test-key"}
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "GetSessionData",
+          %{"key" => "test-key"}
+        )
 
       # Should return default session since no header was provided
       assert response["sessionId"] == "no-session"
@@ -935,12 +991,13 @@ defmodule Lather.Integration.SoapHeadersTest do
     test "empty headers list", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
-      {:ok, response} = Lather.DynamicClient.call(
-        client,
-        "EchoWithHeaders",
-        %{"message" => "no-headers"},
-        headers: []
-      )
+      {:ok, response} =
+        Lather.DynamicClient.call(
+          client,
+          "EchoWithHeaders",
+          %{"message" => "no-headers"},
+          headers: []
+        )
 
       assert response["echo"] == "no-headers"
       assert response["headerCount"] == "0"
@@ -960,7 +1017,10 @@ defmodule Lather.Integration.SoapHeadersTest do
 
     test "session/2 with namespace" do
       header = Header.session("sess-456", namespace: "http://session.example.com")
-      assert header == %{"SessionId" => %{"@xmlns" => "http://session.example.com", "#text" => "sess-456"}}
+
+      assert header == %{
+               "SessionId" => %{"@xmlns" => "http://session.example.com", "#text" => "sess-456"}
+             }
     end
 
     test "custom/2 with string content" do
@@ -974,14 +1034,16 @@ defmodule Lather.Integration.SoapHeadersTest do
     end
 
     test "custom/3 with attributes" do
-      header = Header.custom("MyHeader", "value", %{"xmlns" => "http://example.com", "id" => "h1"})
+      header =
+        Header.custom("MyHeader", "value", %{"xmlns" => "http://example.com", "id" => "h1"})
+
       assert header == %{
-        "MyHeader" => %{
-          "@xmlns" => "http://example.com",
-          "@id" => "h1",
-          "#text" => "value"
-        }
-      }
+               "MyHeader" => %{
+                 "@xmlns" => "http://example.com",
+                 "@id" => "h1",
+                 "#text" => "value"
+               }
+             }
     end
 
     test "merge_headers/1 combines multiple headers" do

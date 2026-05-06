@@ -96,6 +96,7 @@ defmodule Lather.Server.WSDLGenerator do
   # Generate a message part
   defp generate_message_part(param) do
     type_attr = map_elixir_type_to_xsd(param.type)
+
     """
       <part name="#{param.name}" type="#{type_attr}"/>
     """
@@ -112,11 +113,12 @@ defmodule Lather.Server.WSDLGenerator do
 
   # Generate a port type operation
   defp generate_port_operation(operation) do
-    description = if operation.description do
-      "\n      <documentation>#{operation.description}</documentation>"
-    else
-      ""
-    end
+    description =
+      if operation.description do
+        "\n      <documentation>#{operation.description}</documentation>"
+      else
+        ""
+      end
 
     """
       <operation name="#{operation.name}">#{description}

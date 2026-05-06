@@ -7,39 +7,40 @@ defmodule Lather.Error do
   """
 
   @type soap_fault :: %{
-    fault_code: String.t(),
-    fault_string: String.t(),
-    fault_actor: String.t() | nil,
-    detail: map() | nil
-  }
+          fault_code: String.t(),
+          fault_string: String.t(),
+          fault_actor: String.t() | nil,
+          detail: map() | nil
+        }
 
   @type transport_error :: %{
-    type: :transport_error,
-    reason: atom() | String.t(),
-    details: map()
-  }
+          type: :transport_error,
+          reason: atom() | String.t(),
+          details: map()
+        }
 
   @type http_error :: %{
-    type: :http_error,
-    status: integer(),
-    body: String.t(),
-    headers: [{String.t(), String.t()}]
-  }
+          type: :http_error,
+          status: integer(),
+          body: String.t(),
+          headers: [{String.t(), String.t()}]
+        }
 
   @type wsdl_error :: %{
-    type: :wsdl_error,
-    reason: atom(),
-    details: map()
-  }
+          type: :wsdl_error,
+          reason: atom(),
+          details: map()
+        }
 
   @type validation_error :: %{
-    type: :validation_error,
-    field: String.t(),
-    reason: atom(),
-    details: map()
-  }
+          type: :validation_error,
+          field: String.t(),
+          reason: atom(),
+          details: map()
+        }
 
-  @type lather_error :: soap_fault() | transport_error() | http_error() | wsdl_error() | validation_error()
+  @type lather_error ::
+          soap_fault() | transport_error() | http_error() | wsdl_error() | validation_error()
 
   @doc """
   Parses SOAP fault from response body.
@@ -316,15 +317,18 @@ defmodule Lather.Error do
   end
 
   def recoverable?(%{type: :http_error, status: status}) do
-    status in [500, 502, 503, 504]  # Server errors that might be temporary
+    # Server errors that might be temporary
+    status in [500, 502, 503, 504]
   end
 
   def recoverable?(%{fault_code: "Server"}) do
-    true  # Server faults might be temporary
+    # Server faults might be temporary
+    true
   end
 
   def recoverable?(%{fault_code: "Client"}) do
-    false  # Client faults are usually permanent
+    # Client faults are usually permanent
+    false
   end
 
   def recoverable?(_error) do
@@ -371,8 +375,8 @@ defmodule Lather.Error do
     # Try different SOAP fault structures
     fault_data =
       get_in(parsed_xml, ["Envelope", "Body", "Fault"]) ||
-      get_in(parsed_xml, ["soap:Envelope", "soap:Body", "soap:Fault"]) ||
-      get_in(parsed_xml, ["soapenv:Envelope", "soapenv:Body", "soapenv:Fault"])
+        get_in(parsed_xml, ["soap:Envelope", "soap:Body", "soap:Fault"]) ||
+        get_in(parsed_xml, ["soapenv:Envelope", "soapenv:Body", "soapenv:Fault"])
 
     case fault_data do
       nil ->
@@ -415,18 +419,20 @@ defmodule Lather.Error do
   defp build_fault_details(fault) do
     details = []
 
-    details = if fault.fault_actor do
-      ["Actor: #{fault.fault_actor}" | details]
-    else
-      details
-    end
+    details =
+      if fault.fault_actor do
+        ["Actor: #{fault.fault_actor}" | details]
+      else
+        details
+      end
 
-    details = if fault.detail do
-      detail_str = format_fault_detail(fault.detail)
-      ["Detail: #{detail_str}" | details]
-    else
-      details
-    end
+    details =
+      if fault.detail do
+        detail_str = format_fault_detail(fault.detail)
+        ["Detail: #{detail_str}" | details]
+      else
+        details
+      end
 
     Enum.join(details, "\n")
   end

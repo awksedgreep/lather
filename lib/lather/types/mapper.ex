@@ -45,11 +45,12 @@ defmodule Lather.Types.Mapper do
     element_registry = build_element_registry(service_info.types)
 
     # Generate structs if requested
-    struct_definitions = if generate_structs do
-      generate_struct_definitions(type_registry, struct_module, type_prefix)
-    else
-      %{}
-    end
+    struct_definitions =
+      if generate_structs do
+        generate_struct_definitions(type_registry, struct_module, type_prefix)
+      else
+        %{}
+      end
 
     %{
       type_registry: type_registry,
@@ -141,19 +142,20 @@ defmodule Lather.Types.Mapper do
     # Try to match based on structure
     xml_keys = MapSet.new(Map.keys(xml_data))
 
-    type_match = Enum.find(type_context.type_registry, fn {_type_name, type_def} ->
-      case type_def.category do
-        :complex_type ->
-          element_names = Enum.map(type_def.elements, & &1.name)
-          element_set = MapSet.new(element_names)
+    type_match =
+      Enum.find(type_context.type_registry, fn {_type_name, type_def} ->
+        case type_def.category do
+          :complex_type ->
+            element_names = Enum.map(type_def.elements, & &1.name)
+            element_set = MapSet.new(element_names)
 
-          # Check if XML keys are a subset of expected elements
-          MapSet.subset?(xml_keys, element_set)
+            # Check if XML keys are a subset of expected elements
+            MapSet.subset?(xml_keys, element_set)
 
-        _ ->
-          false
-      end
-    end)
+          _ ->
+            false
+        end
+      end)
 
     case type_match do
       {type_name, _type_def} -> {:ok, type_name}
@@ -228,8 +230,10 @@ defmodule Lather.Types.Mapper do
     case String.split(name, ":", parts: 2) do
       [prefix, local_name] ->
         case Map.get(namespaces, prefix) do
-          nil -> name  # Keep original if prefix not found
-          _namespace -> local_name  # Use local name
+          # Keep original if prefix not found
+          nil -> name
+          # Use local name
+          _namespace -> local_name
         end
 
       [local_name] ->
@@ -291,23 +295,24 @@ defmodule Lather.Types.Mapper do
   end
 
   defp convert_complex_type_from_xml(xml_data, type_definition, type_context) do
-    result = Enum.reduce(type_definition.elements, %{}, fn element, acc ->
-      xml_value = Map.get(xml_data, element.name)
+    result =
+      Enum.reduce(type_definition.elements, %{}, fn element, acc ->
+        xml_value = Map.get(xml_data, element.name)
 
-      if xml_value do
-        elixir_value = convert_element_value_from_xml(xml_value, element, type_context)
-        field_name = String.to_atom(element.name)
-        Map.put(acc, field_name, elixir_value)
-      else
-        # Handle optional fields
-        if element.min_occurs == "0" do
-          acc
-        else
+        if xml_value do
+          elixir_value = convert_element_value_from_xml(xml_value, element, type_context)
           field_name = String.to_atom(element.name)
-          Map.put(acc, field_name, nil)
+          Map.put(acc, field_name, elixir_value)
+        else
+          # Handle optional fields
+          if element.min_occurs == "0" do
+            acc
+          else
+            field_name = String.to_atom(element.name)
+            Map.put(acc, field_name, nil)
+          end
         end
-      end
-    end)
+      end)
 
     {:ok, result}
   end
@@ -368,18 +373,20 @@ defmodule Lather.Types.Mapper do
     end
   end
 
-  defp convert_complex_type_to_xml(elixir_data, type_definition, type_context) when is_map(elixir_data) do
-    result = Enum.reduce(type_definition.elements, %{}, fn element, acc ->
-      field_name = String.to_atom(element.name)
-      elixir_value = Map.get(elixir_data, field_name)
+  defp convert_complex_type_to_xml(elixir_data, type_definition, type_context)
+       when is_map(elixir_data) do
+    result =
+      Enum.reduce(type_definition.elements, %{}, fn element, acc ->
+        field_name = String.to_atom(element.name)
+        elixir_value = Map.get(elixir_data, field_name)
 
-      if elixir_value do
-        xml_value = convert_element_value_to_xml(elixir_value, element, type_context)
-        Map.put(acc, element.name, xml_value)
-      else
-        acc
-      end
-    end)
+        if elixir_value do
+          xml_value = convert_element_value_to_xml(elixir_value, element, type_context)
+          Map.put(acc, element.name, xml_value)
+        else
+          acc
+        end
+      end)
 
     {:ok, result}
   end

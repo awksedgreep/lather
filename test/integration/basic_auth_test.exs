@@ -29,32 +29,32 @@ defmodule Lather.Integration.BasicAuthTest do
     @service_name "BasicAuthService"
 
     soap_operation "Greet" do
-      description "Returns a greeting message"
+      description("Returns a greeting message")
 
       input do
-        parameter "name", :string, required: true
+        parameter("name", :string, required: true)
       end
 
       output do
-        parameter "greeting", :string
+        parameter("greeting", :string)
       end
 
-      soap_action "Greet"
+      soap_action("Greet")
     end
 
     soap_operation "Multiply" do
-      description "Multiplies two numbers"
+      description("Multiplies two numbers")
 
       input do
-        parameter "x", :decimal, required: true
-        parameter "y", :decimal, required: true
+        parameter("x", :decimal, required: true)
+        parameter("y", :decimal, required: true)
       end
 
       output do
-        parameter "product", :decimal
+        parameter("product", :decimal)
       end
 
-      soap_action "Multiply"
+      soap_action("Multiply")
     end
 
     def greet(%{"name" => name}) do
@@ -81,18 +81,16 @@ defmodule Lather.Integration.BasicAuthTest do
   defmodule BasicAuthRouter do
     use Plug.Router
 
-    plug :fetch_query_params
-    plug :match
-    plug :dispatch
+    plug(:fetch_query_params)
+    plug(:match)
+    plug(:dispatch)
 
     # WSDL endpoint - no authentication required (allows service discovery)
     get "/soap" do
       if conn.query_params["wsdl"] != nil do
         Lather.Server.Plug.call(
           conn,
-          Lather.Server.Plug.init(
-            service: Lather.Integration.BasicAuthTest.BasicAuthService
-          )
+          Lather.Server.Plug.init(service: Lather.Integration.BasicAuthTest.BasicAuthService)
         )
       else
         send_resp(conn, 400, "Invalid request")
@@ -105,9 +103,7 @@ defmodule Lather.Integration.BasicAuthTest do
         {:ok, conn} ->
           Lather.Server.Plug.call(
             conn,
-            Lather.Server.Plug.init(
-              service: Lather.Integration.BasicAuthTest.BasicAuthService
-            )
+            Lather.Server.Plug.init(service: Lather.Integration.BasicAuthTest.BasicAuthService)
           )
 
         {:error, reason} ->
@@ -271,15 +267,35 @@ defmodule Lather.Integration.BasicAuthTest do
         {auth_key, auth_value}
       ]
 
-      request1 = Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_greet_request("User1"))
-      request2 = Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_greet_request("User2"))
+      request1 =
+        Finch.build(
+          :post,
+          "http://localhost:#{port}/soap",
+          base_headers,
+          build_greet_request("User1")
+        )
+
+      request2 =
+        Finch.build(
+          :post,
+          "http://localhost:#{port}/soap",
+          base_headers,
+          build_greet_request("User2")
+        )
 
       mult_headers = [
         {"content-type", "text/xml; charset=utf-8"},
         {"soapaction", "Multiply"},
         {auth_key, auth_value}
       ]
-      request3 = Finch.build(:post, "http://localhost:#{port}/soap", mult_headers, build_multiply_request(6, 7))
+
+      request3 =
+        Finch.build(
+          :post,
+          "http://localhost:#{port}/soap",
+          mult_headers,
+          build_multiply_request(6, 7)
+        )
 
       assert {:ok, r1} = Finch.request(request1, Lather.Finch)
       assert {:ok, r2} = Finch.request(request2, Lather.Finch)
@@ -306,7 +322,14 @@ defmodule Lather.Integration.BasicAuthTest do
       tasks =
         Enum.map(1..5, fn i ->
           Task.async(fn ->
-            request = Finch.build(:post, "http://localhost:#{port}/soap", base_headers, build_greet_request("User#{i}"))
+            request =
+              Finch.build(
+                :post,
+                "http://localhost:#{port}/soap",
+                base_headers,
+                build_greet_request("User#{i}")
+              )
+
             Finch.request(request, Lather.Finch)
           end)
         end)
@@ -648,7 +671,14 @@ defmodule Lather.Integration.BasicAuthTest do
         {auth_key, auth_value}
       ]
 
-      greet_request = Finch.build(:post, "http://localhost:#{port}/soap", greet_headers, build_greet_request("Claude"))
+      greet_request =
+        Finch.build(
+          :post,
+          "http://localhost:#{port}/soap",
+          greet_headers,
+          build_greet_request("Claude")
+        )
+
       assert {:ok, greet_response} = Finch.request(greet_request, Lather.Finch)
       assert greet_response.status == 200
       assert String.contains?(greet_response.body, "Hello, Claude!")
@@ -659,7 +689,14 @@ defmodule Lather.Integration.BasicAuthTest do
         {auth_key, auth_value}
       ]
 
-      mult_request = Finch.build(:post, "http://localhost:#{port}/soap", mult_headers, build_multiply_request(12, 5))
+      mult_request =
+        Finch.build(
+          :post,
+          "http://localhost:#{port}/soap",
+          mult_headers,
+          build_multiply_request(12, 5)
+        )
+
       assert {:ok, mult_response} = Finch.request(mult_request, Lather.Finch)
       assert mult_response.status == 200
       assert String.contains?(mult_response.body, "60")
@@ -675,7 +712,14 @@ defmodule Lather.Integration.BasicAuthTest do
         {auth_key, auth_value}
       ]
 
-      request1 = Finch.build(:post, "http://localhost:#{port}/soap", greet_headers, build_greet_request("TestUser"))
+      request1 =
+        Finch.build(
+          :post,
+          "http://localhost:#{port}/soap",
+          greet_headers,
+          build_greet_request("TestUser")
+        )
+
       assert {:ok, r1} = Finch.request(request1, Lather.Finch)
       assert r1.status == 200
       assert String.contains?(r1.body, "TestUser")
@@ -687,12 +731,26 @@ defmodule Lather.Integration.BasicAuthTest do
         {auth_key, auth_value}
       ]
 
-      request2 = Finch.build(:post, "http://localhost:#{port}/soap", mult_headers, build_multiply_request(3.14, 2.0))
+      request2 =
+        Finch.build(
+          :post,
+          "http://localhost:#{port}/soap",
+          mult_headers,
+          build_multiply_request(3.14, 2.0)
+        )
+
       assert {:ok, r2} = Finch.request(request2, Lather.Finch)
       assert r2.status == 200
 
       # Integer values - result may be in scientific notation
-      request3 = Finch.build(:post, "http://localhost:#{port}/soap", mult_headers, build_multiply_request(10, 20))
+      request3 =
+        Finch.build(
+          :post,
+          "http://localhost:#{port}/soap",
+          mult_headers,
+          build_multiply_request(10, 20)
+        )
+
       assert {:ok, r3} = Finch.request(request3, Lather.Finch)
       assert r3.status == 200
       assert String.contains?(r3.body, "200")
@@ -710,7 +768,14 @@ defmodule Lather.Integration.BasicAuthTest do
       # Make 10 sequential calls to verify auth persists
       results =
         Enum.map(1..10, fn i ->
-          request = Finch.build(:post, "http://localhost:#{port}/soap", mult_headers, build_multiply_request(i, i))
+          request =
+            Finch.build(
+              :post,
+              "http://localhost:#{port}/soap",
+              mult_headers,
+              build_multiply_request(i, i)
+            )
+
           Finch.request(request, Lather.Finch)
         end)
 

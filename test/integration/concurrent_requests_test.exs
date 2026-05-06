@@ -19,66 +19,81 @@ defmodule Lather.Integration.ConcurrentRequestsTest do
     @service_name "ConcurrentTestService"
 
     soap_operation "Echo" do
-      description "Echoes the input message"
+      description("Echoes the input message")
+
       input do
-        parameter "message", :string, required: true
+        parameter("message", :string, required: true)
       end
+
       output do
-        parameter "echo", :string
-        parameter "request_id", :string
+        parameter("echo", :string)
+        parameter("request_id", :string)
       end
-      soap_action "Echo"
+
+      soap_action("Echo")
     end
 
     soap_operation "GenerateId" do
-      description "Generates a response containing the input ID"
+      description("Generates a response containing the input ID")
+
       input do
-        parameter "input_id", :string, required: true
+        parameter("input_id", :string, required: true)
       end
+
       output do
-        parameter "output_id", :string
-        parameter "processed_at", :string
+        parameter("output_id", :string)
+        parameter("processed_at", :string)
       end
-      soap_action "GenerateId"
+
+      soap_action("GenerateId")
     end
 
     soap_operation "Add" do
-      description "Adds two numbers"
+      description("Adds two numbers")
+
       input do
-        parameter "a", :decimal, required: true
-        parameter "b", :decimal, required: true
+        parameter("a", :decimal, required: true)
+        parameter("b", :decimal, required: true)
       end
+
       output do
-        parameter "result", :decimal
-        parameter "operation_id", :string
+        parameter("result", :decimal)
+        parameter("operation_id", :string)
       end
-      soap_action "Add"
+
+      soap_action("Add")
     end
 
     soap_operation "Multiply" do
-      description "Multiplies two numbers"
+      description("Multiplies two numbers")
+
       input do
-        parameter "a", :decimal, required: true
-        parameter "b", :decimal, required: true
+        parameter("a", :decimal, required: true)
+        parameter("b", :decimal, required: true)
       end
+
       output do
-        parameter "result", :decimal
-        parameter "operation_id", :string
+        parameter("result", :decimal)
+        parameter("operation_id", :string)
       end
-      soap_action "Multiply"
+
+      soap_action("Multiply")
     end
 
     soap_operation "SlowOperation" do
-      description "An intentionally slow operation for testing concurrency"
+      description("An intentionally slow operation for testing concurrency")
+
       input do
-        parameter "request_id", :string, required: true
-        parameter "delay_ms", :integer, required: true
+        parameter("request_id", :string, required: true)
+        parameter("delay_ms", :integer, required: true)
       end
+
       output do
-        parameter "response_id", :string
-        parameter "completed", :boolean
+        parameter("response_id", :string)
+        parameter("completed", :boolean)
       end
-      soap_action "SlowOperation"
+
+      soap_action("SlowOperation")
     end
 
     def echo(params) do
@@ -155,8 +170,8 @@ defmodule Lather.Integration.ConcurrentRequestsTest do
   # Define the router at compile time
   defmodule ConcurrentTestRouter do
     use Plug.Router
-    plug :match
-    plug :dispatch
+    plug(:match)
+    plug(:dispatch)
 
     match "/soap" do
       Lather.Server.Plug.call(
@@ -454,7 +469,7 @@ defmodule Lather.Integration.ConcurrentRequestsTest do
       # Verify Multiply responses
       for {:multiply, a, b, result} <- multiply_results do
         assert {:ok, response} = result
-        assert parse_result(response["result"]) == (a * b) * 1.0
+        assert parse_result(response["result"]) == a * b * 1.0
       end
     end
   end

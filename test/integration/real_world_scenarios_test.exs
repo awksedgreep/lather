@@ -420,9 +420,7 @@ defmodule Lather.Integration.RealWorldScenariosTest do
       }
 
       {:ok, envelope} =
-        Builder.build_request(operation_info, parameters,
-          namespace: "http://example.com/weather"
-        )
+        Builder.build_request(operation_info, parameters, namespace: "http://example.com/weather")
 
       # For element-based document/literal, the body should contain
       # <GetWeatherForecast_Input> directly, NOT wrapped in <GetWeatherForecast>
@@ -454,9 +452,7 @@ defmodule Lather.Integration.RealWorldScenariosTest do
       parameters = %{"param1" => "test_value"}
 
       {:ok, envelope} =
-        Builder.build_request(operation_info, parameters,
-          namespace: "http://example.com/ns"
-        )
+        Builder.build_request(operation_info, parameters, namespace: "http://example.com/ns")
 
       # Traditional style SHOULD wrap in operation name
       assert String.contains?(envelope, "<GetData")
@@ -485,9 +481,7 @@ defmodule Lather.Integration.RealWorldScenariosTest do
       }
 
       {:ok, envelope} =
-        Builder.build_request(operation_info, parameters,
-          namespace: "http://example.com/orders"
-        )
+        Builder.build_request(operation_info, parameters, namespace: "http://example.com/orders")
 
       # Both element parts should be present directly in body
       assert String.contains?(envelope, "<OrderHeaderElement")

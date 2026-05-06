@@ -44,16 +44,20 @@ defmodule Lather.IntegrationTest do
       assert "add_numbers" in operations
 
       # Test 3: Simple echo operation
-      assert {:ok, response} = DynamicClient.call(client, "echo", %{
-        "message" => "Hello, World!"
-      })
+      assert {:ok, response} =
+               DynamicClient.call(client, "echo", %{
+                 "message" => "Hello, World!"
+               })
+
       assert response["response"] == "Echo: Hello, World!"
 
       # Test 4: Math operation with numbers
-      assert {:ok, response} = DynamicClient.call(client, "add_numbers", %{
-        "a" => "10",
-        "b" => "25"
-      })
+      assert {:ok, response} =
+               DynamicClient.call(client, "add_numbers", %{
+                 "a" => "10",
+                 "b" => "25"
+               })
+
       assert response["result"] == "35"
     end
 
@@ -63,7 +67,9 @@ defmodule Lather.IntegrationTest do
       assert {:ok, client} = DynamicClient.new(wsdl_url, timeout: 5_000)
 
       # Test SOAP fault handling
-      assert {:error, %{type: :soap_fault} = fault} = DynamicClient.call(client, "error_operation", %{})
+      assert {:error, %{type: :soap_fault} = fault} =
+               DynamicClient.call(client, "error_operation", %{})
+
       assert fault.fault_code == "Client"
       assert String.contains?(fault.fault_string, "Unknown operation")
     end
@@ -72,8 +78,9 @@ defmodule Lather.IntegrationTest do
     @tag :skip
     test "WSDL generation and parsing round-trip", %{wsdl_url: wsdl_url} do
       # Test that we can fetch and parse the WSDL
-      {:ok, %{status: 200, body: wsdl_xml}} = Finch.build(:get, wsdl_url)
-      |> Finch.request(Lather.Finch)
+      {:ok, %{status: 200, body: wsdl_xml}} =
+        Finch.build(:get, wsdl_url)
+        |> Finch.request(Lather.Finch)
 
       # WSDL should be valid XML
       assert String.contains?(wsdl_xml, "<?xml")
@@ -99,12 +106,13 @@ defmodule Lather.IntegrationTest do
   # Start a simple HTTP server for testing
   defp start_test_server(port) do
     spawn_link(fn ->
-      {:ok, listen_socket} = :gen_tcp.listen(port, [
-        :binary,
-        packet: :http_bin,
-        active: false,
-        reuseaddr: true
-      ])
+      {:ok, listen_socket} =
+        :gen_tcp.listen(port, [
+          :binary,
+          packet: :http_bin,
+          active: false,
+          reuseaddr: true
+        ])
 
       accept_loop(listen_socket)
     end)
@@ -125,6 +133,7 @@ defmodule Lather.IntegrationTest do
       {:ok, conn} ->
         response_conn = handle_soap_request(conn)
         send_http_response(socket, response_conn)
+
       {:error, _reason} ->
         :ok
     end
@@ -144,6 +153,7 @@ defmodule Lather.IntegrationTest do
 
             %{conn | status: 200, resp_body: wsdl_content}
             |> put_resp_header("content-type", "text/xml")
+
           _ ->
             %{conn | status: 404, resp_body: "Not Found"}
         end
@@ -237,9 +247,11 @@ defmodule Lather.IntegrationTest do
   defp build_soap_response(operation, data) do
     response_name = "#{operation}Response"
 
-    content = Enum.map(data, fn {key, value} ->
-      "<#{key}>#{value}</#{key}>"
-    end) |> Enum.join("")
+    content =
+      Enum.map(data, fn {key, value} ->
+        "<#{key}>#{value}</#{key}>"
+      end)
+      |> Enum.join("")
 
     """
     <?xml version="1.0" encoding="UTF-8"?>
@@ -359,7 +371,8 @@ defmodule Lather.IntegrationTest do
         </port>
       </service>
     </definitions>
-    """ |> String.trim()
+    """
+    |> String.trim()
   end
 
   # Simple HTTP request parser
@@ -388,6 +401,7 @@ defmodule Lather.IntegrationTest do
         }
 
         {:ok, conn}
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -398,18 +412,21 @@ defmodule Lather.IntegrationTest do
       {:ok, {:http_header, _, name, _, value}} ->
         header = {to_string(name) |> String.downcase(), to_string(value)}
         parse_headers(socket, [header | headers])
+
       {:ok, :http_eoh} ->
         Enum.reverse(headers)
+
       _ ->
         Enum.reverse(headers)
     end
   end
 
   defp parse_body(socket, headers) do
-    content_length = case List.keyfind(headers, "content-length", 0) do
-      {_, length_str} -> String.to_integer(length_str)
-      nil -> 0
-    end
+    content_length =
+      case List.keyfind(headers, "content-length", 0) do
+        {_, length_str} -> String.to_integer(length_str)
+        nil -> 0
+      end
 
     if content_length > 0 do
       :inet.setopts(socket, packet: :raw)
@@ -427,22 +444,28 @@ defmodule Lather.IntegrationTest do
           [host, port] -> {host, String.to_integer(port)}
           [host] -> {host, 80}
         end
-      nil -> {"localhost", 80}
+
+      nil ->
+        {"localhost", 80}
     end
   end
 
   defp parse_query_string(path) do
     case String.split(to_string(path), "?", parts: 2) do
-      [path] -> {path, %{}}
+      [path] ->
+        {path, %{}}
+
       [path, query] ->
-        params = query
-        |> String.split("&")
-        |> Enum.reduce(%{}, fn param, acc ->
-          case String.split(param, "=", parts: 2) do
-            [key] -> Map.put(acc, key, "")
-            [key, value] -> Map.put(acc, key, URI.decode(value))
-          end
-        end)
+        params =
+          query
+          |> String.split("&")
+          |> Enum.reduce(%{}, fn param, acc ->
+            case String.split(param, "=", parts: 2) do
+              [key] -> Map.put(acc, key, "")
+              [key, value] -> Map.put(acc, key, URI.decode(value))
+            end
+          end)
+
         {path, params}
     end
   end
@@ -455,9 +478,10 @@ defmodule Lather.IntegrationTest do
       {"connection", "close"}
     ]
 
-    headers = (conn.resp_headers ++ default_headers)
-    |> Enum.map(fn {name, value} -> "#{name}: #{value}\r\n" end)
-    |> Enum.join()
+    headers =
+      (conn.resp_headers ++ default_headers)
+      |> Enum.map(fn {name, value} -> "#{name}: #{value}\r\n" end)
+      |> Enum.join()
 
     response = status_line <> headers <> "\r\n" <> conn.resp_body
     :gen_tcp.send(socket, response)
@@ -480,6 +504,7 @@ defmodule Lather.IntegrationTest do
       _ -> 0
     end
   end
+
   defp parse_int(value) when is_integer(value), do: value
   defp parse_int(_), do: 0
 

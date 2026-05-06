@@ -18,7 +18,8 @@ defmodule Lather.Integration.MtomRoundTripTest do
   describe "MTOM message build and parse cycle" do
     test "single PDF attachment round-trips correctly" do
       # Create binary data that looks like a PDF
-      pdf_data = <<0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34>> <> :crypto.strong_rand_bytes(1000)
+      pdf_data =
+        <<0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34>> <> :crypto.strong_rand_bytes(1000)
 
       params = %{
         "fileName" => "report.pdf",
@@ -68,9 +69,10 @@ defmodule Lather.Integration.MtomRoundTripTest do
       assert length(attachment_parts) == 3
 
       # Collect attachment data by content type for comparison
-      attachments_by_type = Enum.into(attachment_parts, %{}, fn part ->
-        {part.headers["content-type"], part.content}
-      end)
+      attachments_by_type =
+        Enum.into(attachment_parts, %{}, fn part ->
+          {part.headers["content-type"], part.content}
+        end)
 
       assert attachments_by_type["application/pdf"] == pdf_data
       assert attachments_by_type["image/png"] == image_data
@@ -209,9 +211,11 @@ defmodule Lather.Integration.MtomRoundTripTest do
       document_types = [
         {"application/pdf", <<0x25, 0x50, 0x44, 0x46>>},
         {"application/msword", <<0xD0, 0xCF, 0x11, 0xE0>>},
-        {"application/vnd.openxmlformats-officedocument.wordprocessingml.document", "PK" <> :crypto.strong_rand_bytes(10)},
+        {"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+         "PK" <> :crypto.strong_rand_bytes(10)},
         {"application/vnd.ms-excel", <<0xD0, 0xCF, 0x11, 0xE0>>},
-        {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "PK" <> :crypto.strong_rand_bytes(10)}
+        {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+         "PK" <> :crypto.strong_rand_bytes(10)}
       ]
 
       for {content_type, data} <- document_types do
@@ -222,6 +226,7 @@ defmodule Lather.Integration.MtomRoundTripTest do
 
         assert attachment_part.headers["content-type"] == content_type,
                "Content type mismatch for #{content_type}"
+
         assert attachment_part.content == data
       end
     end
@@ -285,7 +290,8 @@ defmodule Lather.Integration.MtomRoundTripTest do
 
     test "handles multiple attachments with custom IDs" do
       params = %{
-        "mainDoc" => {:attachment, "main content", "application/pdf", [content_id: "main-doc@upload"]},
+        "mainDoc" =>
+          {:attachment, "main content", "application/pdf", [content_id: "main-doc@upload"]},
         "attachment1" => {:attachment, "attach 1", "text/plain", [content_id: "attach-1@upload"]},
         "attachment2" => {:attachment, "attach 2", "text/plain", [content_id: "attach-2@upload"]}
       }
@@ -377,9 +383,11 @@ defmodule Lather.Integration.MtomRoundTripTest do
     test "creates attachment with custom options" do
       data = "test content"
 
-      {:ok, attachment} = Attachment.from_tuple(
-        {:attachment, data, "text/plain", [content_id: "custom-id", content_transfer_encoding: "binary"]}
-      )
+      {:ok, attachment} =
+        Attachment.from_tuple(
+          {:attachment, data, "text/plain",
+           [content_id: "custom-id", content_transfer_encoding: "binary"]}
+        )
 
       assert attachment.content_id == "custom-id"
       assert attachment.content_transfer_encoding == "binary"
@@ -421,34 +429,40 @@ defmodule Lather.Integration.MtomRoundTripTest do
     end
 
     test "extracts boundary from content type header" do
-      {:ok, boundary} = Mime.extract_boundary(
-        "multipart/related; boundary=\"uuid:12345-abcde\"; type=\"application/xop+xml\""
-      )
+      {:ok, boundary} =
+        Mime.extract_boundary(
+          "multipart/related; boundary=\"uuid:12345-abcde\"; type=\"application/xop+xml\""
+        )
+
       assert boundary == "uuid:12345-abcde"
     end
 
     test "extracts boundary without quotes" do
-      {:ok, boundary} = Mime.extract_boundary(
-        "multipart/related; boundary=uuid:12345-abcde; type=\"application/xop+xml\""
-      )
+      {:ok, boundary} =
+        Mime.extract_boundary(
+          "multipart/related; boundary=uuid:12345-abcde; type=\"application/xop+xml\""
+        )
+
       assert boundary == "uuid:12345-abcde"
     end
 
     test "validates multipart/related content type" do
-      assert :ok = Mime.validate_content_type(
-        "multipart/related; boundary=\"test\"; type=\"application/xop+xml\""
-      )
+      assert :ok =
+               Mime.validate_content_type(
+                 "multipart/related; boundary=\"test\"; type=\"application/xop+xml\""
+               )
 
       assert {:error, :not_multipart_related} = Mime.validate_content_type("text/xml")
       assert {:error, :missing_boundary} = Mime.validate_content_type("multipart/related")
     end
 
     test "parses MIME headers correctly" do
-      headers = Mime.parse_headers("""
-      Content-Type: application/pdf
-      Content-Transfer-Encoding: binary
-      Content-ID: <attachment123@lather.soap>
-      """)
+      headers =
+        Mime.parse_headers("""
+        Content-Type: application/pdf
+        Content-Transfer-Encoding: binary
+        Content-ID: <attachment123@lather.soap>
+        """)
 
       assert headers["content-type"] == "application/pdf"
       assert headers["content-transfer-encoding"] == "binary"
@@ -459,7 +473,11 @@ defmodule Lather.Integration.MtomRoundTripTest do
   describe "builder utilities" do
     test "has_attachments? detects attachments correctly" do
       assert Builder.has_attachments?(%{"file" => {:attachment, "data", "text/plain"}})
-      assert Builder.has_attachments?(%{"nested" => %{"file" => {:attachment, "data", "text/plain"}}})
+
+      assert Builder.has_attachments?(%{
+               "nested" => %{"file" => {:attachment, "data", "text/plain"}}
+             })
+
       assert Builder.has_attachments?(%{"list" => [{:attachment, "data", "text/plain"}]})
 
       refute Builder.has_attachments?(%{"name" => "value"})

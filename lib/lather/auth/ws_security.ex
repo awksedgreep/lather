@@ -45,31 +45,38 @@ defmodule Lather.Auth.WSSecurity do
     password_element = build_password_element(password, password_type, nonce, created)
 
     username_token = %{
-      "@xmlns:wsse" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
-      "@xmlns:wsu" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd",
+      "@xmlns:wsse" =>
+        "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
+      "@xmlns:wsu" =>
+        "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd",
       "wsse:Username" => username,
       "wsse:Password" => password_element
     }
 
-    username_token = if nonce do
-      Map.put(username_token, "wsse:Nonce", %{
-        "@EncodingType" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary",
-        "#text" => nonce
-      })
-    else
-      username_token
-    end
+    username_token =
+      if nonce do
+        Map.put(username_token, "wsse:Nonce", %{
+          "@EncodingType" =>
+            "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary",
+          "#text" => nonce
+        })
+      else
+        username_token
+      end
 
-    username_token = if created do
-      Map.put(username_token, "wsu:Created", created)
-    else
-      username_token
-    end
+    username_token =
+      if created do
+        Map.put(username_token, "wsu:Created", created)
+      else
+        username_token
+      end
 
     %{
       "wsse:Security" => %{
-        "@xmlns:wsse" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
-        "@xmlns:wsu" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd",
+        "@xmlns:wsse" =>
+          "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
+        "@xmlns:wsu" =>
+          "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd",
         "wsse:UsernameToken" => username_token
       }
     }
@@ -107,8 +114,10 @@ defmodule Lather.Auth.WSSecurity do
 
     %{
       "wsse:Security" => %{
-        "@xmlns:wsse" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
-        "@xmlns:wsu" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd",
+        "@xmlns:wsse" =>
+          "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
+        "@xmlns:wsu" =>
+          "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd",
         "wsu:Timestamp" => %{
           "wsu:Created" => created,
           "wsu:Expires" => expires_str
@@ -153,14 +162,16 @@ defmodule Lather.Auth.WSSecurity do
       "wsse:Password" => password_element
     }
 
-    username_token = if nonce do
-      Map.put(username_token, "wsse:Nonce", %{
-        "@EncodingType" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary",
-        "#text" => nonce
-      })
-    else
-      username_token
-    end
+    username_token =
+      if nonce do
+        Map.put(username_token, "wsse:Nonce", %{
+          "@EncodingType" =>
+            "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary",
+          "#text" => nonce
+        })
+      else
+        username_token
+      end
 
     username_token = Map.put(username_token, "wsu:Created", created)
 
@@ -176,8 +187,10 @@ defmodule Lather.Auth.WSSecurity do
 
     %{
       "wsse:Security" => %{
-        "@xmlns:wsse" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
-        "@xmlns:wsu" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd",
+        "@xmlns:wsse" =>
+          "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
+        "@xmlns:wsu" =>
+          "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd",
         "wsu:Timestamp" => timestamp,
         "wsse:UsernameToken" => username_token
       }
@@ -188,15 +201,19 @@ defmodule Lather.Auth.WSSecurity do
 
   defp build_password_element(password, :text, _nonce, _created) do
     %{
-      "@Type" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText",
+      "@Type" =>
+        "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText",
       "#text" => password
     }
   end
 
-  defp build_password_element(password, :digest, nonce, created) when is_binary(nonce) and is_binary(created) do
+  defp build_password_element(password, :digest, nonce, created)
+       when is_binary(nonce) and is_binary(created) do
     digest = generate_password_digest(password, nonce, created)
+
     %{
-      "@Type" => "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest",
+      "@Type" =>
+        "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest",
       "#text" => digest
     }
   end
