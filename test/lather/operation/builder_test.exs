@@ -163,6 +163,270 @@ defmodule Lather.Operation.BuilderTest do
       {:ok, result} = Builder.parse_response(operation_info, response_body, style: :document)
       assert result == %{"result" => "37.5"}
     end
+
+    test "unwraps response element when body key has namespace prefix (SAP-style)" do
+      # Enterprise SOAP servers use namespace-prefixed element names such as
+      # "ns0:MT_Employee_Lookup_Rp" in the body, while the WSDL output
+      # message is "tns:MT_Employee_Lookup_Rp". The local name matches but
+      # the body prefix is different — the parser must use suffix matching.
+      operation_info = %{
+        name: "MT_Employee_Lookup",
+        output: %{
+          message: "tns:MT_Employee_Lookup_Rp",
+          parts: [%{name: "MESSAGE", type: "xsd:string"}]
+        }
+      }
+
+      response_body = %{
+        "SOAP:Envelope" => %{
+          "@xmlns:SOAP" => "http://schemas.xmlsoap.org/soap/envelope/",
+          "SOAP:Body" => %{
+            "ns0:MT_Employee_Lookup_Rp" => %{
+              "@xmlns:ns0" => "http://example.com/HR/Employee/Lookup",
+              "TENANT" => "ACME_CORP",
+              "REQ_ID" => "001",
+              "REQ_DATE" => "28042026",
+              "MESSAGE" => "Employee not found"
+            }
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_body, style: :document)
+
+      assert result["TENANT"] == "ACME_CORP"
+      assert result["REQ_ID"] == "001"
+      assert result["REQ_DATE"] == "28042026"
+      assert result["MESSAGE"] == "Employee not found"
+      refute Map.has_key?(result, "ns0:MT_Employee_Lookup_Rp"),
+             "response should be unwrapped from the operation element"
+    end
+
+    test "parses SAP PI/PO response with n0 prefix and nested complex structure" do
+      # Real-world SAP PI/PO response: the body element carries a non-standard
+      # prefix (n0:), two xmlns declarations on the same element, and a deeply
+      # nested payload with repeated child structures.
+      operation_info = %{
+        name: "SI_Movilidad_Registro_SYN_OUT",
+        output: %{
+          message: "tns:MT_Movilidad_Registro_Rp",
+          parts: [%{name: "MT_Movilidad_Registro_Rp", type: "tns:MT_Movilidad_Registro_Rp"}]
+        }
+      }
+
+      response_body = %{
+        "soap:Envelope" => %{
+          "@xmlns:soap" => "http://schemas.xmlsoap.org/soap/envelope/",
+          "soap:Body" => %{
+            "n0:MT_Movilidad_Registro_Rp" => %{
+              "@xmlns:n0" => "http://fcc.es/HRSAPECC/HCM/PA/Movilidad/Registro",
+              "@xmlns:prx" =>
+                "urn:sap.com:proxy:EHD:/1SAI/TAS820FE76BCF9B749B0AE4:750",
+              "GROUPID" => "ACME",
+              "ID_ENV" => "001",
+              "FEC_ENV" => "05052026",
+              "VIAJEROS" => %{
+                "DATOS_PERSONALES" => %{
+                  "ID_SAP" => "00015665",
+                  "VORNA" => "JOHN",
+                  "NACHN" => "DOE",
+                  "NACH2" => "SMITH"
+                },
+                "ESTRUCTURA_ORGANIZATIVA" => %{
+                  "BUKRS" => "S400",
+                  "BUTXT" => "EXAMPLE CORP S.A.",
+                  "GSBER" => "1KKR",
+                  "GTEXT" => "IT SERVICES",
+                  "NEGOCIO" => "TECH"
+                }
+              }
+            }
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_body, style: :document)
+
+      # Top-level fields are accessible directly after unwrapping the operation element
+      assert result["GROUPID"] == "ACME"
+      assert result["ID_ENV"] == "001"
+      assert result["FEC_ENV"] == "05052026"
+
+      # Nested structure is preserved intact
+      assert result["VIAJEROS"]["DATOS_PERSONALES"]["ID_SAP"] == "00015665"
+      assert result["VIAJEROS"]["DATOS_PERSONALES"]["VORNA"] == "JOHN"
+      assert result["VIAJEROS"]["DATOS_PERSONALES"]["NACHN"] == "DOE"
+      assert result["VIAJEROS"]["DATOS_PERSONALES"]["NACH2"] == "SMITH"
+
+      assert result["VIAJEROS"]["ESTRUCTURA_ORGANIZATIVA"]["BUKRS"] == "S400"
+      assert result["VIAJEROS"]["ESTRUCTURA_ORGANIZATIVA"]["BUTXT"] == "EXAMPLE CORP S.A."
+      assert result["VIAJEROS"]["ESTRUCTURA_ORGANIZATIVA"]["GSBER"] == "1KKR"
+      assert result["VIAJEROS"]["ESTRUCTURA_ORGANIZATIVA"]["GTEXT"] == "IT SERVICES"
+      assert result["VIAJEROS"]["ESTRUCTURA_ORGANIZATIVA"]["NEGOCIO"] == "TECH"
+
+      # The operation wrapper element must be unwrapped
+      refute Map.has_key?(result, "n0:MT_Movilidad_Registro_Rp"),
+             "response should be unwrapped from the n0-prefixed operation element"
+    end
+
+    test "unwraps response element with non-standard suffix (no Response/Output ending)" do
+      # Ensures get_response_element_name uses base_name directly instead of
+      # appending "Response" when the output message name doesn't match known suffixes.
+      operation_info = %{
+        name: "SendData",
+        output: %{
+          message: "tns:SendData_Rp",
+          parts: [%{name: "status", type: "xsd:string"}]
+        }
+      }
+
+      response_body = %{
+        "soap:Envelope" => %{
+          "soap:Body" => %{
+            "SendData_Rp" => %{"status" => "ok"}
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_body, style: :document)
+
+      assert result == %{"status" => "ok"}
+    end
+  end
+
+  describe "build_request/3 - namespace_prefix option" do
+    test "builds envelope with prefixed operation element when namespace_prefix is given" do
+      operation_info = %{
+        name: "GetOrder",
+        soap_action: "http://example.com/orders/GetOrder",
+        input: %{
+          message: "GetOrderRequest",
+          parts: [%{name: "orderId", type: "xsd:string"}]
+        },
+        output: %{
+          message: "tns:GetOrderResponse",
+          parts: [%{name: "status", type: "xsd:string"}]
+        }
+      }
+
+      {:ok, envelope} =
+        Builder.build_request(operation_info, %{"orderId" => "42"},
+          namespace: "http://example.com/orders",
+          namespace_prefix: "ns0"
+        )
+
+      assert String.contains?(envelope, "<ns0:GetOrder")
+      assert String.contains?(envelope, "xmlns:ns0=\"http://example.com/orders\"")
+      assert String.contains?(envelope, "<orderId>42</orderId>")
+      refute String.contains?(envelope, "xmlns=\"http://example.com/orders\"")
+    end
+
+    test "build_request without namespace_prefix preserves default-namespace behaviour" do
+      operation_info = %{
+        name: "GetOrder",
+        soap_action: "http://example.com/orders/GetOrder",
+        input: %{
+          message: "GetOrderRequest",
+          parts: [%{name: "orderId", type: "xsd:string"}]
+        },
+        output: %{
+          message: "tns:GetOrderResponse",
+          parts: [%{name: "status", type: "xsd:string"}]
+        }
+      }
+
+      {:ok, envelope} =
+        Builder.build_request(operation_info, %{"orderId" => "42"},
+          namespace: "http://example.com/orders"
+        )
+
+      assert String.contains?(envelope, "<GetOrder")
+      assert String.contains?(envelope, "xmlns=\"http://example.com/orders\"")
+      refute String.contains?(envelope, "xmlns:ns0")
+    end
+
+    test "prefixed request response still parses correctly via suffix matching" do
+      operation_info = %{
+        name: "GetOrder",
+        soap_action: "http://example.com/orders/GetOrder",
+        input: %{
+          message: "GetOrderRequest",
+          parts: [%{name: "orderId", type: "xsd:string"}]
+        },
+        output: %{
+          message: "tns:GetOrderResponse",
+          parts: [%{name: "status", type: "xsd:string"}]
+        }
+      }
+
+      response_body = %{
+        "soap:Envelope" => %{
+          "@xmlns:soap" => "http://schemas.xmlsoap.org/soap/envelope/",
+          "soap:Body" => %{
+            "ns0:GetOrderResponse" => %{
+              "@xmlns:ns0" => "http://example.com/orders",
+              "status" => "shipped"
+            }
+          }
+        }
+      }
+
+      {:ok, result} = Builder.parse_response(operation_info, response_body, style: :document)
+
+      assert result["status"] == "shipped"
+    end
+  end
+
+  describe "build_request/3 - namespace_prefix with element-based document/literal" do
+    @element_based_operation %{
+      name: "SI_CreateOrder_SYN_OUT",
+      soap_action: "http://example.com/orders",
+      style: :document,
+      documentation: "",
+      input: %{
+        message: "CreateOrderRequest",
+        parts: [
+          %{
+            name: "CreateOrderRequest",
+            type: "tns:CreateOrderRequest",
+            element: "tns:CreateOrderRequest"
+          }
+        ],
+        use: :literal
+      },
+      output: %{message: "CreateOrderResponse", parts: []}
+    }
+
+    @element_based_params %{
+      "CreateOrderRequest" => %{
+        "customerId" => "C-42",
+        "item" => "widget"
+      }
+    }
+
+    test "applies namespace_prefix to element-based body element" do
+      {:ok, envelope} =
+        Builder.build_request(@element_based_operation, @element_based_params,
+          namespace: "http://example.com/orders",
+          namespace_prefix: "ns0"
+        )
+
+      assert String.contains?(envelope, "<ns0:CreateOrderRequest")
+      assert String.contains?(envelope, ~s(xmlns:ns0="http://example.com/orders"))
+      assert String.contains?(envelope, "<customerId>C-42</customerId>")
+      refute String.contains?(envelope, ~s(xmlns="http://example.com/orders"))
+    end
+
+    test "element-based operations without namespace_prefix preserve default behaviour" do
+      {:ok, envelope} =
+        Builder.build_request(@element_based_operation, @element_based_params,
+          namespace: "http://example.com/orders"
+        )
+
+      assert String.contains?(envelope, "<CreateOrderRequest")
+      assert String.contains?(envelope, ~s(xmlns="http://example.com/orders"))
+      refute String.contains?(envelope, "ns0:")
+    end
   end
 
   describe "build_request/3 - round-trip compatibility" do

@@ -35,6 +35,8 @@ defmodule Lather.DynamicClient do
     * `:authentication` - Authentication configuration
     * `:timeout` - Default request timeout
     * `:soap_version` - SOAP protocol version (`:v1_1` or `:v1_2`, auto-detected if not specified)
+    * `:namespace_prefix` - Default namespace prefix for operation elements in all calls (e.g. `"ns0"`).
+      Can be overridden per call via `call/4`.
 
   ## Examples
 
@@ -136,6 +138,8 @@ defmodule Lather.DynamicClient do
     * `:headers` - Additional SOAP headers
     * `:timeout` - Request timeout override
     * `:validate` - Whether to validate parameters (default: true)
+    * `:namespace_prefix` - Namespace prefix for the operation element (e.g. `"ns0"`).
+      Overrides the client-level `:namespace_prefix` set in `new/2` for this call only.
 
   ## Examples
 
@@ -332,7 +336,8 @@ defmodule Lather.DynamicClient do
       headers: headers,
       style: get_operation_style(operation_info),
       use: get_operation_use(operation_info),
-      version: soap_version
+      version: soap_version,
+      namespace_prefix: Keyword.get(options, :namespace_prefix)
     ]
 
     Builder.build_request(operation_info, parameters, request_options)
@@ -387,7 +392,7 @@ defmodule Lather.DynamicClient do
             # Check if this is a SOAP fault
             case extract_soap_fault(parsed_response) do
               {:ok, fault} -> {:error, {:soap_fault, fault}}
-              :not_fault -> {:ok, parsed_response}
+              :not_fault -> {:error, %{status: 500, type: :http_error, body: body}}
             end
 
           {:error, _parse_error} ->

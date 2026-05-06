@@ -25,6 +25,7 @@ defmodule Lather.Operation.Builder do
     * `:namespace` - Target namespace for the operation
     * `:headers` - Additional SOAP headers
     * `:version` - SOAP version (`:v1_1` or `:v1_2`, default: `:v1_1`)
+    * `:namespace_prefix` - Optional namespace prefix for the operation element (e.g. `"ns0"`)
 
   ## Examples
 
@@ -75,14 +76,41 @@ defmodule Lather.Operation.Builder do
       # wrapped again in the operation name.
       {processed_params, raw_body} =
         if element_based and style in [:document, "document"] do
-          # Use body_content directly as raw body
-          {body_content, true}
+          ns_prefix = Keyword.get(options, :namespace_prefix)
+
+          body =
+            if ns_prefix do
+              Map.new(body_content, fn {element_name, element_content} ->
+                prefixed_name = "#{ns_prefix}:#{element_name}"
+
+                prefixed_content =
+                  element_content
+                  |> Map.delete("@xmlns")
+                  |> Map.put("@xmlns:#{ns_prefix}", namespace)
+
+                {prefixed_name, prefixed_content}
+              end)
+            else
+              body_content
+            end
+
+          {body, true}
         else
           # Traditional wrapping - extract params from operation wrapper if present
           params =
             case body_content do
               %{^operation_name => inner_params} -> inner_params
               _ -> body_content
+            end
+
+          # When a namespace_prefix is set, the namespace attribute will be emitted
+          # as xmlns:prefix by Envelope.build_body, so we must not also pass @xmlns
+          # (which would produce a redundant default-namespace declaration).
+          params =
+            if Keyword.get(options, :namespace_prefix) do
+              Map.delete(params, "@xmlns")
+            else
+              params
             end
 
           {params, false}
@@ -93,7 +121,8 @@ defmodule Lather.Operation.Builder do
         namespace: namespace,
         headers: headers,
         version: version,
-        raw_body: raw_body
+        raw_body: raw_body,
+        namespace_prefix: Keyword.get(options, :namespace_prefix)
       ]
 
       Envelope.build(operation_name, processed_params, envelope_options)
@@ -615,13 +644,21 @@ defmodule Lather.Operation.Builder do
     # For document style, look for the response element
     response_name = get_response_element_name(operation_info)
 
-    case Map.get(body_content, response_name) do
+    # Match the key exactly, or by local-name suffix to handle namespace prefixes
+    # (e.g. "ns0:MT_Movilidad_Registro_Rp" should match response_name "MT_Movilidad_Registro_Rp")
+    matched_key =
+      Map.keys(body_content)
+      |> Enum.find(fn k ->
+        k == response_name or String.ends_with?(k, ":#{response_name}")
+      end)
+
+    case matched_key do
       nil ->
-        # Try without operation name wrapper
+        # No matching element found — return the whole body
         {:ok, body_content}
 
-      response_element ->
-        {:ok, response_element}
+      key ->
+        {:ok, Map.get(body_content, key)}
     end
   end
 
@@ -657,8 +694,10 @@ defmodule Lather.Operation.Builder do
       String.ends_with?(base_name, "Output") ->
         base_name
 
+      # For non-standard naming (e.g. SAP "_Rp" suffix), the stripped message
+      # name is the correct element name — don't replace it with a guessed default.
       true ->
-        operation_info.name <> "Response"
+        base_name
     end
   end
 

@@ -22,7 +22,7 @@ defmodule Lather.Xml.Builder do
       true
 
   """
-  @spec build(map()) :: {:ok, String.t()} | {:error, any()}
+  @spec build(map() | [{String.t() | atom(), any()}]) :: {:ok, String.t()} | {:error, any()}
   def build(data) when is_map(data) do
     try do
       xml_content = build_xml_string(data)
@@ -31,6 +31,21 @@ defmodule Lather.Xml.Builder do
     rescue
       error ->
         {:error, error}
+    end
+  end
+
+  def build(data) when is_list(data) do
+    if Enum.all?(data, &match?({_, _}, &1)) do
+      try do
+        xml_content = build_xml_string(data)
+        xml_with_declaration = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" <> xml_content
+        {:ok, xml_with_declaration}
+      rescue
+        error ->
+          {:error, error}
+      end
+    else
+      {:error, :invalid_data_structure}
     end
   end
 
@@ -43,7 +58,7 @@ defmodule Lather.Xml.Builder do
 
   Useful for building fragments that will be embedded in larger documents.
   """
-  @spec build_fragment(map()) :: {:ok, String.t()} | {:error, any()}
+  @spec build_fragment(map() | [{String.t() | atom(), any()}]) :: {:ok, String.t()} | {:error, any()}
   def build_fragment(data) when is_map(data) do
     try do
       xml_content = build_xml_string(data)
@@ -54,6 +69,20 @@ defmodule Lather.Xml.Builder do
     end
   end
 
+  def build_fragment(data) when is_list(data) do
+    if Enum.all?(data, &match?({_, _}, &1)) do
+      try do
+        xml_content = build_xml_string(data)
+        {:ok, xml_content}
+      rescue
+        error ->
+          {:error, error}
+      end
+    else
+      {:error, :invalid_data_structure}
+    end
+  end
+
   def build_fragment(_data) do
     {:error, :invalid_data_structure}
   end
@@ -61,7 +90,13 @@ defmodule Lather.Xml.Builder do
   @doc """
   Builds XML string from a map structure.
   """
-  @spec build_xml_string(map()) :: String.t()
+  @spec build_xml_string(map() | [{String.t() | atom(), any()}]) :: String.t()
+  def build_xml_string(data) when is_list(data) do
+    data
+    |> Enum.map(fn {key, value} -> build_element(to_string(key), value) end)
+    |> Enum.join("\n")
+  end
+
   def build_xml_string(data) when is_map(data) do
     data
     |> Enum.map(fn {key, value} ->
@@ -115,26 +150,52 @@ defmodule Lather.Xml.Builder do
   end
 
   defp build_element(tag, value) when is_list(value) do
-    inner_content =
-      Enum.map(value, fn item ->
-        case item do
-          {child_tag, child_value} ->
-            build_element(to_string(child_tag), child_value)
+    if Enum.all?(value, &match?({_, _}, &1)) do
+      # Ordered-children list: [{key, val}, ...] — separate @-prefixed keys as attributes
+      {attr_pairs, child_pairs} =
+        Enum.split_with(value, fn {k, _} -> String.starts_with?(to_string(k), "@") end)
 
-          item when is_map(item) ->
-            # Handle maps in lists by building them as nested elements
-            Enum.map(item, fn {k, v} ->
-              build_element(to_string(k), v)
-            end)
+      attr_map =
+        Map.new(attr_pairs, fn {k, v} ->
+          {k |> to_string() |> String.trim_leading("@"), v}
+        end)
+
+      attr_string = build_attributes(attr_map)
+
+      case child_pairs do
+        [] ->
+          "<#{tag}#{attr_string}/>"
+
+        _ ->
+          inner_xml =
+            child_pairs
+            |> Enum.map(fn {k, v} -> build_element(to_string(k), v) end)
             |> Enum.join("\n")
 
-          _ ->
-            escape_text(to_string(item))
-        end
-      end)
-      |> Enum.join("\n")
+          "<#{tag}#{attr_string}>\n#{indent(inner_xml)}\n</#{tag}>"
+      end
+    else
+      inner_content =
+        Enum.map(value, fn item ->
+          case item do
+            {child_tag, child_value} ->
+              build_element(to_string(child_tag), child_value)
 
-    "<#{tag}>\n#{indent(inner_content)}\n</#{tag}>"
+            item when is_map(item) ->
+              # Handle maps in lists by building them as nested elements
+              Enum.map(item, fn {k, v} ->
+                build_element(to_string(k), v)
+              end)
+              |> Enum.join("\n")
+
+            _ ->
+              escape_text(to_string(item))
+          end
+        end)
+        |> Enum.join("\n")
+
+      "<#{tag}>\n#{indent(inner_content)}\n</#{tag}>"
+    end
   end
 
   defp build_element(tag, value) do
