@@ -213,10 +213,12 @@ defmodule Lather.Error do
 
     case format_type do
       :string ->
-        base_msg = "Transport Error: #{reason}"
+        base_msg = "Transport Error: #{format_value(reason)}"
 
         if include_details and not Enum.empty?(error.details) do
-          details_str = Enum.map_join(error.details, ", ", fn {k, v} -> "#{k}: #{v}" end)
+          details_str =
+            Enum.map_join(error.details, ", ", fn {k, v} -> "#{k}: #{format_value(v)}" end)
+
           base_msg <> " (#{details_str})"
         else
           base_msg
@@ -457,6 +459,10 @@ defmodule Lather.Error do
   defp get_status_text(503), do: "Service Unavailable"
   defp get_status_text(504), do: "Gateway Timeout"
   defp get_status_text(_), do: "Unknown"
+
+  defp format_value(value) when is_binary(value), do: value
+  defp format_value(value) when is_atom(value), do: Atom.to_string(value)
+  defp format_value(value), do: inspect(value)
 
   defp get_error_type(%{type: type}), do: type
   defp get_error_type(%{fault_code: _}), do: :soap_fault

@@ -514,7 +514,7 @@ defmodule Lather.Xml.ParserTest do
       xml = "<?xml version=\"1.0\"?>" <> xml
 
       result = Parser.parse(xml)
-      assert is_tuple(result) or true
+      assert_parse_result(result)
     end
 
     test "handles CDATA sections" do
@@ -528,7 +528,7 @@ defmodule Lather.Xml.ParserTest do
       result = Parser.parse(xml)
 
       # May or may not support CDATA
-      assert is_tuple(result) or true
+      assert_parse_result(result)
     end
 
     test "handles XML comments" do
@@ -558,7 +558,7 @@ defmodule Lather.Xml.ParserTest do
       result = Parser.parse(xml)
 
       # Should handle gracefully
-      assert is_tuple(result) or true
+      assert_parse_result(result)
     end
   end
 
@@ -587,7 +587,7 @@ defmodule Lather.Xml.ParserTest do
       result = Parser.parse(xml)
 
       # Should either parse or return error
-      assert is_tuple(result) or true
+      assert_parse_result(result)
     end
 
     test "handles mixed content with special characters" do
@@ -601,7 +601,10 @@ defmodule Lather.Xml.ParserTest do
       result = Parser.parse(xml)
 
       # May need proper entity encoding
-      assert is_tuple(result) or true
+      assert_parse_result(result)
     end
   end
+
+  defp assert_parse_result({:ok, _parsed}), do: assert(true)
+  defp assert_parse_result({:error, _reason}), do: assert(true)
 end

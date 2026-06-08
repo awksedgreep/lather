@@ -344,8 +344,7 @@ defmodule Lather.Integration.XmlEdgeCasesTest do
   defp start_server(_context) do
     {:ok, _} = Application.ensure_all_started(:lather)
 
-    port = Enum.random(10000..60000)
-    {:ok, server_pid} = Bandit.start_link(plug: XmlEdgeCasesRouter, port: port, scheme: :http)
+    {:ok, server_pid, port} = start_server_on_available_port(10)
 
     on_exit(fn ->
       try do
@@ -357,5 +356,18 @@ defmodule Lather.Integration.XmlEdgeCasesTest do
 
     Process.sleep(50)
     {:ok, port: port, base_url: "http://localhost:#{port}"}
+  end
+
+  defp start_server_on_available_port(0) do
+    raise "unable to start XML edge case test server on an available port"
+  end
+
+  defp start_server_on_available_port(attempts_remaining) do
+    port = Enum.random(10000..60000)
+
+    case Bandit.start_link(plug: XmlEdgeCasesRouter, port: port, scheme: :http) do
+      {:ok, server_pid} -> {:ok, server_pid, port}
+      {:error, _reason} -> start_server_on_available_port(attempts_remaining - 1)
+    end
   end
 end

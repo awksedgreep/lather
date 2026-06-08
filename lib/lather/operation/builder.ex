@@ -163,11 +163,8 @@ defmodule Lather.Operation.Builder do
 
           {:halt, {:error, error}}
 
-        value ->
-          case validate_parameter_type(value, part.type) do
-            :ok -> {:cont, :ok}
-            error -> {:halt, error}
-          end
+        _value ->
+          {:cont, :ok}
       end
     end)
   end
@@ -534,35 +531,6 @@ defmodule Lather.Operation.Builder do
       String.contains?(type_lower, String.downcase(simple_type))
     end) or
       (String.contains?(type, "Type") and not String.contains?(type, "Complex"))
-  end
-
-  defp validate_parameter_type(value, type) do
-    case {classify_parameter_type(type), value} do
-      {:simple, value} when is_binary(value) or is_number(value) or is_boolean(value) ->
-        :ok
-
-      {:complex, value} when is_map(value) ->
-        :ok
-
-      {:array, value} when is_list(value) ->
-        :ok
-
-      # Be more lenient - allow strings for complex types (common in SOAP)
-      {:complex, value} when is_binary(value) ->
-        :ok
-
-      # Allow maps for simple types (structured parameters)
-      {:simple, value} when is_map(value) ->
-        :ok
-
-      # Allow atoms for simple types
-      {:simple, value} when is_atom(value) ->
-        :ok
-
-      # Fallback - be permissive for real-world WSDL variations
-      {_expected_type, _value} ->
-        :ok
-    end
   end
 
   defp extract_response_body(response_envelope) do

@@ -51,24 +51,6 @@ defmodule Lather.Soap.Body do
   Handles various Elixir types and converts them to XML-safe representations.
   """
   @spec serialize_params(any()) :: any()
-  def serialize_params(params) when is_map(params) do
-    Enum.into(params, %{}, fn {key, value} ->
-      {to_string(key), serialize_params(value)}
-    end)
-  end
-
-  def serialize_params(params) when is_list(params) do
-    Enum.map(params, &serialize_params/1)
-  end
-
-  def serialize_params(params) when is_atom(params) and params != nil do
-    to_string(params)
-  end
-
-  def serialize_params(params) when is_boolean(params) do
-    to_string(params)
-  end
-
   def serialize_params(%DateTime{} = datetime) do
     DateTime.to_iso8601(datetime)
   end
@@ -79,6 +61,24 @@ defmodule Lather.Soap.Body do
 
   def serialize_params(%Time{} = time) do
     Time.to_iso8601(time)
+  end
+
+  def serialize_params(params) when is_map(params) do
+    Enum.into(params, %{}, fn {key, value} ->
+      {to_string(key), serialize_params(value)}
+    end)
+  end
+
+  def serialize_params(params) when is_list(params) do
+    Enum.map(params, &serialize_params/1)
+  end
+
+  def serialize_params(params) when is_boolean(params) do
+    to_string(params)
+  end
+
+  def serialize_params(params) when is_atom(params) and params != nil do
+    to_string(params)
   end
 
   def serialize_params(params) when is_binary(params) do

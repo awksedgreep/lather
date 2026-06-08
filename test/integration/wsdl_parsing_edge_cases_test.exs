@@ -374,7 +374,7 @@ defmodule Lather.Integration.WsdlParsingEdgeCasesTest do
 
       # Should detect some form of authentication requirement
       # (The specific detection logic would depend on implementation)
-      assert not is_nil(service_info.authentication)
+      assert %{type: _type} = service_info.authentication
     end
 
     test "handles malformed WSDL gracefully" do
@@ -420,9 +420,7 @@ defmodule Lather.Integration.WsdlParsingEdgeCasesTest do
         case Parser.parse(malformed_wsdl) do
           {:ok, parsed} ->
             # If parsing succeeds, extraction should handle missing elements gracefully
-            result = Analyzer.extract_service_info(parsed, [])
-            # Should return either success with limited info or controlled error
-            assert match?({:ok, _}, result) or match?({:error, _}, result)
+            assert {:ok, _service_info} = Analyzer.extract_service_info(parsed, [])
 
           {:error, _reason} ->
             # XML parsing errors are expected for malformed XML

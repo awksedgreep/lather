@@ -436,13 +436,14 @@ defmodule Lather.Integration.SslTlsValidationTest do
           assert response.status == 200
           response
 
-        {:error, %Mint.TransportError{reason: {:tls_alert, _}}} ->
-          # This is expected behavior on OTP 27+ for self-signed certs
-          # Return nil to indicate we couldn't connect but it's not a failure
-          nil
-
         {:error, other} ->
-          flunk("Unexpected error: #{inspect(other)}")
+          if ssl_tls_alert?(other) do
+            # This is expected behavior on OTP 27+ for self-signed certs.
+            # Return nil to indicate we couldn't connect but it's not a failure.
+            nil
+          else
+            flunk("Unexpected error: #{inspect(other)}")
+          end
       end
     else
       # On older OTP versions, we expect success
@@ -452,19 +453,9 @@ defmodule Lather.Integration.SslTlsValidationTest do
     end
   end
 
-  # Helper to assert SSL connection fails as expected
-  defp assert_ssl_connection_fails(result) do
-    case result do
-      {:error, %Mint.TransportError{reason: {:tls_alert, _}}} ->
-        :ok
-
-      {:error, _} ->
-        :ok
-
-      {:ok, _} ->
-        flunk("Expected SSL connection to fail, but it succeeded")
-    end
-  end
+  defp ssl_tls_alert?(%Mint.TransportError{reason: {:tls_alert, _}}), do: true
+  defp ssl_tls_alert?(%Finch.TransportError{source: source}), do: ssl_tls_alert?(source)
+  defp ssl_tls_alert?(_), do: false
 
   # SSL options that completely disable certificate verification
   # Required for self-signed certificate testing
@@ -554,7 +545,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
 
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         # Should fail with certificate verification error
         assert {:error, error} = result
@@ -623,7 +614,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
 
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         # Use helper that accounts for OTP 27+ stricter SSL validation
         response = assert_ssl_connection_succeeds(result)
@@ -657,7 +648,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
 
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         response = assert_ssl_connection_succeeds(result)
 
@@ -685,7 +676,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
             ]
 
             request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-            Finch.request(request, Lather.Finch, ssl: ssl_options)
+            request_with_ssl(request, ssl_options)
           end)
 
         # On OTP 27+, TLS errors are expected for self-signed certs
@@ -693,7 +684,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
           # Just verify we got responses (either success or expected TLS errors)
           assert Enum.all?(results, fn
                    {:ok, %{status: 200}} -> true
-                   {:error, %Mint.TransportError{reason: {:tls_alert, _}}} -> true
+                   {:error, error} -> ssl_tls_alert?(error)
                    _ -> false
                  end)
         else
@@ -751,7 +742,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
         ssl_options = Lather.Http.Transport.ssl_options()
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         assert {:error, _} = result
       end
@@ -773,7 +764,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
         ssl_options = insecure_ssl_options()
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         # Use helper for OTP-version-aware assertion
         assert_ssl_connection_succeeds(result)
@@ -801,7 +792,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
         ]
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         # Use helper for OTP-version-aware assertion
         response = assert_ssl_connection_succeeds(result)
@@ -865,7 +856,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
         ssl_options = ssl_options_with_ca(ca_cert_der)
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         # Use helper for OTP-version-aware assertion
         response = assert_ssl_connection_succeeds(result)
@@ -893,7 +884,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
         ssl_options = Lather.Http.Transport.ssl_options()
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         # Should fail - our CA is not in the default truststore
         assert {:error, _} = result
@@ -926,7 +917,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
         # Use our working ssl_options_with_ca helper for actual connection
         ssl_options = ssl_options_with_ca(ca_cert_der)
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         # Use helper for OTP-version-aware assertion
         assert_ssl_connection_succeeds(result)
@@ -987,7 +978,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
         ]
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         # Should fail due to hostname mismatch
         # The cert is for "wrong.example.com" but we're connecting to "localhost"
@@ -1013,7 +1004,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
         ssl_options = insecure_ssl_options()
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         # Use helper for OTP-version-aware assertion
         assert_ssl_connection_succeeds(result)
@@ -1075,7 +1066,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
           |> Keyword.put(:versions, [:"tlsv1.2"])
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         # Use helper for OTP-version-aware assertion
         assert_ssl_connection_succeeds(result)
@@ -1100,16 +1091,12 @@ defmodule Lather.Integration.SslTlsValidationTest do
           |> Keyword.put(:versions, [:"tlsv1.3"])
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         # May fail if TLS 1.3 is not supported or OTP 27+ SSL restrictions
         case result do
           {:ok, response} ->
             assert response.status == 200
-
-          {:error, %Mint.TransportError{reason: {:tls_alert, _}}} ->
-            # TLS 1.3 might not be available, negotiation failed, or OTP 27+ SSL restrictions
-            :ok
 
           {:error, _} ->
             # Other connection errors are also acceptable for this test
@@ -1144,7 +1131,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
           |> Keyword.put(:versions, [:tlsv1])
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         # Should fail - TLS 1.0 not supported by modern servers
         assert {:error, _} = result
@@ -1203,7 +1190,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
         ssl_options = ssl_options_with_ca(ca_cert_der)
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         # Use helper for OTP-version-aware assertion
         assert_ssl_connection_succeeds(result)
@@ -1228,7 +1215,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
         ssl_options = ssl_options_with_ca(server_cert_der)
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         # Behavior may vary - some implementations accept this, others don't
         case result do
@@ -1295,7 +1282,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
         ssl_options = Lather.Http.Transport.ssl_options()
 
         request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-        result = Finch.request(request, Lather.Finch, ssl: ssl_options)
+        result = request_with_ssl(request, ssl_options)
 
         assert {:error, error} = result
         # Verify error contains SSL-related information
@@ -1396,13 +1383,12 @@ defmodule Lather.Integration.SslTlsValidationTest do
             operation_names = Enum.map(operations, & &1.name)
             assert "Echo" in operation_names
 
-          {:error, {:transport_error, %Mint.TransportError{reason: {:tls_alert, _}}}} ->
-            # Expected on OTP 27+ with strict SSL
-            :ok
-
           {:error, other} ->
             if strict_ssl_otp?() do
-              :ok
+              case other do
+                {:transport_error, error} -> assert ssl_tls_alert?(error)
+                _ -> :ok
+              end
             else
               flunk("Unexpected error: #{inspect(other)}")
             end
@@ -1619,6 +1605,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
       else
         port = context.port
         ssl_options = insecure_ssl_options()
+        start_ssl_pool("https://localhost:#{port}", ssl_options)
 
         tasks =
           Enum.map(1..10, fn i ->
@@ -1633,7 +1620,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
               request =
                 Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
 
-              Finch.request(request, Lather.Finch, ssl: ssl_options)
+              request_with_ssl(request, ssl_options)
             end)
           end)
 
@@ -1644,7 +1631,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
           # Just verify we got valid responses (success or expected TLS errors)
           assert Enum.all?(results, fn
                    {:ok, %{status: 200}} -> true
-                   {:error, %Mint.TransportError{reason: {:tls_alert, _}}} -> true
+                   {:error, error} -> ssl_tls_alert?(error)
                    _ -> false
                  end)
         else
@@ -1679,14 +1666,14 @@ defmodule Lather.Integration.SslTlsValidationTest do
             ]
 
             request = Finch.build(:post, "https://localhost:#{port}/soap", headers, soap_request)
-            Finch.request(request, Lather.Finch, ssl: ssl_options)
+            request_with_ssl(request, ssl_options)
           end)
 
         # On OTP 27+, SSL may reject self-signed certs
         if strict_ssl_otp?() do
           assert Enum.all?(results, fn
                    {:ok, %{status: 200}} -> true
-                   {:error, %Mint.TransportError{reason: {:tls_alert, _}}} -> true
+                   {:error, error} -> ssl_tls_alert?(error)
                    _ -> false
                  end)
         else
@@ -1702,6 +1689,17 @@ defmodule Lather.Integration.SslTlsValidationTest do
   # ============================================================================
   # Helper Functions
   # ============================================================================
+
+  defp request_with_ssl(
+         %Finch.Request{scheme: scheme, host: host, port: port} = request,
+         ssl_options
+       ) do
+    pool_tag = {:ssl_test, :erlang.phash2(ssl_options)}
+    pool = Finch.Pool.new("#{scheme}://#{host}:#{port}", tag: pool_tag)
+    :ok = Finch.start_pool(Lather.Finch, pool, conn_opts: [transport_opts: ssl_options])
+
+    Finch.request(%{request | pool_tag: pool_tag}, Lather.Finch)
+  end
 
   defp assert_ssl_error(error) do
     # SSL errors can come in various forms depending on the Mint/Finch version
@@ -1722,7 +1720,13 @@ defmodule Lather.Integration.SslTlsValidationTest do
 
       true ->
         # Generic error - just verify it exists
-        assert error != nil
+        assert error
     end
+  end
+
+  defp start_ssl_pool(url, ssl_options) do
+    pool_tag = {:ssl_test, :erlang.phash2(ssl_options)}
+    pool = Finch.Pool.new(url, tag: pool_tag)
+    :ok = Finch.start_pool(Lather.Finch, pool, conn_opts: [transport_opts: ssl_options])
   end
 end

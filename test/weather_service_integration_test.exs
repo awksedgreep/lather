@@ -12,7 +12,7 @@ defmodule Lather.WeatherServiceIntegrationTest do
     test "can connect to NWS WSDL and create client" do
       case DynamicClient.new(@weather_service_url, timeout: 15_000) do
         {:ok, client} ->
-          assert client != nil
+          assert %DynamicClient{} = client
 
           # Verify we can get service info
           service_info = DynamicClient.get_service_info(client)

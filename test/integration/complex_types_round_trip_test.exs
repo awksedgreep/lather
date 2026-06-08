@@ -336,7 +336,7 @@ defmodule Lather.Integration.ComplexTypesRoundTripTest do
       assert response["username"] == "johndoe"
       assert response["email"] == "john@example.com"
       assert parse_bool_result(response["created"]) == true
-      assert is_integer(parse_int_result(response["id"])) or is_binary(response["id"])
+      assert is_integer(parse_int_result(response["id"]))
     end
 
     test "creates another user successfully", %{base_url: base_url} do

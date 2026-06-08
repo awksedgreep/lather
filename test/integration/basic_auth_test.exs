@@ -178,6 +178,7 @@ defmodule Lather.Integration.BasicAuthTest do
       end)
 
       Process.sleep(100)
+      start_finch_pool(port)
 
       {:ok, port: port, base_url: "http://localhost:#{port}"}
     end
@@ -222,6 +223,7 @@ defmodule Lather.Integration.BasicAuthTest do
       end)
 
       Process.sleep(100)
+      start_finch_pool(port)
 
       {:ok, port: port, base_url: "http://localhost:#{port}"}
     end
@@ -359,6 +361,7 @@ defmodule Lather.Integration.BasicAuthTest do
       end)
 
       Process.sleep(100)
+      start_finch_pool(port)
 
       {:ok, port: port, base_url: "http://localhost:#{port}"}
     end
@@ -442,6 +445,7 @@ defmodule Lather.Integration.BasicAuthTest do
       end)
 
       Process.sleep(100)
+      start_finch_pool(port)
 
       {:ok, port: port}
     end
@@ -491,6 +495,7 @@ defmodule Lather.Integration.BasicAuthTest do
       end)
 
       Process.sleep(100)
+      start_finch_pool(port)
 
       {:ok, port: port}
     end
@@ -623,6 +628,7 @@ defmodule Lather.Integration.BasicAuthTest do
       end)
 
       Process.sleep(100)
+      start_finch_pool(port)
 
       {:ok, port: port, base_url: "http://localhost:#{port}"}
     end
@@ -870,5 +876,9 @@ defmodule Lather.Integration.BasicAuthTest do
     Enum.any?(response.headers, fn {name, _value} ->
       String.downcase(name) == "www-authenticate"
     end)
+  end
+
+  defp start_finch_pool(port) do
+    :ok = Finch.start_pool(Lather.Finch, Finch.Pool.new("http://localhost:#{port}"), size: 100)
   end
 end

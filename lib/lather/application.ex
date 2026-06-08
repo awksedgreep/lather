@@ -10,7 +10,7 @@ defmodule Lather.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      {Finch, name: Lather.Finch}
+      {Finch, name: Lather.Finch, pools: %{default: [size: 100, count: 1]}}
     ]
 
     opts = [strategy: :one_for_one, name: Lather.Supervisor]

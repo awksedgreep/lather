@@ -354,6 +354,8 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
     end
 
     test "concurrent authenticated calls succeed", %{port: port} do
+      :ok = Finch.start_pool(Lather.Finch, Finch.Pool.new("http://localhost:#{port}"), size: 100)
+
       {auth_key, auth_value} = Basic.header("testuser", "testpass123")
 
       base_headers = [

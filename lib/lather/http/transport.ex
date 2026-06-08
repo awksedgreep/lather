@@ -62,53 +62,39 @@ defmodule Lather.Http.Transport do
 
     Logger.debug("Sending SOAP request to #{url}")
 
-    request = Finch.build(:post, url, headers, body)
-
     finch_options = [
       receive_timeout: timeout,
       pool_timeout: pool_timeout
     ]
 
-    # Add SSL options if provided
-    finch_options =
+    {request, finch_options} =
       case Keyword.get(options, :ssl_options) do
-        nil -> finch_options
-        ssl_opts -> Keyword.put(finch_options, :ssl, ssl_opts)
+        nil ->
+          {Finch.build(:post, url, headers, body), finch_options}
+
+        ssl_opts ->
+          pool_tag = {:lather_ssl, :erlang.phash2(ssl_opts)}
+          pool = Finch.Pool.new(url, tag: pool_tag)
+          :ok = Finch.start_pool(Lather.Finch, pool, conn_opts: [transport_opts: ssl_opts])
+
+          {Finch.build(:post, url, headers, body, pool_tag: pool_tag), finch_options}
       end
 
     case Finch.request(request, Lather.Finch, finch_options) do
       {:ok, %Finch.Response{} = response} ->
         handle_response(response)
 
-      {:error, %Mint.TransportError{reason: reason}} ->
-        Logger.error("SOAP transport error: #{inspect(reason)}")
+      {:error, %Finch.TransportError{} = reason} ->
+        handle_transport_error(reason, "transport")
 
-        error =
-          Error.transport_error(reason, %{
-            message: "Transport error: #{inspect(reason)}"
-          })
+      {:error, %Mint.TransportError{} = reason} ->
+        handle_transport_error(reason, "transport")
 
-        {:error, error}
+      {:error, %Mint.HTTPError{} = reason} ->
+        handle_transport_error(reason, "HTTP")
 
-      {:error, %Mint.HTTPError{reason: reason}} ->
-        Logger.error("SOAP HTTP error: #{inspect(reason)}")
-
-        error =
-          Error.transport_error(reason, %{
-            message: "HTTP error: #{inspect(reason)}"
-          })
-
-        {:error, error}
-
-      {:error, %Finch.Error{reason: reason}} ->
-        Logger.error("SOAP Finch error: #{inspect(reason)}")
-
-        error =
-          Error.transport_error(reason, %{
-            message: "Finch error: #{inspect(reason)}"
-          })
-
-        {:error, error}
+      {:error, %Finch.Error{} = reason} ->
+        handle_transport_error(reason, "Finch")
 
       {:error, :timeout} ->
         Logger.error("SOAP request timeout after #{timeout}ms")
@@ -277,4 +263,22 @@ defmodule Lather.Http.Transport do
     error = Error.http_error(status, body, headers)
     {:error, error}
   end
+
+  defp handle_transport_error(reason, label) do
+    normalized_reason = transport_reason(reason)
+
+    Logger.error("SOAP #{label} error: #{inspect(normalized_reason)}")
+
+    error =
+      Error.transport_error(normalized_reason, %{
+        message: "#{label} error: #{inspect(normalized_reason)}",
+        source: reason
+      })
+
+    {:error, error}
+  end
+
+  defp transport_reason(%Finch.TransportError{source: source}), do: transport_reason(source)
+  defp transport_reason(%{reason: reason}), do: reason
+  defp transport_reason(reason), do: reason
 end

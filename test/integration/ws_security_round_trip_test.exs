@@ -298,8 +298,6 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
       end
     end
 
-    defp validate_timestamp(nil, _opts), do: {:error, :missing_timestamp}
-
     defp validate_timestamp(timestamp, opts) do
       created = timestamp["wsu:Created"] || timestamp["Created"]
       expires = timestamp["wsu:Expires"] || timestamp["Expires"]

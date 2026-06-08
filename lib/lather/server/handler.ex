@@ -112,12 +112,6 @@ defmodule Lather.Server.Handler do
 
         {:error, 400, [{"content-type", "text/xml"}],
          soap_fault_xml("Client", "Invalid SOAP request: #{reason}")}
-
-      {:error, reason} ->
-        Logger.error("SOAP request failed: #{inspect(reason)}")
-
-        {:error, 500, [{"content-type", "text/xml"}],
-         soap_fault_xml("Server", "Internal server error")}
     end
   end
 

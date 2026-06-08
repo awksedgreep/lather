@@ -115,6 +115,8 @@ defmodule Lather.Server.ResponseBuilder do
   end
 
   # Format response data for XML serialization
+  defp format_response_data(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
+
   defp format_response_data(data) when is_map(data) do
     Enum.into(data, %{}, fn {key, value} ->
       {to_string(key), format_response_data(value)}
@@ -128,6 +130,5 @@ defmodule Lather.Server.ResponseBuilder do
   defp format_response_data(data) when is_binary(data), do: data
   defp format_response_data(data) when is_number(data), do: to_string(data)
   defp format_response_data(data) when is_boolean(data), do: to_string(data)
-  defp format_response_data(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
   defp format_response_data(data), do: inspect(data)
 end

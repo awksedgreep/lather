@@ -183,8 +183,6 @@ defmodule Lather.Soap.Envelope do
     case soap_version do
       :v1_2 -> extract_soap_1_2_fault(fault)
       :v1_1 -> extract_soap_1_1_fault(fault)
-      # fallback to SOAP 1.1 parsing
-      _ -> extract_soap_1_1_fault(fault)
     end
   end
 

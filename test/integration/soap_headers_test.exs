@@ -659,7 +659,7 @@ defmodule Lather.Integration.SoapHeadersTest do
   describe "headers properly placed in SOAP envelope" do
     setup :setup_server
 
-    test "headers appear in soap:Header, not soap:Body", %{base_url: base_url} do
+    test "headers appear in soap:Header, not soap:Body", %{} do
       session_header = Header.session("envelope-test-session")
       custom_header = Header.custom("TestHeader", "test-value")
 
@@ -694,7 +694,7 @@ defmodule Lather.Integration.SoapHeadersTest do
       assert Map.has_key?(body_section, "ProcessRequest"), "ProcessRequest should be in Body"
     end
 
-    test "envelope structure with WS-Security header", %{base_url: base_url} do
+    test "envelope structure with WS-Security header", %{} do
       ws_security = Header.username_token("testuser", "testpass", password_type: :text)
 
       {:ok, envelope_xml} =
