@@ -4,6 +4,25 @@ defmodule Lather.Xml.Parser do
 
   Provides functionality to parse XML documents into Elixir data structures,
   specifically optimized for SOAP response parsing.
+
+  ## XXE Protection
+
+  All parsing goes through `SweetXml.parse/2` with `dtd: :none`, which
+  disables both internal and external DTD/entity processing in the
+  underlying `:xmerl_scan`. This means:
+
+  * `<!DOCTYPE ...>` with `<!ENTITY ...>` declarations are rejected
+    (`{:error, {:parse_error, {:fatal, ... :entities_not_allowed ...}}}`)
+  * External DTD fetches (`SYSTEM "http://..."`) are rejected
+    (`{:error_fetching_DTD, ... "no external entity allowed"}`)
+  * File-disclosure (`file:///etc/passwd`), Billion Laughs, and
+    SOAP-envelope-wrapped XXE payloads all return `{:error, ...}`
+    instead of expanding entities.
+
+  All higher-level parsers (`Lather.Server.RequestParser`,
+  `Lather.Wsdl.Analyzer`, `Lather.Soap.Envelope`, `Lather.DynamicClient`,
+  `Lather.Error`) delegate to `parse/1`, so this single choke point
+  protects WSDL, SOAP request, and SOAP response handling.
   """
 
   import SweetXml
@@ -37,9 +56,10 @@ defmodule Lather.Xml.Parser do
         |> remove_bom()
 
       # Parse with SweetXml and build the structure
-      doc = SweetXml.parse(cleaned_xml, namespace_conformant: true)
-
+      doc = SweetXml.parse(cleaned_xml, dtd: :none, namespace_conformant: true)
+ 
       parsed = parse_node(doc)
+
 
       {:ok, parsed}
     rescue

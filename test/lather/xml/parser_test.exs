@@ -605,6 +605,49 @@ defmodule Lather.Xml.ParserTest do
     end
   end
 
+  describe "parse/1 - XXE protection (dtd: :none)" do
+    test "blocks external file-disclosure entity" do
+      xml =
+        ~s(<?xml version="1.0"?><!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root><item>&xxe;</item></root>)
+
+      assert {:error, {:parse_error, _}} = Parser.parse(xml)
+    end
+
+    test "blocks billion-laughs entity expansion" do
+      xml =
+        ~s(<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lollollollol"><!ENTITY lol2 "&lol;&lol;&lol;">]><root><item>&lol2;</item></root>)
+
+      assert {:error, {:parse_error, _}} = Parser.parse(xml)
+    end
+
+    test "blocks external DTD fetch" do
+      xml =
+        ~s(<?xml version="1.0"?><!DOCTYPE root SYSTEM "http://127.0.0.1:9/evil.dtd"><root><item>test</item></root>)
+
+      assert {:error, {:parse_error, _}} = Parser.parse(xml)
+    end
+
+    test "blocks XXE wrapped in SOAP envelope" do
+      xml =
+        ~s(<?xml version="1.0"?><!DOCTYPE Envelope [<!ENTITY xxe SYSTEM "file:///etc/hostname">]><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><item>&xxe;</item></soap:Body></soap:Envelope>)
+
+      assert {:error, {:parse_error, _}} = Parser.parse(xml)
+    end
+
+    test "does not leak /etc/passwd content on XXE attempt" do
+      xml =
+        ~s(<?xml version="1.0"?><!DOCTYPE root [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root><item>&xxe;</item></root>)
+
+      case Parser.parse(xml) do
+        {:ok, parsed} ->
+          refute inspect(parsed) =~ "root:x"
+
+        {:error, _} ->
+          assert true
+      end
+    end
+  end
+
   defp assert_parse_result({:ok, _parsed}), do: assert(true)
   defp assert_parse_result({:error, _reason}), do: assert(true)
 end
