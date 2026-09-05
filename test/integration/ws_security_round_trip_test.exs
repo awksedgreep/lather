@@ -990,9 +990,9 @@ defmodule Lather.Integration.WSSecurityRoundTripTest do
     # Set up validation mode using ETS (accessible across processes)
     ValidationConfig.set(validation_mode, opts)
 
-    {:ok, server_pid} = Bandit.start_link(plug: TestSecurityRouter, port: port, scheme: :http)
+    {:ok, server_pid, actual_port} = Lather.TestUtils.start_server(TestSecurityRouter, port)
 
-    {:ok, port, server_pid}
+    {:ok, actual_port, server_pid}
   end
 
   defp make_soap_request(url, body) do

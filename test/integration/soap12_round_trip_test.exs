@@ -131,28 +131,7 @@ defmodule Lather.Integration.Soap12RoundTripTest do
   end
 
   describe "SOAP 1.2 client-server round trip" do
-    setup do
-      # Start the Lather application (for Finch)
-      {:ok, _} = Application.ensure_all_started(:lather)
-
-      # Start the server on a random available port
-      port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: TestSoap12Router, port: port, scheme: :http)
-
-      on_exit(fn ->
-        # Cleanup server - use GenServer.stop with a timeout
-        try do
-          GenServer.stop(server_pid, :normal, 1000)
-        catch
-          :exit, _ -> :ok
-        end
-      end)
-
-      # Wait for server to be ready
-      Process.sleep(50)
-
-      {:ok, port: port, base_url: "http://localhost:#{port}"}
-    end
+    setup :setup_server
 
     test "client can connect via WSDL and call Add operation with SOAP 1.2", %{base_url: base_url} do
       wsdl_url = "#{base_url}/soap?wsdl"
@@ -326,7 +305,7 @@ defmodule Lather.Integration.Soap12RoundTripTest do
       {:ok, _} = Application.ensure_all_started(:lather)
 
       port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: TestSoap12Router, port: port, scheme: :http)
+      {:ok, server_pid, actual_port} = Lather.TestUtils.start_server(TestSoap12Router, port, :http)
 
       on_exit(fn ->
         try do
@@ -338,7 +317,7 @@ defmodule Lather.Integration.Soap12RoundTripTest do
 
       Process.sleep(50)
 
-      {:ok, port: port, base_url: "http://localhost:#{port}"}
+      {:ok, port: actual_port, base_url: "http://localhost:#{actual_port}"}
     end
 
     test "SOAP 1.1 and SOAP 1.2 envelopes have different namespaces" do
@@ -430,5 +409,23 @@ defmodule Lather.Integration.Soap12RoundTripTest do
   end
 
   defp parse_result(value) when is_number(value), do: value * 1.0
-  defp parse_result(value), do: value
+  # Setup helper to start server
+  defp setup_server(_context) do
+    {:ok, _} = Application.ensure_all_started(:lather)
+
+    port = Enum.random(10000..60000)
+    {:ok, server_pid, actual_port} = Lather.TestUtils.start_server(TestSoap12Router, port)
+
+    on_exit(fn ->
+      try do
+        GenServer.stop(server_pid, :normal, 1000)
+      catch
+        :exit, _ -> :ok
+      end
+    end)
+
+    Process.sleep(50)
+
+    {:ok, port: actual_port, base_url: "http://localhost:#{actual_port}"}
+  end
 end

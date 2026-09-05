@@ -502,11 +502,11 @@ defmodule Lather.Integration.TimeoutNetworkErrorsTest do
 
       port = Enum.random(10000..60000)
 
-      {:ok, server_pid} =
-        Bandit.start_link(
-          plug: {SlowResponsePlug, header_delay: 300, body_delay: 300},
-          port: port,
-          scheme: :http
+      {:ok, server_pid, actual_port} =
+        Lather.TestUtils.start_server(
+          {SlowResponsePlug, header_delay: 300, body_delay: 300},
+          port,
+          :http
         )
 
       on_exit(fn ->
@@ -519,7 +519,7 @@ defmodule Lather.Integration.TimeoutNetworkErrorsTest do
 
       Process.sleep(100)
 
-      {:ok, port: port, base_url: "http://localhost:#{port}"}
+      {:ok, port: actual_port, base_url: "http://localhost:#{actual_port}"}
     end
 
     test "request succeeds when slow headers arrive within timeout", %{base_url: base_url} do
@@ -1122,8 +1122,7 @@ defmodule Lather.Integration.TimeoutNetworkErrorsTest do
 
     port = Enum.random(10000..60000)
 
-    {:ok, server_pid} =
-      Bandit.start_link(plug: SlowServiceRouter, port: port, scheme: :http)
+    {:ok, server_pid, actual_port} = Lather.TestUtils.start_server(SlowServiceRouter, port)
 
     on_exit(fn ->
       try do
@@ -1135,7 +1134,7 @@ defmodule Lather.Integration.TimeoutNetworkErrorsTest do
 
     Process.sleep(100)
 
-    {:ok, port: port, base_url: "http://localhost:#{port}"}
+    {:ok, port: actual_port, base_url: "http://localhost:#{actual_port}"}
   end
 
   defp find_closed_port do

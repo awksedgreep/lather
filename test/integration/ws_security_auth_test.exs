@@ -998,7 +998,8 @@ defmodule Lather.Integration.WSSecurityAuthTest do
 
       port = Enum.random(10000..60000)
       SecurityConfig.set(:digest_password, username: @valid_username, password: @valid_password)
-      {:ok, server_pid} = Bandit.start_link(plug: SecureRouter, port: port, scheme: :http)
+      {:ok, server_pid, actual_port} = Lather.TestUtils.start_server(SecureRouter, port)
+      port = actual_port
 
       on_exit(fn ->
         try do
@@ -1404,7 +1405,7 @@ defmodule Lather.Integration.WSSecurityAuthTest do
 
     port = Enum.random(10000..60000)
     SecurityConfig.set(validation_mode, opts)
-    {:ok, server_pid} = Bandit.start_link(plug: SecureRouter, port: port, scheme: :http)
+    {:ok, server_pid, actual_port} = Lather.TestUtils.start_server(SecureRouter, port)
 
     on_exit(fn ->
       try do
@@ -1416,7 +1417,7 @@ defmodule Lather.Integration.WSSecurityAuthTest do
 
     Process.sleep(50)
 
-    {:ok, port: port, base_url: "http://localhost:#{port}/soap", server_pid: server_pid}
+    {:ok, port: actual_port, base_url: "http://localhost:#{actual_port}/soap", server_pid: server_pid}
   end
 
   defp make_soap_request(url, body) do

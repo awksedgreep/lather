@@ -352,24 +352,7 @@ defmodule Lather.Integration.SoapHeadersRoundTripTest do
   end
 
   describe "session headers round trip" do
-    setup do
-      {:ok, _} = Application.ensure_all_started(:lather)
-
-      port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: HeaderAwareRouter, port: port, scheme: :http)
-
-      on_exit(fn ->
-        try do
-          GenServer.stop(server_pid, :normal, 1000)
-        catch
-          :exit, _ -> :ok
-        end
-      end)
-
-      Process.sleep(50)
-
-      {:ok, port: port, base_url: "http://localhost:#{port}"}
-    end
+    setup :setup_server
 
     test "client can send session ID header and server reads it", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
@@ -415,24 +398,7 @@ defmodule Lather.Integration.SoapHeadersRoundTripTest do
   end
 
   describe "custom headers round trip" do
-    setup do
-      {:ok, _} = Application.ensure_all_started(:lather)
-
-      port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: HeaderAwareRouter, port: port, scheme: :http)
-
-      on_exit(fn ->
-        try do
-          GenServer.stop(server_pid, :normal, 1000)
-        catch
-          :exit, _ -> :ok
-        end
-      end)
-
-      Process.sleep(50)
-
-      {:ok, port: port, base_url: "http://localhost:#{port}"}
-    end
+    setup :setup_server
 
     test "custom header with string content", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
@@ -493,24 +459,7 @@ defmodule Lather.Integration.SoapHeadersRoundTripTest do
   end
 
   describe "multiple headers round trip" do
-    setup do
-      {:ok, _} = Application.ensure_all_started(:lather)
-
-      port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: HeaderAwareRouter, port: port, scheme: :http)
-
-      on_exit(fn ->
-        try do
-          GenServer.stop(server_pid, :normal, 1000)
-        catch
-          :exit, _ -> :ok
-        end
-      end)
-
-      Process.sleep(50)
-
-      {:ok, port: port, base_url: "http://localhost:#{port}"}
-    end
+    setup :setup_server
 
     test "combining multiple headers in one request", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
@@ -562,24 +511,7 @@ defmodule Lather.Integration.SoapHeadersRoundTripTest do
   end
 
   describe "headers with namespaces round trip" do
-    setup do
-      {:ok, _} = Application.ensure_all_started(:lather)
-
-      port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: HeaderAwareRouter, port: port, scheme: :http)
-
-      on_exit(fn ->
-        try do
-          GenServer.stop(server_pid, :normal, 1000)
-        catch
-          :exit, _ -> :ok
-        end
-      end)
-
-      Process.sleep(50)
-
-      {:ok, port: port, base_url: "http://localhost:#{port}"}
-    end
+    setup :setup_server
 
     test "header with explicit xmlns namespace", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
@@ -648,24 +580,7 @@ defmodule Lather.Integration.SoapHeadersRoundTripTest do
   end
 
   describe "headers with attributes round trip" do
-    setup do
-      {:ok, _} = Application.ensure_all_started(:lather)
-
-      port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: HeaderAwareRouter, port: port, scheme: :http)
-
-      on_exit(fn ->
-        try do
-          GenServer.stop(server_pid, :normal, 1000)
-        catch
-          :exit, _ -> :ok
-        end
-      end)
-
-      Process.sleep(50)
-
-      {:ok, port: port, base_url: "http://localhost:#{port}"}
-    end
+    setup :setup_server
 
     test "header with mustUnderstand attribute", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
@@ -743,24 +658,7 @@ defmodule Lather.Integration.SoapHeadersRoundTripTest do
   end
 
   describe "server reading headers from incoming request" do
-    setup do
-      {:ok, _} = Application.ensure_all_started(:lather)
-
-      port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: HeaderAwareRouter, port: port, scheme: :http)
-
-      on_exit(fn ->
-        try do
-          GenServer.stop(server_pid, :normal, 1000)
-        catch
-          :exit, _ -> :ok
-        end
-      end)
-
-      Process.sleep(50)
-
-      {:ok, port: port, base_url: "http://localhost:#{port}"}
-    end
+    setup :setup_server
 
     test "server extracts and uses header values in response", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
@@ -819,24 +717,7 @@ defmodule Lather.Integration.SoapHeadersRoundTripTest do
   end
 
   describe "server including headers in response" do
-    setup do
-      {:ok, _} = Application.ensure_all_started(:lather)
-
-      port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: HeaderAwareRouter, port: port, scheme: :http)
-
-      on_exit(fn ->
-        try do
-          GenServer.stop(server_pid, :normal, 1000)
-        catch
-          :exit, _ -> :ok
-        end
-      end)
-
-      Process.sleep(50)
-
-      {:ok, port: port, base_url: "http://localhost:#{port}"}
-    end
+    setup :setup_server
 
     test "response contains echoed headers", %{base_url: base_url} do
       # This test verifies the server can add headers to the response
@@ -915,24 +796,7 @@ defmodule Lather.Integration.SoapHeadersRoundTripTest do
   end
 
   describe "header round trip with WS-Security" do
-    setup do
-      {:ok, _} = Application.ensure_all_started(:lather)
-
-      port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: HeaderAwareRouter, port: port, scheme: :http)
-
-      on_exit(fn ->
-        try do
-          GenServer.stop(server_pid, :normal, 1000)
-        catch
-          :exit, _ -> :ok
-        end
-      end)
-
-      Process.sleep(50)
-
-      {:ok, port: port, base_url: "http://localhost:#{port}"}
-    end
+    setup :setup_server
 
     test "WS-Security username token header", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
@@ -986,24 +850,7 @@ defmodule Lather.Integration.SoapHeadersRoundTripTest do
   end
 
   describe "header edge cases" do
-    setup do
-      {:ok, _} = Application.ensure_all_started(:lather)
-
-      port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: HeaderAwareRouter, port: port, scheme: :http)
-
-      on_exit(fn ->
-        try do
-          GenServer.stop(server_pid, :normal, 1000)
-        catch
-          :exit, _ -> :ok
-        end
-      end)
-
-      Process.sleep(50)
-
-      {:ok, port: port, base_url: "http://localhost:#{port}"}
-    end
+    setup :setup_server
 
     test "empty header list", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
@@ -1160,5 +1007,25 @@ defmodule Lather.Integration.SoapHeadersRoundTripTest do
       assert Map.has_key?(security, "wsse:UsernameToken")
       assert Map.has_key?(security, "wsu:Timestamp")
     end
+  end
+
+  # Setup helper to start server
+  defp setup_server(_context) do
+    {:ok, _} = Application.ensure_all_started(:lather)
+
+    port = Enum.random(10000..60000)
+    {:ok, server_pid, actual_port} = Lather.TestUtils.start_server(HeaderAwareRouter, port)
+
+    on_exit(fn ->
+      try do
+        GenServer.stop(server_pid, :normal, 1000)
+      catch
+        :exit, _ -> :ok
+      end
+    end)
+
+    Process.sleep(50)
+
+    {:ok, port: actual_port, base_url: "http://localhost:#{actual_port}"}
   end
 end

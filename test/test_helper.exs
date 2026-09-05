@@ -1,5 +1,8 @@
 ExUnit.start()
 
+# Load test utilities
+Code.compile_file("test/support/test_utils.ex")
+
 # Exclude external API tests by default to avoid hitting public services
 # Run with: mix test --include external_api (to include them)
 ExUnit.configure(exclude: [:external_api])

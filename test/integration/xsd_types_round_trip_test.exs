@@ -7,6 +7,8 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
   """
   use ExUnit.Case, async: false
 
+  alias Lather.TestUtils
+
   @moduletag :integration
 
   # Define a service that exercises all XSD types
@@ -460,7 +462,8 @@ defmodule Lather.Integration.XsdTypesRoundTripTest do
     {:ok, _} = Application.ensure_all_started(:lather)
 
     port = Enum.random(10000..60000)
-    {:ok, server_pid} = Bandit.start_link(plug: AllTypesRouter, port: port, scheme: :http)
+    {:ok, server_pid, actual_port} = TestUtils.start_server(AllTypesRouter, port, :http)
+    port = actual_port
 
     on_exit(fn ->
       try do

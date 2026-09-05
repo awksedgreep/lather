@@ -540,7 +540,7 @@ defmodule Lather.Integration.StandardsConformanceTest do
     {:ok, _} = Application.ensure_all_started(:lather)
 
     port = Enum.random(10000..60000)
-    {:ok, server_pid} = Bandit.start_link(plug: ConformanceRouter, port: port, scheme: :http)
+    {:ok, server_pid, actual_port} = Lather.TestUtils.start_server(ConformanceRouter, port)
 
     on_exit(fn ->
       try do
@@ -551,7 +551,7 @@ defmodule Lather.Integration.StandardsConformanceTest do
     end)
 
     Process.sleep(50)
-    {:ok, port: port, base_url: "http://localhost:#{port}"}
+    {:ok, port: actual_port, base_url: "http://localhost:#{actual_port}"}
   end
 
   # Helper to build SOAP 1.1 request

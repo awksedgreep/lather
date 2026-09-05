@@ -1063,7 +1063,7 @@ defmodule Lather.Integration.SoapFaultHandlingIntegrationTest do
 
     port = Enum.random(10000..60000)
     ErrorConfig.set(error_type, opts)
-    {:ok, server_pid} = Bandit.start_link(plug: FaultTestRouter, port: port, scheme: :http)
+    {:ok, server_pid, actual_port} = Lather.TestUtils.start_server(FaultTestRouter, port)
 
     on_exit(fn ->
       try do
@@ -1075,7 +1075,7 @@ defmodule Lather.Integration.SoapFaultHandlingIntegrationTest do
 
     Process.sleep(50)
 
-    {:ok, port: port, base_url: "http://localhost:#{port}/soap", server_pid: server_pid}
+    {:ok, port: actual_port, base_url: "http://localhost:#{actual_port}/soap", server_pid: server_pid}
   end
 
   defp make_soap_request(url, body) do

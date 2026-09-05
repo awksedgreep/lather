@@ -7,6 +7,8 @@ defmodule Lather.Integration.RoundTripTest do
   """
   use ExUnit.Case, async: false
 
+  alias Lather.TestUtils
+
   # These tests require starting actual HTTP servers
   @moduletag :integration
 
@@ -129,7 +131,8 @@ defmodule Lather.Integration.RoundTripTest do
 
       # Start the server on a random available port
       port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: TestRouter, port: port, scheme: :http)
+      {:ok, server_pid, actual_port} = TestUtils.start_server(TestRouter, port, :http)
+      port = actual_port
 
       on_exit(fn ->
         # Cleanup server - use GenServer.stop with a timeout

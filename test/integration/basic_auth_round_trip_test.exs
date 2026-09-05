@@ -10,6 +10,8 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
   """
   use ExUnit.Case, async: false
 
+  alias Lather.TestUtils
+
   # These tests require starting actual HTTP servers
   @moduletag :integration
 
@@ -283,7 +285,8 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
       {:ok, _} = Application.ensure_all_started(:lather)
 
       port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: AuthenticatedRouter, port: port, scheme: :http)
+      {:ok, server_pid, actual_port} = TestUtils.start_server(AuthenticatedRouter, port, :http)
+      port = actual_port
 
       on_exit(fn ->
         try do
@@ -435,7 +438,8 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
       {:ok, _} = Application.ensure_all_started(:lather)
 
       port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: AuthenticatedRouter, port: port, scheme: :http)
+      {:ok, server_pid, actual_port} = TestUtils.start_server(AuthenticatedRouter, port, :http)
+      port = actual_port
 
       on_exit(fn ->
         try do
@@ -523,7 +527,8 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
       {:ok, _} = Application.ensure_all_started(:lather)
 
       port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: AuthenticatedRouter, port: port, scheme: :http)
+      {:ok, server_pid, actual_port} = TestUtils.start_server(AuthenticatedRouter, port, :http)
+      port = actual_port
 
       on_exit(fn ->
         try do
@@ -576,7 +581,8 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
       {:ok, _} = Application.ensure_all_started(:lather)
 
       port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: AuthenticatedRouter, port: port, scheme: :http)
+      {:ok, server_pid, actual_port} = TestUtils.start_server(AuthenticatedRouter, port, :http)
+      port = actual_port
 
       on_exit(fn ->
         try do
@@ -696,7 +702,8 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
       {:ok, _} = Application.ensure_all_started(:lather)
 
       port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: SpecialCharsRouter, port: port, scheme: :http)
+      {:ok, server_pid, actual_port} = TestUtils.start_server(SpecialCharsRouter, port, :http)
+      port = actual_port
 
       on_exit(fn ->
         try do
@@ -784,7 +791,8 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
       {:ok, _} = Application.ensure_all_started(:lather)
 
       port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: EmptyPasswordRouter, port: port, scheme: :http)
+      {:ok, server_pid, actual_port} = TestUtils.start_server(EmptyPasswordRouter, port, :http)
+      port = actual_port
 
       on_exit(fn ->
         try do
@@ -855,7 +863,8 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
       {:ok, _} = Application.ensure_all_started(:lather)
 
       port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: AuthenticatedRouter, port: port, scheme: :http)
+      {:ok, server_pid, actual_port} = TestUtils.start_server(AuthenticatedRouter, port, :http)
+      port = actual_port
 
       on_exit(fn ->
         try do
@@ -964,7 +973,8 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
       {:ok, _} = Application.ensure_all_started(:lather)
 
       port = Enum.random(10000..60000)
-      {:ok, server_pid} = Bandit.start_link(plug: AuthenticatedRouter, port: port, scheme: :http)
+      {:ok, server_pid, actual_port} = TestUtils.start_server(AuthenticatedRouter, port, :http)
+      port = actual_port
 
       on_exit(fn ->
         try do

@@ -346,11 +346,11 @@ defmodule Lather.Integration.SslTlsValidationTest do
       versions: [:"tlsv1.2", :"tlsv1.3"]
     ]
 
-    {:ok, server_pid} =
-      Bandit.start_link(
-        plug: TestRouter,
-        port: port,
-        scheme: :https,
+    {:ok, server_pid, actual_port} =
+      Lather.TestUtils.start_server(
+        TestRouter,
+        port,
+        :https,
         thousand_island_options: [transport_options: ssl_options]
       )
 
@@ -361,7 +361,7 @@ defmodule Lather.Integration.SslTlsValidationTest do
     # Wait for server to be ready
     Process.sleep(100)
 
-    server_pid
+    {server_pid, actual_port}
   end
 
   defp stop_server(server_pid) do
@@ -515,11 +515,11 @@ defmodule Lather.Integration.SslTlsValidationTest do
         case generate_test_certificate("localhost") do
           {:ok, cert_der, key} ->
             port = Enum.random(10000..60000)
-            server_pid = start_https_server(cert_der, key, port)
+            {server_pid, actual_port} = start_https_server(cert_der, key, port)
 
             on_exit(fn -> stop_server(server_pid) end)
 
-            {:ok, port: port, cert_der: cert_der}
+            {:ok, port: actual_port, cert_der: cert_der}
 
           {:error, _} ->
             {:ok, skip: true}
@@ -584,11 +584,11 @@ defmodule Lather.Integration.SslTlsValidationTest do
         case generate_test_certificate("localhost") do
           {:ok, cert_der, key} ->
             port = Enum.random(10000..60000)
-            server_pid = start_https_server(cert_der, key, port)
+            {server_pid, actual_port} = start_https_server(cert_der, key, port)
 
             on_exit(fn -> stop_server(server_pid) end)
 
-            {:ok, port: port}
+            {:ok, port: actual_port}
 
           {:error, _} ->
             {:ok, skip: true}
@@ -713,11 +713,11 @@ defmodule Lather.Integration.SslTlsValidationTest do
         case generate_test_certificate("localhost") do
           {:ok, cert_der, key} ->
             port = Enum.random(10000..60000)
-            server_pid = start_https_server(cert_der, key, port)
+            {server_pid, actual_port} = start_https_server(cert_der, key, port)
 
             on_exit(fn -> stop_server(server_pid) end)
 
-            {:ok, port: port, cert_der: cert_der}
+            {:ok, port: actual_port, cert_der: cert_der}
 
           {:error, _} ->
             {:ok, skip: true}
@@ -822,11 +822,11 @@ defmodule Lather.Integration.SslTlsValidationTest do
             case generate_server_certificate_signed_by_ca(ca_cert_pem, ca_key, "localhost") do
               {:ok, server_cert_der, server_key} ->
                 port = Enum.random(10000..60000)
-                server_pid = start_https_server(server_cert_der, server_key, port)
+                {server_pid, actual_port} = start_https_server(server_cert_der, server_key, port)
 
                 on_exit(fn -> stop_server(server_pid) end)
 
-                {:ok, port: port, ca_cert_der: ca_cert_der}
+                {:ok, port: actual_port, ca_cert_der: ca_cert_der}
 
               {:error, _} ->
                 {:ok, skip: true}
@@ -942,11 +942,11 @@ defmodule Lather.Integration.SslTlsValidationTest do
         case generate_test_certificate("wrong.example.com") do
           {:ok, cert_der, key} ->
             port = Enum.random(10000..60000)
-            server_pid = start_https_server(cert_der, key, port)
+            {server_pid, actual_port} = start_https_server(cert_der, key, port)
 
             on_exit(fn -> stop_server(server_pid) end)
 
-            {:ok, port: port, cert_der: cert_der}
+            {:ok, port: actual_port, cert_der: cert_der}
 
           {:error, _} ->
             {:ok, skip: true}
@@ -1028,11 +1028,11 @@ defmodule Lather.Integration.SslTlsValidationTest do
         case generate_test_certificate("localhost") do
           {:ok, cert_der, key} ->
             port = Enum.random(10000..60000)
-            server_pid = start_https_server(cert_der, key, port)
+            {server_pid, actual_port} = start_https_server(cert_der, key, port)
 
             on_exit(fn -> stop_server(server_pid) end)
 
-            {:ok, port: port}
+            {:ok, port: actual_port}
 
           {:error, _} ->
             {:ok, skip: true}
@@ -1157,11 +1157,11 @@ defmodule Lather.Integration.SslTlsValidationTest do
             case generate_server_certificate_signed_by_ca(ca_cert_pem, ca_key, "localhost") do
               {:ok, server_cert_der, server_key} ->
                 port = Enum.random(10000..60000)
-                server_pid = start_https_server(server_cert_der, server_key, port)
+                {server_pid, actual_port} = start_https_server(server_cert_der, server_key, port)
 
                 on_exit(fn -> stop_server(server_pid) end)
 
-                {:ok, port: port, ca_cert_der: ca_cert_der, server_cert_der: server_cert_der}
+                {:ok, port: actual_port, ca_cert_der: ca_cert_der, server_cert_der: server_cert_der}
 
               {:error, _} ->
                 {:ok, skip: true}
@@ -1254,11 +1254,11 @@ defmodule Lather.Integration.SslTlsValidationTest do
         case generate_test_certificate("localhost") do
           {:ok, cert_der, key} ->
             port = Enum.random(10000..60000)
-            server_pid = start_https_server(cert_der, key, port)
+            {server_pid, actual_port} = start_https_server(cert_der, key, port)
 
             on_exit(fn -> stop_server(server_pid) end)
 
-            {:ok, port: port}
+            {:ok, port: actual_port}
 
           {:error, _} ->
             {:ok, skip: true}
@@ -1345,11 +1345,11 @@ defmodule Lather.Integration.SslTlsValidationTest do
             case generate_server_certificate_signed_by_ca(ca_cert_pem, ca_key, "localhost") do
               {:ok, server_cert_der, server_key} ->
                 port = Enum.random(10000..60000)
-                server_pid = start_https_server(server_cert_der, server_key, port)
+                {server_pid, actual_port} = start_https_server(server_cert_der, server_key, port)
 
                 on_exit(fn -> stop_server(server_pid) end)
 
-                {:ok, port: port, ca_cert_der: ca_cert_der}
+                {:ok, port: actual_port, ca_cert_der: ca_cert_der}
 
               {:error, _} ->
                 {:ok, skip: true}
@@ -1586,11 +1586,11 @@ defmodule Lather.Integration.SslTlsValidationTest do
         case generate_test_certificate("localhost") do
           {:ok, cert_der, key} ->
             port = Enum.random(10000..60000)
-            server_pid = start_https_server(cert_der, key, port)
+            {server_pid, actual_port} = start_https_server(cert_der, key, port)
 
             on_exit(fn -> stop_server(server_pid) end)
 
-            {:ok, port: port}
+            {:ok, port: actual_port}
 
           {:error, _} ->
             {:ok, skip: true}

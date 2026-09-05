@@ -105,7 +105,7 @@ defmodule Lather.Integration.DynamicClientHttp500Test do
       :ets.new(@request_table, [:named_table, :public, :set])
 
       port = Enum.random(20000..59000)
-      {:ok, server_pid} = Bandit.start_link(plug: Http500Router, port: port, scheme: :http)
+      {:ok, server_pid, actual_port} = Lather.TestUtils.start_server(Http500Router, port, :http)
 
       on_exit(fn ->
         try do
@@ -121,7 +121,7 @@ defmodule Lather.Integration.DynamicClientHttp500Test do
 
       Process.sleep(50)
 
-      {:ok, base_url: "http://localhost:#{port}"}
+      {:ok, base_url: "http://localhost:#{actual_port}"}
     end
 
     test "returns error when HTTP 500 body is valid XML but not a SOAP fault", %{

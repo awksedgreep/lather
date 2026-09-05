@@ -759,8 +759,8 @@ defmodule Lather.Integration.ConcurrentRequestsTest do
     # Start the server on a random available port
     port = Enum.random(10000..60000)
 
-    {:ok, server_pid} =
-      Bandit.start_link(plug: ConcurrentTestRouter, port: port, scheme: :http)
+    {:ok, server_pid, actual_port} =
+      Lather.TestUtils.start_server(ConcurrentTestRouter, port, :http)
 
     on_exit(fn ->
       # Cleanup server
@@ -774,7 +774,7 @@ defmodule Lather.Integration.ConcurrentRequestsTest do
     # Wait for server to be ready
     Process.sleep(100)
 
-    {:ok, port: port, base_url: "http://localhost:#{port}"}
+    {:ok, port: actual_port, base_url: "http://localhost:#{actual_port}"}
   end
 
   # Helper to parse numeric results
