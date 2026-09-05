@@ -2,8 +2,21 @@ defmodule Lather.Xml.Builder do
   @moduledoc """
   XML builder for creating SOAP envelopes.
 
-  Provides functionality to build XML documents from Elixir data structures,
-  specifically optimized for SOAP envelope construction.
+  Data structures (maps / keyword-style tuples with `@attr`, `#text`,
+  and `#content` conventions) are converted to `XmlBuilder` AST tuples
+  and rendered with `XmlBuilder.generate/1`. No manual string
+  concatenation is used for element construction, and text / attribute
+  escaping is handled by `XmlBuilder` at render time.
+
+  ## Escaping contract
+
+  `XmlBuilder`'s renderer is entity-aware: well-formed entities
+  (`&amp;`, `&lt;`, …) in input pass through and resolve on parse,
+  while bare `&`, `<`, `>`, quotes are escaped. Callers that must
+  preserve literal entity-looking text (e.g. a value containing the
+  characters `&amp;`) should pre-escape with `escape_text/1` — this is
+  what `Lather.Soap.Body.serialize_params/1` does, keeping the
+  historical raw-text-in / escaped-XML-out contract exact.
   """
 
   @doc """
@@ -202,6 +215,10 @@ defmodule Lather.Xml.Builder do
 
   @doc """
   Escapes XML special characters in text content.
+
+  Note: `build/1` and `build_fragment/1` escape automatically via
+  `XmlBuilder`, so this helper is only needed when embedding text into
+  XML through other (manual) means.
   """
   @spec escape_text(String.t()) :: String.t()
   def escape_text(text) when is_binary(text) do
@@ -210,18 +227,6 @@ defmodule Lather.Xml.Builder do
     |> String.replace("<", "&lt;")
     |> String.replace(">", "&gt;")
   end
- 
+
   def escape_text(value), do: escape_text(to_string(value))
- 
-  @spec escape_attribute(String.t()) :: String.t()
-  defp escape_attribute(text) do
-    text
-    |> String.replace("&", "&amp;")
-    |> String.replace("<", "&lt;")
-    |> String.replace(">", "&gt;")
-    |> String.replace("\"", "&quot;")
-    |> String.replace("'", "&apos;")
-  end
-
-
 end

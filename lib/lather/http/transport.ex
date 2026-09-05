@@ -114,12 +114,11 @@ defmodule Lather.Http.Transport do
   # is already running. Returns `:ok` or `{:error, reason}` (never raises).
   defp ensure_ssl_pool(finch, url, pool_tag, ssl_opts) do
     pool = Finch.Pool.new(url, tag: pool_tag)
-
-    case Finch.start_pool(finch, pool, conn_opts: [transport_opts: ssl_opts]) do
-      :ok -> :ok
-      {:error, {:already_started, _pid}} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
+    # Finch.start_pool/3 is idempotent (returns :ok when the pool already
+    # exists) and raises on invalid arguments; normalize both to our
+    # {:error, reason} convention via rescue.
+    :ok = Finch.start_pool(finch, pool, conn_opts: [transport_opts: ssl_opts])
+    :ok
   rescue
     error -> {:error, error}
   end

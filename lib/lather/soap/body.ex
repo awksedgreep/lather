@@ -82,6 +82,11 @@ defmodule Lather.Soap.Body do
   end
 
   def serialize_params(params) when is_binary(params) do
+    # Pre-escaped with Builder.escape_text: XmlBuilder's renderer is
+    # entity-aware (it preserves well-formed `&amp;`/`&lt;`/etc.), so raw
+    # literals like "Fish &amp; Chips" would otherwise be interpreted as
+    # pre-escaped entities and corrupted on round-trip. Pre-escaping keeps
+    # the historical raw-text-in / escaped-XML-out contract exact.
     Builder.escape_text(params)
   end
 

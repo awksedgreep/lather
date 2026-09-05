@@ -265,6 +265,62 @@ defmodule Lather.Xml.BuilderTest do
     end
   end
 
+  describe "build/1 - AST round-trip (no manual string manipulation)" do
+    test "special characters round-trip through build and parse" do
+      original = "5 < 10 & 10 > 5 \"quoted\" 'apos'"
+      {:ok, xml} = Builder.build(%{"message" => original})
+      {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+
+      assert parsed["message"] == original
+    end
+
+    test "well-formed entities pass through (XmlBuilder semantics)" do
+      # XmlBuilder's renderer is entity-aware: well-formed entities in
+      # direct input are treated as already-escaped and resolve on parse.
+      # Callers needing literal preservation pre-escape (see Soap.Body).
+      original = "Fish &amp; Chips <tasty>"
+      {:ok, xml} = Builder.build(%{"message" => original})
+      {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+
+      assert parsed["message"] == "Fish & Chips <tasty>"
+    end
+
+    test "pre-escaped input round-trips literally (Soap.Body pipeline)" do
+      element = Lather.Soap.Body.create(:Echo, %{"message" => "Fish &amp; Chips <tasty>"})
+      {:ok, xml} = Builder.build(element)
+      {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+
+      assert parsed["Echo"]["message"] == "Fish &amp; Chips <tasty>"
+    end
+
+    test "attribute values round-trip through build and parse" do
+      {:ok, xml} =
+        Builder.build(%{
+          "element" => %{
+            "@message" => "Say \"hello\" & goodbye <all>",
+            "#text" => "content"
+          }
+        })
+
+      {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+
+      assert parsed["element"]["@message"] == "Say \"hello\" & goodbye <all>"
+      assert parsed["element"]["#text"] == "content"
+    end
+
+    test "Body.create params round-trip with pre-escaped pipeline" do
+      # Serialize pre-escapes so XmlBuilder's entity-aware renderer
+      # preserves literal entities on round-trip.
+      assert Lather.Soap.Body.serialize_params("a < b & c") == "a &lt; b &amp; c"
+
+      element = Lather.Soap.Body.create(:Echo, %{"message" => "a < b & c"})
+      {:ok, xml} = Builder.build(element)
+      {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+
+      assert parsed["Echo"]["message"] == "a < b & c"
+    end
+  end
+
   describe "build/1 - List content" do
     test "handles list of primitive values" do
       {:ok, xml} =
