@@ -45,6 +45,8 @@ defmodule Lather.Server.EnhancedPlug do
   - `:enable_json` - Enable JSON endpoints (default: true)
   - `:auth_handler` - Custom authentication handler
   - `:validate_params` - Enable parameter validation (default: true)
+  - `:max_body_size` - Maximum request body size in bytes (default: 10MB).
+    Requests exceeding this limit are rejected with HTTP 413.
   """
 
   # Check if Jason is available for JSON support
@@ -78,7 +80,8 @@ defmodule Lather.Server.EnhancedPlug do
       enable_forms: Keyword.get(opts, :enable_forms, true),
       enable_json: Keyword.get(opts, :enable_json, true),
       auth_handler: Keyword.get(opts, :auth_handler),
-      validate_params: Keyword.get(opts, :validate_params, true)
+      validate_params: Keyword.get(opts, :validate_params, true),
+      max_body_size: Keyword.get(opts, :max_body_size, 10 * 1024 * 1024)
     }
   end
 
@@ -258,7 +261,7 @@ defmodule Lather.Server.EnhancedPlug do
 
   # Handle SOAP requests (1.1 and 1.2)
   defp handle_soap_request(conn, config, soap_version) do
-    with {:ok, body} <- read_full_body(conn),
+    with {:ok, body} <- read_full_body(conn, config.max_body_size),
          {:ok, parsed_request} <- RequestParser.parse(body),
          {:ok, operation_name} <- extract_operation_name(parsed_request),
          {:ok, operation_info} <- get_operation_info(config.service, operation_name),
@@ -278,6 +281,11 @@ defmodule Lather.Server.EnhancedPlug do
       |> put_resp_content_type(content_type)
       |> send_resp(200, response_xml)
     else
+      {:error, :body_too_large} ->
+        conn
+        |> put_resp_content_type("text/xml; charset=utf-8")
+        |> send_resp(413, soap_fault_xml("Client", "Request body too large"))
+
       {:error, {:soap_fault, fault}} ->
         fault_xml = ResponseBuilder.build_fault(fault)
 
@@ -301,7 +309,7 @@ defmodule Lather.Server.EnhancedPlug do
     # Extract operation from path or query parameters
     operation_name = extract_json_operation_name(conn)
 
-    with {:ok, body} <- read_full_body(conn),
+    with {:ok, body} <- read_full_body(conn, config.max_body_size),
          {:ok, json_params} <- decode_json_body(body),
          {:ok, operation_info} <- get_operation_info(config.service, operation_name),
          {:ok, validated_params} <- validate_json_params(json_params, operation_info, config),
@@ -313,6 +321,19 @@ defmodule Lather.Server.EnhancedPlug do
       |> put_resp_content_type("application/json; charset=utf-8")
       |> send_resp(200, encode_json(json_response))
     else
+      {:error, :body_too_large} ->
+        error_response = %{
+          error: %{
+            code: "RequestEntityTooLarge",
+            message: "Request body too large",
+            detail: nil
+          }
+        }
+
+        conn
+        |> put_resp_content_type("application/json; charset=utf-8")
+        |> send_resp(413, encode_json(error_response))
+
       {:error, {:soap_fault, fault}} ->
         error_response = %{
           error: %{
@@ -364,11 +385,32 @@ defmodule Lather.Server.EnhancedPlug do
     Enum.find(service_info.operations, &(&1.name == operation_name))
   end
 
-  defp read_full_body(conn, body \\ "") do
-    case Plug.Conn.read_body(conn) do
-      {:ok, chunk, _conn} -> {:ok, body <> chunk}
-      {:more, chunk, conn} -> read_full_body(conn, body <> chunk)
-      {:error, reason} -> {:error, reason}
+  defp read_full_body(conn, max_size, body \\ "") do
+    if byte_size(body) > max_size do
+      {:error, :body_too_large}
+    else
+      case Plug.Conn.read_body(conn) do
+        {:ok, chunk, _conn} ->
+          new_body = body <> chunk
+
+          if byte_size(new_body) > max_size do
+            {:error, :body_too_large}
+          else
+            {:ok, new_body}
+          end
+
+        {:more, chunk, conn} ->
+          new_body = body <> chunk
+
+          if byte_size(new_body) > max_size do
+            {:error, :body_too_large}
+          else
+            read_full_body(conn, max_size, new_body)
+          end
+
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 

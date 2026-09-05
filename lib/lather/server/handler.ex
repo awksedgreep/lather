@@ -48,6 +48,14 @@ defmodule Lather.Server.Handler do
   Handles a SOAP HTTP request.
 
   Returns `{:ok, status, headers, body}` or `{:error, status, headers, body}`.
+
+  ## Options
+
+  * `:validate_params` - Enable parameter validation (default: true)
+  * `:generate_wsdl` - Enable WSDL generation (default: true)
+  * `:base_url` - Base URL for WSDL generation (default: "http://localhost:4000")
+  * `:max_body_size` - Maximum request body size in bytes (default: 10MB).
+    Bodies exceeding this limit are rejected with HTTP 413.
   """
   def handle_request(method, path, headers, body, service, opts \\ []) do
     unless function_exported?(service, :__soap_service__, 0) do
@@ -59,7 +67,8 @@ defmodule Lather.Server.Handler do
       service: service,
       validate_params: Keyword.get(opts, :validate_params, true),
       generate_wsdl: Keyword.get(opts, :generate_wsdl, true),
-      base_url: Keyword.get(opts, :base_url, "http://localhost:4000")
+      base_url: Keyword.get(opts, :base_url, "http://localhost:4000"),
+      max_body_size: Keyword.get(opts, :max_body_size, 10 * 1024 * 1024)
     }
 
     case {method, is_wsdl_request?(path, headers)} do
@@ -98,7 +107,13 @@ defmodule Lather.Server.Handler do
 
   # Handle SOAP operation requests
   defp handle_soap_request(body, config) do
-    with {:ok, parsed_request} <- RequestParser.parse(body),
+    body_size = if is_binary(body), do: byte_size(body), else: 0
+
+    if body_size > config.max_body_size do
+      {:error, 413, [{"content-type", "text/xml"}],
+       soap_fault_xml("Client", "Request body too large")}
+    else
+      with {:ok, parsed_request} <- RequestParser.parse(body),
          {:ok, result} <- dispatch_operation(parsed_request, config) do
       response_xml = ResponseBuilder.build_response(result, parsed_request.operation)
       {:ok, 200, [{"content-type", "text/xml"}], response_xml}
@@ -112,6 +127,7 @@ defmodule Lather.Server.Handler do
 
         {:error, 400, [{"content-type", "text/xml"}],
          soap_fault_xml("Client", "Invalid SOAP request: #{reason}")}
+      end
     end
   end
 

@@ -25,6 +25,8 @@ defmodule Lather.Server.Plug do
   - `:auth_handler` - Custom authentication handler
   - `:validate_params` - Enable parameter validation (default: true)
   - `:generate_wsdl` - Enable WSDL generation endpoint (default: true)
+  - `:max_body_size` - Maximum request body size in bytes (default: 10MB).
+    Requests exceeding this limit are rejected with HTTP 413.
   """
 
   import Plug.Conn
@@ -48,7 +50,8 @@ defmodule Lather.Server.Plug do
       path: Keyword.get(opts, :path, "/"),
       auth_handler: Keyword.get(opts, :auth_handler),
       validate_params: Keyword.get(opts, :validate_params, true),
-      generate_wsdl: Keyword.get(opts, :generate_wsdl, true)
+      generate_wsdl: Keyword.get(opts, :generate_wsdl, true),
+      max_body_size: Keyword.get(opts, :max_body_size, 10 * 1024 * 1024)
     }
   end
 
@@ -94,51 +97,75 @@ defmodule Lather.Server.Plug do
 
   # Handle SOAP operation requests
   defp handle_soap_request(conn, config) do
-    with {:ok, body} <- read_full_body(conn),
+    with {:ok, body} <- read_full_body(conn, config.max_body_size),
          {:ok, parsed_request} <- RequestParser.parse(body),
          {:ok, authenticated_conn} <- authenticate(conn, config),
          {:ok, result, operation} <- dispatch_operation(parsed_request, config) do
       response_xml = ResponseBuilder.build_response(result, operation)
-
+ 
       authenticated_conn
       |> put_resp_content_type("text/xml")
       |> send_resp(200, response_xml)
     else
+      {:error, :body_too_large} ->
+        conn
+        |> put_resp_content_type("text/xml")
+        |> send_resp(413, soap_fault_xml("Client", "Request body too large"))
+ 
       {:error, :authentication_failed} ->
         conn
         |> put_resp_header("www-authenticate", "Basic realm=\"SOAP Service\"")
         |> put_resp_content_type("text/xml")
         |> send_resp(401, soap_fault_xml("Client", "Authentication required"))
-
+ 
       {:error, {:soap_fault, fault}} ->
         fault_xml = ResponseBuilder.build_fault(fault)
-
+ 
         conn
         |> put_resp_content_type("text/xml")
         |> send_resp(500, fault_xml)
-
+ 
       {:error, {:parse_error, reason}} ->
         Logger.warning("SOAP parse error: #{inspect(reason)}")
-
+ 
         conn
         |> put_resp_content_type("text/xml")
         |> send_resp(400, soap_fault_xml("Client", "Invalid SOAP request"))
-
+ 
       {:error, reason} ->
         Logger.error("SOAP request failed: #{inspect(reason)}")
-
+ 
         conn
         |> put_resp_content_type("text/xml")
         |> send_resp(500, soap_fault_xml("Server", "Internal server error"))
     end
   end
 
+
   # Read the complete request body
-  defp read_full_body(conn, body \\ "") do
-    case Plug.Conn.read_body(conn) do
-      {:ok, chunk, _conn} -> {:ok, body <> chunk}
-      {:more, chunk, conn} -> read_full_body(conn, body <> chunk)
-      {:error, reason} -> {:error, reason}
+  defp read_full_body(conn, max_size, body \\ "") do
+    if byte_size(body) > max_size do
+      {:error, :body_too_large}
+    else
+      case Plug.Conn.read_body(conn) do
+        {:ok, chunk, _conn} ->
+          new_body = body <> chunk
+          if byte_size(new_body) > max_size do
+            {:error, :body_too_large}
+          else
+            {:ok, new_body}
+          end
+ 
+        {:more, chunk, conn} ->
+          new_body = body <> chunk
+          if byte_size(new_body) > max_size do
+            {:error, :body_too_large}
+          else
+            read_full_body(conn, max_size, new_body)
+          end
+ 
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
