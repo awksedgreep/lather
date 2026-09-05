@@ -92,116 +92,68 @@ defmodule Lather.Xml.Builder do
   Builds XML string from a map structure.
   """
   @spec build_xml_string(map() | [{String.t() | atom(), any()}]) :: String.t()
-  def build_xml_string(data) when is_list(data) do
-    data
-    |> Enum.map(fn {key, value} -> build_element(to_string(key), value) end)
-    |> Enum.join("\n")
+  def build_xml_string(data) do
+    content = convert_to_xml_builder(data)
+    XmlBuilder.generate(content)
   end
 
-  def build_xml_string(data) when is_map(data) do
-    data
-    |> Enum.map(fn {key, value} ->
-      build_element(to_string(key), value)
+  defp convert_to_xml_builder(data) when is_map(data) do
+    # Lather allows maps as root, but XmlBuilder.generate expects a single element or list
+    # We'll convert the map to a list of elements
+    Enum.map(data, fn {key, value} ->
+      convert_element(to_string(key), value)
     end)
-    |> Enum.join("\n")
   end
 
-  @spec build_element(String.t(), any()) :: String.t()
-  defp build_element(tag, value) when is_map(value) do
-    {attributes, content} = extract_attributes_and_content(value)
-    attr_string = build_attributes(attributes)
-
-    case content do
-      nil ->
-        "<#{tag}#{attr_string}/>"
-
-      "" ->
-        "<#{tag}#{attr_string}></#{tag}>"
-
-      content when is_binary(content) ->
-        escaped_content = escape_text(content)
-        "<#{tag}#{attr_string}>#{escaped_content}</#{tag}>"
-
-      content when is_map(content) ->
-        inner_xml = build_xml_string(content)
-        "<#{tag}#{attr_string}>\n#{indent(inner_xml)}\n</#{tag}>"
-
-      content when is_list(content) ->
-        inner_xml =
-          Enum.map(content, fn item ->
-            case item do
-              {child_tag, child_value} ->
-                build_element(to_string(child_tag), child_value)
-
-              item when is_map(item) ->
-                # Handle maps in lists by building them as nested elements
-                Enum.map(item, fn {k, v} ->
-                  build_element(to_string(k), v)
-                end)
-                |> Enum.join("\n")
-
-              _ ->
-                escape_text(to_string(item))
-            end
-          end)
-          |> Enum.join("\n")
-
-        "<#{tag}#{attr_string}>\n#{indent(inner_xml)}\n</#{tag}>"
-    end
+  defp convert_to_xml_builder(data) when is_list(data) do
+    Enum.map(data, fn
+      {key, value} -> convert_element(to_string(key), value)
+      item -> convert_to_xml_builder(item)
+    end)
+    |> List.flatten()
   end
 
-  defp build_element(tag, value) when is_list(value) do
-    if Enum.all?(value, &match?({_, _}, &1)) do
-      # Ordered-children list: [{key, val}, ...] — separate @-prefixed keys as attributes
-      {attr_pairs, child_pairs} =
-        Enum.split_with(value, fn {k, _} -> String.starts_with?(to_string(k), "@") end)
+  defp convert_to_xml_builder(data), do: data
 
-      attr_map =
-        Map.new(attr_pairs, fn {k, v} ->
-          {k |> to_string() |> String.trim_leading("@"), v}
-        end)
-
-      attr_string = build_attributes(attr_map)
-
-      case child_pairs do
-        [] ->
-          "<#{tag}#{attr_string}/>"
-
-        _ ->
-          inner_xml =
-            child_pairs
-            |> Enum.map(fn {k, v} -> build_element(to_string(k), v) end)
-            |> Enum.join("\n")
-
-          "<#{tag}#{attr_string}>\n#{indent(inner_xml)}\n</#{tag}>"
+  defp convert_element(tag, value) when is_map(value) do
+    {attrs, content} = extract_attributes_and_content(value)
+    
+    final_content = 
+      cond do
+        is_binary(content) -> content
+        is_list(content) -> Enum.map(content, &convert_to_xml_builder/1) |> List.flatten()
+        is_map(content) -> convert_to_xml_builder(content)
+        true -> nil
       end
-    else
-      inner_content =
-        Enum.map(value, fn item ->
-          case item do
-            {child_tag, child_value} ->
-              build_element(to_string(child_tag), child_value)
 
-            item when is_map(item) ->
-              # Handle maps in lists by building them as nested elements
-              Enum.map(item, fn {k, v} ->
-                build_element(to_string(k), v)
-              end)
-              |> Enum.join("\n")
-
-            _ ->
-              escape_text(to_string(item))
-          end
-        end)
-        |> Enum.join("\n")
-
-      "<#{tag}>\n#{indent(inner_content)}\n</#{tag}>"
-    end
+    XmlBuilder.element(tag, attrs, final_content)
   end
 
-  defp build_element(tag, value) do
-    escaped_value = escape_text(to_string(value))
-    "<#{tag}>#{escaped_value}</#{tag}>"
+  defp convert_element(tag, value) when is_list(value) do
+    # Separate attributes from children
+    {attr_pairs, child_pairs} =
+      Enum.split_with(value, fn 
+        {k, _} -> String.starts_with?(to_string(k), "@")
+        _ -> false
+      end)
+ 
+    attr_map =
+      Map.new(attr_pairs, fn {k, v} ->
+        {String.trim_leading(to_string(k), "@"), v}
+      end)
+ 
+    children =
+      Enum.map(child_pairs, fn
+        {child_tag, child_val} -> convert_element(to_string(child_tag), child_val)
+        item -> convert_to_xml_builder(item)
+      end)
+      |> List.flatten()
+ 
+    XmlBuilder.element(tag, attr_map, children)
+  end
+
+  defp convert_element(tag, value) do
+    XmlBuilder.element(tag, to_string(value))
   end
 
   @spec extract_attributes_and_content(map()) :: {map(), any()}
@@ -210,26 +162,26 @@ defmodule Lather.Xml.Builder do
       Enum.split_with(value, fn {key, _} ->
         String.starts_with?(to_string(key), "@")
       end)
-
+ 
     attr_map =
       Enum.into(attributes, %{}, fn {key, val} ->
         clean_key = key |> to_string() |> String.trim_leading("@")
         {clean_key, val}
       end)
-
+ 
     content_map = Enum.into(content, %{})
-
+ 
     # Handle special #text and #content keys
     final_content =
       cond do
         # Handle #content - list of child elements to include directly
         Map.has_key?(content_map, "#content") ->
           Map.get(content_map, "#content")
-
+ 
         # Handle #text - text content
         Map.has_key?(content_map, "#text") ->
           text_content = Map.get(content_map, "#text")
-
+ 
           if map_size(content_map) == 1 do
             # Only #text, no other children
             text_content
@@ -237,37 +189,15 @@ defmodule Lather.Xml.Builder do
             # Has both #text and other children, keep the map
             content_map
           end
-
+ 
         map_size(content_map) == 0 ->
           nil
-
+ 
         true ->
           content_map
       end
-
+ 
     {attr_map, final_content}
-  end
-
-  @spec build_attributes(map()) :: String.t()
-  defp build_attributes(attributes) when map_size(attributes) == 0, do: ""
-
-  defp build_attributes(attributes) do
-    attrs =
-      Enum.map(attributes, fn {key, value} ->
-        escaped_value = escape_attribute(to_string(value))
-        "#{key}=\"#{escaped_value}\""
-      end)
-      |> Enum.join(" ")
-
-    " " <> attrs
-  end
-
-  @spec indent(String.t()) :: String.t()
-  defp indent(text) do
-    text
-    |> String.split("\n")
-    |> Enum.map(&("  " <> &1))
-    |> Enum.join("\n")
   end
 
   @doc """
@@ -280,9 +210,9 @@ defmodule Lather.Xml.Builder do
     |> String.replace("<", "&lt;")
     |> String.replace(">", "&gt;")
   end
-
+ 
   def escape_text(value), do: escape_text(to_string(value))
-
+ 
   @spec escape_attribute(String.t()) :: String.t()
   defp escape_attribute(text) do
     text
@@ -292,4 +222,6 @@ defmodule Lather.Xml.Builder do
     |> String.replace("\"", "&quot;")
     |> String.replace("'", "&apos;")
   end
+
+
 end
