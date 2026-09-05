@@ -9,6 +9,7 @@ defmodule Lather.Http.Transport do
   require Logger
   alias Lather.Auth.Basic
   alias Lather.Error
+  alias Lather.Http.SSLPoolManager
 
   # SOAP 1.1 headers
   @soap_1_1_headers [
@@ -40,7 +41,14 @@ defmodule Lather.Http.Transport do
   * `:headers` - Additional headers to include
   * `:soap_action` - SOAPAction header value
   * `:soap_version` - SOAP protocol version (`:v1_1` or `:v1_2`, default: `:v1_1`)
-  * `:ssl_options` - SSL/TLS options for HTTPS connections
+  * `:ssl_options` - SSL/TLS options for HTTPS connections.
+    Each distinct set of options starts a dedicated Finch pool on first
+    use. The number of distinct SSL pools is bounded by
+    `Application.get_env(:lather, :max_ssl_pools, 50)` (see
+    `Lather.Http.SSLPoolManager`); requests that would exceed the limit
+    fail with a `:ssl_pool_limit_exceeded` transport error. Reuse stable
+    options (e.g. via `ssl_options/1`) instead of generating them
+    per-request.
   * `:pool_timeout` - Connection pool timeout in milliseconds
   * `:basic_auth` - Basic authentication credentials `{username, password}`
 
@@ -67,57 +75,137 @@ defmodule Lather.Http.Transport do
       pool_timeout: pool_timeout
     ]
 
-    {request, finch_options} =
-      case Keyword.get(options, :ssl_options) do
-        nil ->
-          {Finch.build(:post, url, headers, body), finch_options}
+    case Keyword.get(options, :ssl_options) do
+      nil ->
+        request = Finch.build(:post, url, headers, body)
+        perform_request(request, Lather.Finch, finch_options, url, options)
 
-        ssl_opts ->
-          pool_tag = {:lather_ssl, :erlang.phash2(ssl_opts)}
-          pool = Finch.Pool.new(url, tag: pool_tag)
-          :ok = Finch.start_pool(Lather.Finch, pool, conn_opts: [transport_opts: ssl_opts])
+      ssl_opts ->
+        # NOTE: Finch auto-starts unknown pools on demand with default
+        # connection options, which would silently discard our custom
+        # `transport_opts`. Claim a bounded pool slot and explicitly
+        # start the pool with our SSL options *before* the first request.
+        pool_tag = SSLPoolManager.pool_tag(ssl_opts)
+        request = Finch.build(:post, url, headers, body, pool_tag: pool_tag)
 
-          {Finch.build(:post, url, headers, body, pool_tag: pool_tag), finch_options}
-      end
+        with :ok <- SSLPoolManager.claim(url, ssl_opts),
+             :ok <- ensure_ssl_pool(Lather.Finch, url, pool_tag, ssl_opts) do
+          perform_request(request, Lather.Finch, finch_options, url, options)
+        else
+          {:error, :pool_limit_exceeded} ->
+            Logger.warning(
+              "SSL pool limit (#{SSLPoolManager.max_pools()}) exceeded, refusing new pool for #{url}"
+            )
 
-    case Finch.request(request, Lather.Finch, finch_options) do
+            {:error,
+             Error.transport_error(:ssl_pool_limit_exceeded, %{
+               message:
+                 "SSL connection pool limit (#{SSLPoolManager.max_pools()}) exceeded; reuse stable ssl_options instead of generating them per-request"
+             })}
+
+          {:error, reason} ->
+            SSLPoolManager.release(url, ssl_opts)
+            handle_request_error(reason, finch_options)
+        end
+    end
+  end
+
+  # Starts the tagged SSL pool with the given transport options unless it
+  # is already running. Returns `:ok` or `{:error, reason}` (never raises).
+  defp ensure_ssl_pool(finch, url, pool_tag, ssl_opts) do
+    pool = Finch.Pool.new(url, tag: pool_tag)
+
+    case Finch.start_pool(finch, pool, conn_opts: [transport_opts: ssl_opts]) do
+      :ok -> :ok
+      {:error, {:already_started, _pid}} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  rescue
+    error -> {:error, error}
+  end
+ 
+  defp perform_request(request, finch, options, url, original_options) do
+    case Finch.request(request, finch, options) do
       {:ok, %Finch.Response{} = response} ->
         handle_response(response)
+ 
+      {:error, :no_such_pool} ->
+        # Defensive fallback: pools are pre-started in `post/3`, but one
+        # may have been stopped concurrently. Re-claim and restart once.
+        case Keyword.get(original_options, :ssl_options) do
+          nil ->
+            {:error, :no_such_pool}
 
-      {:error, %Finch.TransportError{} = reason} ->
-        handle_transport_error(reason, "transport")
+          ssl_opts ->
+            case SSLPoolManager.claim(url, ssl_opts) do
+              {:error, :pool_limit_exceeded} ->
+                {:error,
+                 Error.transport_error(:ssl_pool_limit_exceeded, %{
+                   message: "SSL connection pool limit exceeded"
+                 })}
 
-      {:error, %Mint.TransportError{} = reason} ->
-        handle_transport_error(reason, "transport")
+              :ok ->
+                pool_tag = SSLPoolManager.pool_tag(ssl_opts)
 
-      {:error, %Mint.HTTPError{} = reason} ->
-        handle_transport_error(reason, "HTTP")
+                case ensure_ssl_pool(finch, url, pool_tag, ssl_opts) do
+                  :ok ->
+                    Finch.request(request, finch, options)
+                    |> case do
+                      {:ok, response} -> handle_response(response)
+                      {:error, reason} -> handle_request_error(reason, options)
+                    end
 
-      {:error, %Finch.Error{} = reason} ->
-        handle_transport_error(reason, "Finch")
-
-      {:error, :timeout} ->
+                  {:error, reason} ->
+                    SSLPoolManager.release(url, ssl_opts)
+                    handle_request_error(reason, options)
+                end
+            end
+        end
+ 
+      {:error, reason} ->
+        handle_request_error(reason, options)
+    end
+  end
+ 
+  defp handle_request_error(reason, options) do
+    timeout = Keyword.get(options, :timeout, @default_timeout)
+ 
+    case reason do
+      %Finch.TransportError{} = r ->
+        handle_transport_error(r, "transport")
+ 
+      %Mint.TransportError{} = r ->
+        handle_transport_error(r, "transport")
+ 
+      %Mint.HTTPError{} = r ->
+        handle_transport_error(r, "HTTP")
+ 
+      %Finch.Error{} = r ->
+        handle_transport_error(r, "Finch")
+ 
+      :timeout ->
         Logger.error("SOAP request timeout after #{timeout}ms")
-
+ 
         error =
           Error.transport_error(:timeout, %{
             message: "Request timeout after #{timeout}ms",
             timeout: timeout
           })
-
+ 
         {:error, error}
-
-      {:error, reason} ->
+ 
+      reason ->
         Logger.error("SOAP request failed: #{inspect(reason)}")
-
+ 
         error =
           Error.transport_error(reason, %{
             message: "Request failed: #{inspect(reason)}"
           })
-
+ 
         {:error, error}
     end
   end
+
 
   @doc """
   Builds HTTP headers for SOAP requests.
