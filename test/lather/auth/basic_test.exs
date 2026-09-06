@@ -551,4 +551,22 @@ defmodule Lather.Auth.BasicTest do
       assert_receive {:credentials, ^original_user, ^original_pass}
     end
   end
+
+  describe "decode/1 - scheme case (issue #21)" do
+    test "accepts lowercase and uppercase scheme" do
+      assert {:ok, {"admin", "password"}} = Basic.decode("basic YWRtaW46cGFzc3dvcmQ=")
+      assert {:ok, {"admin", "password"}} = Basic.decode("BASIC YWRtaW46cGFzc3dvcmQ=")
+    end
+
+    test "tolerates extra whitespace" do
+      assert {:ok, {"admin", "password"}} = Basic.decode("Basic   YWRtaW46cGFzc3dvcmQ=")
+      assert {:ok, {"admin", "password"}} = Basic.decode("  Basic YWRtaW46cGFzc3dvcmQ=  ")
+    end
+
+    test "still rejects other schemes and malformed values" do
+      assert {:error, :invalid_format} = Basic.decode("Bearer abc")
+      assert {:error, :invalid_format} = Basic.decode("Basic")
+      assert {:error, :invalid_encoding} = Basic.decode("Basic not-base64!")
+    end
+  end
 end

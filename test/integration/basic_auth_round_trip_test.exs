@@ -677,10 +677,10 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
       assert response.status == 401
     end
 
-    test "request with lowercase 'basic' prefix returns 401", %{port: port} do
+    test "request with lowercase 'basic' prefix is accepted (RFC 7235)", %{port: port} do
       soap_request = build_add_request(10, 5)
 
-      # Use lowercase 'basic' instead of 'Basic'
+      # The auth-scheme token is case-insensitive
       credentials = Base.encode64("testuser:testpass123")
 
       headers = [
@@ -692,8 +692,7 @@ defmodule Lather.Integration.BasicAuthRoundTripTest do
       request = Finch.build(:post, "http://localhost:#{port}/soap", headers, soap_request)
       assert {:ok, response} = Finch.request(request, Lather.Finch)
 
-      # Should fail because implementation expects exact "Basic " prefix
-      assert response.status == 401
+      assert response.status == 200
     end
   end
 

@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Authorization` header and WS-Security as a `UsernameToken` SOAP header;
   `{:wssecurity, u, p, opts}` passes options such as `password_type: :digest`
   (#19).
+- `Lather.Auth.Basic.decode/1` accepts the `Basic` scheme case-insensitively and
+  tolerates extra whitespace, per RFC 7235 (#21).
 - `Lather.Auth.WSSecurity.username_token/3` with `password_type: :digest` always
   produces a digest (nonce and created are optional inputs to it) instead of
   silently falling back to `PasswordText`; an unknown `password_type` raises (#20).

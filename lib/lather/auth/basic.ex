@@ -62,7 +62,25 @@ defmodule Lather.Auth.Basic do
       {:error, :invalid_format}
   """
   @spec decode(String.t()) :: {:ok, {String.t(), String.t()}} | {:error, atom()}
-  def decode("Basic " <> encoded) do
+  def decode(header_value) when is_binary(header_value) do
+    # The auth-scheme is case-insensitive (RFC 7235 §2.1) and may be
+    # followed by more than one space.
+    case String.split(String.trim(header_value), ~r/\s+/, parts: 2) do
+      [scheme, encoded] ->
+        if String.downcase(scheme) == "basic",
+          do: decode_credentials(encoded),
+          else: {:error, :invalid_format}
+
+      _ ->
+        {:error, :invalid_format}
+    end
+  end
+
+  def decode(_) do
+    {:error, :invalid_format}
+  end
+
+  defp decode_credentials(encoded) do
     case Base.decode64(encoded) do
       {:ok, credentials} ->
         # Split on first colon only - everything after first colon is the password
@@ -77,10 +95,6 @@ defmodule Lather.Auth.Basic do
       :error ->
         {:error, :invalid_encoding}
     end
-  end
-
-  def decode(_) do
-    {:error, :invalid_format}
   end
 
   @doc """
