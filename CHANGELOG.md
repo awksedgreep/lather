@@ -48,6 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Authorization` header and WS-Security as a `UsernameToken` SOAP header;
   `{:wssecurity, u, p, opts}` passes options such as `password_type: :digest`
   (#19).
+- `Lather.Server.validate_param_types/2` validates the lexical form of simple
+  XSD types (`int`, `decimal`, `boolean`, `dateTime`, `date`, `time`, ...),
+  accepts DSL atom types and `xsd:` prefixes, and returns a Client fault instead
+  of raising when structured content is sent for a simple type (#16).
 - `Lather.Server.RequestParser`: empty elements are `""` (was `%{}`), list items
   get the same namespace/attribute cleaning as single elements, and an element
   carrying only attributes and text collapses to its text (#15).

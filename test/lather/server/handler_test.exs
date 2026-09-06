@@ -113,4 +113,73 @@ defmodule Lather.Server.HandlerTest do
       assert xml =~ "Method not allowed"
     end
   end
+
+  describe "parameter type validation (issue #16)" do
+    defmodule TypedService do
+      use Lather.Server
+
+      soap_operation "Typed" do
+        input do
+          parameter("n", :integer, required: true)
+          parameter("d", "decimal")
+          parameter("b", :boolean)
+          parameter("when", "xsd:dateTime")
+          parameter("day", :date)
+          parameter("s", :string)
+        end
+
+        output do
+          parameter("ok", :string)
+        end
+      end
+
+      def typed(params), do: {:ok, %{"ok" => inspect(params)}}
+    end
+
+    defp typed(inner) do
+      Handler.handle_request(
+        "POST",
+        "/soap",
+        @headers,
+        envelope("<Typed>#{inner}</Typed>"),
+        TypedService
+      )
+    end
+
+    test "valid lexical values pass" do
+      assert {:ok, 200, _, _} =
+               typed(
+                 "<n>42</n><d>1.5</d><b>true</b><when>2026-01-02T03:04:05Z</when><day>2026-01-02</day><s></s>"
+               )
+
+      assert {:ok, 200, _, _} =
+               typed("<n>-7</n><d>10</d><b>0</b><when>2026-01-02T03:04:05</when>")
+    end
+
+    test "non-numeric integers and decimals are rejected with a Client fault" do
+      assert {:error, 500, _, xml} = typed("<n>abc</n>")
+      assert xml =~ "<faultcode>Client</faultcode>"
+      assert xml =~ "Invalid n: invalid integer format"
+
+      assert {:error, 500, _, xml} = typed("<n>1</n><d>1,5</d>")
+      assert xml =~ "Invalid d: invalid decimal format"
+    end
+
+    test "bad booleans and dates are rejected" do
+      assert {:error, 500, _, xml} = typed("<n>1</n><b>yes</b>")
+      assert xml =~ "invalid boolean format"
+
+      assert {:error, 500, _, xml} = typed("<n>1</n><day>02/01/2026</day>")
+      assert xml =~ "invalid date format"
+    end
+
+    test "structured content for a simple type is a Client fault, not a crash" do
+      assert {:error, 500, _, xml} = typed("<n>1</n><when><y/></when>")
+      assert xml =~ "<faultcode>Client</faultcode>"
+      assert xml =~ "Invalid when: expected a dateTime value, got an element with children"
+
+      assert {:error, 500, _, xml} = typed("<n>1</n><s><b/></s>")
+      assert xml =~ "Invalid s: expected a string value"
+    end
+  end
 end

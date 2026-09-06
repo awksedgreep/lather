@@ -185,20 +185,84 @@ defmodule Lather.Server do
     end)
   end
 
-  defp validate_type(value, "string") when is_binary(value), do: :ok
-  defp validate_type(value, "int") when is_integer(value), do: :ok
-  defp validate_type(value, "boolean") when is_boolean(value), do: :ok
-  defp validate_type(value, "decimal") when is_number(value), do: :ok
+  # Parameters arrive from XML as strings (or maps/lists for structured
+  # content), so simple XSD types are validated on their lexical form.
+  # DSL types may be atoms (`:string`) or strings (`"string"`, `"xsd:int"`).
+  @integer_types ~w(int integer long short byte unsignedInt unsignedLong unsignedShort unsignedByte)
+  @decimal_types ~w(decimal float double)
+  @datetime_types ~w(dateTime datetime)
+  @simple_types ~w(string boolean date time) ++
+                  @integer_types ++ @decimal_types ++ @datetime_types
 
-  defp validate_type(value, "dateTime") do
-    case DateTime.from_iso8601(value) do
-      {:ok, _, _} -> :ok
+  defp validate_type(value, type), do: do_validate_type(value, normalize_type(type))
+
+  defp normalize_type(type) when is_atom(type), do: Atom.to_string(type)
+
+  defp normalize_type(type) when is_binary(type) do
+    type |> String.replace_prefix("xsd:", "") |> String.replace_prefix("xs:", "")
+  end
+
+  defp normalize_type(type), do: to_string(type)
+
+  defp do_validate_type(value, type) when type in @simple_types and not is_binary(value) do
+    {:error, "expected a #{type} value, got #{describe_value(value)}"}
+  end
+
+  defp do_validate_type(_value, "string"), do: :ok
+
+  defp do_validate_type(value, type) when type in @integer_types do
+    case Integer.parse(String.trim(value)) do
+      {_, ""} -> :ok
+      _ -> {:error, "invalid #{type} format"}
+    end
+  end
+
+  defp do_validate_type(value, type) when type in @decimal_types do
+    trimmed = String.trim(value)
+
+    case {Integer.parse(trimmed), Float.parse(trimmed)} do
+      {{_, ""}, _} -> :ok
+      {_, {_, ""}} -> :ok
+      _ -> {:error, "invalid #{type} format"}
+    end
+  end
+
+  defp do_validate_type(value, "boolean") do
+    if String.trim(value) in ["true", "false", "1", "0"],
+      do: :ok,
+      else: {:error, "invalid boolean format"}
+  end
+
+  defp do_validate_type(value, type) when type in @datetime_types do
+    trimmed = String.trim(value)
+
+    case {DateTime.from_iso8601(trimmed), NaiveDateTime.from_iso8601(trimmed)} do
+      {{:ok, _, _}, _} -> :ok
+      {_, {:ok, _}} -> :ok
       _ -> {:error, "invalid dateTime format"}
     end
   end
 
-  # Allow any for complex types
-  defp validate_type(_value, _type), do: :ok
+  defp do_validate_type(value, "date") do
+    case Date.from_iso8601(String.trim(value)) do
+      {:ok, _} -> :ok
+      _ -> {:error, "invalid date format"}
+    end
+  end
+
+  defp do_validate_type(value, "time") do
+    case Time.from_iso8601(String.trim(value)) do
+      {:ok, _} -> :ok
+      _ -> {:error, "invalid time format"}
+    end
+  end
+
+  # Complex / unknown types are not validated here
+  defp do_validate_type(_value, _type), do: :ok
+
+  defp describe_value(value) when is_map(value), do: "an element with children"
+  defp describe_value(value) when is_list(value), do: "repeated elements"
+  defp describe_value(_value), do: "an unexpected value"
 
   @doc """
   Formats operation response according to SOAP conventions.
