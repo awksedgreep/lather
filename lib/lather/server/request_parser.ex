@@ -76,52 +76,43 @@ defmodule Lather.Server.RequestParser do
 
   defp extract_operation(_), do: {:error, "Invalid SOAP body structure"}
 
-  # Extract parameters from a map structure (operation content)
+  # Extract parameters from a map structure (operation content).
+  #
+  # Namespace prefixes are stripped from keys, attributes are dropped, and
+  # the same cleaning is applied to nested maps and to every item of a
+  # list, so a parameter has the same shape whether an element occurred
+  # once or many times. An empty element is an empty string.
   defp extract_parameters_from_map(nil), do: %{}
-  defp extract_parameters_from_map(""), do: %{}
   defp extract_parameters_from_map(content) when is_binary(content), do: %{}
 
   defp extract_parameters_from_map(content) when is_map(content) do
     content
+    |> Enum.reject(fn {key, _} -> String.starts_with?(key, "@") end)
     |> Enum.reduce(%{}, fn {key, value}, acc ->
-      # Remove namespace prefix from parameter names
-      clean_key = key |> String.split(":") |> List.last()
-
       cond do
-        # Skip attributes (keys starting with @)
-        String.starts_with?(key, "@") ->
-          acc
-
-        # Skip #text if it's the only content
-        key == "#text" and map_size(content) == 1 ->
-          acc
-
-        # Handle nested maps (complex parameters)
-        is_map(value) and key != "#text" ->
-          Map.put(acc, clean_key, extract_parameters_from_map(value))
-
-        # Handle #text content with attributes
-        key == "#text" ->
-          Map.put(acc, clean_key, value)
-
-        # Handle simple string values
-        is_binary(value) ->
-          if value == "" do
-            Map.put(acc, clean_key, %{})
-          else
-            Map.put(acc, clean_key, value)
-          end
-
-        # Handle lists (array-like structures)
-        is_list(value) ->
-          Map.put(acc, clean_key, value)
-
-        # Handle other types by converting to string (but not lists)
-        true ->
-          Map.put(acc, clean_key, to_string(value))
+        # `#text` next to child elements (mixed content) is kept as-is;
+        # a lone `#text` (element with attributes only) becomes the value.
+        key == "#text" and map_size(content) == 1 -> acc
+        key == "#text" -> Map.put(acc, key, value)
+        true -> Map.put(acc, Elements.local_name(key), clean_value(value))
       end
     end)
   end
 
   defp extract_parameters_from_map(_), do: %{}
+
+  # An element carrying only attributes and text (`<a xsi:type="x">1</a>`)
+  # collapses to its text; other maps are cleaned recursively.
+  defp clean_value(%{"#text" => text} = map) when is_binary(text) do
+    if Enum.all?(map, fn {k, _} -> k == "#text" or String.starts_with?(k, "@") end) do
+      text
+    else
+      extract_parameters_from_map(map)
+    end
+  end
+
+  defp clean_value(value) when is_map(value), do: extract_parameters_from_map(value)
+  defp clean_value(value) when is_list(value), do: Enum.map(value, &clean_value/1)
+  defp clean_value(value) when is_binary(value), do: value
+  defp clean_value(value), do: to_string(value)
 end

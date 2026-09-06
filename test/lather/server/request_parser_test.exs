@@ -236,7 +236,7 @@ defmodule Lather.Server.RequestParserTest do
 
       assert parsed.params == %{
                "data" => %{
-                 "emptyField" => %{},
+                 "emptyField" => "",
                  "anotherField" => "value"
                }
              }
@@ -597,6 +597,47 @@ defmodule Lather.Server.RequestParserTest do
                  RequestParser.parse(xml),
                "prefix #{inspect(prefix)}"
       end
+    end
+  end
+
+  describe "parameter shapes (issue #15)" do
+    defp envelope(inner) do
+      ~s(<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body>#{inner}</soap:Body></soap:Envelope>)
+    end
+
+    test "empty elements are empty strings, not empty maps" do
+      {:ok, parsed} = RequestParser.parse(envelope("<Op><name></name><other/></Op>"))
+      assert parsed.params == %{"name" => "", "other" => ""}
+    end
+
+    test "list items are cleaned like single elements" do
+      xml =
+        envelope(
+          ~s(<ns:Op xmlns:ns="u"><ns:items><ns:item><ns:a>1</ns:a></ns:item><ns:item><ns:a>2</ns:a></ns:item></ns:items></ns:Op>)
+        )
+
+      {:ok, parsed} = RequestParser.parse(xml)
+      assert parsed.params == %{"items" => %{"item" => [%{"a" => "1"}, %{"a" => "2"}]}}
+
+      # single occurrence has the same shape as each list item
+      {:ok, single} =
+        RequestParser.parse(
+          envelope(
+            ~s(<ns:Op xmlns:ns="u"><ns:items><ns:item><ns:a>1</ns:a></ns:item></ns:items></ns:Op>)
+          )
+        )
+
+      assert single.params == %{"items" => %{"item" => %{"a" => "1"}}}
+    end
+
+    test "attributes are dropped from list items and attributed scalars collapse to text" do
+      xml =
+        envelope(
+          ~s(<Op xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><v xsi:type="xsd:int">1</v><v xsi:type="xsd:int">2</v><w xsi:type="xsd:int">3</w></Op>)
+        )
+
+      {:ok, parsed} = RequestParser.parse(xml)
+      assert parsed.params == %{"v" => ["1", "2"], "w" => "3"}
     end
   end
 end
