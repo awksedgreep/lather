@@ -3,6 +3,7 @@ defmodule Lather.Server.RequestParser do
   Parses incoming SOAP requests and extracts operation details and parameters.
   """
 
+  alias Lather.Soap.Elements
   alias Lather.Xml.Parser
 
   @doc """
@@ -23,27 +24,22 @@ defmodule Lather.Server.RequestParser do
     end
   end
 
-  # Extract SOAP envelope from parsed XML
-  defp extract_envelope(parsed) when is_map(parsed) do
-    cond do
-      Map.has_key?(parsed, "soap:Envelope") -> {:ok, parsed["soap:Envelope"]}
-      Map.has_key?(parsed, "Envelope") -> {:ok, parsed["Envelope"]}
-      true -> {:error, "No SOAP envelope found"}
+  # Extract SOAP envelope from parsed XML. Element names are matched by
+  # local name so any prefix (soap:, soapenv:, SOAP-ENV:, s:, none) works.
+  defp extract_envelope(parsed) do
+    case Elements.get(parsed, "Envelope") do
+      nil -> {:error, "No SOAP envelope found"}
+      envelope -> {:ok, envelope}
     end
   end
-
-  defp extract_envelope(_), do: {:error, "No SOAP envelope found"}
 
   # Extract SOAP body from envelope
-  defp extract_body(envelope) when is_map(envelope) do
-    cond do
-      Map.has_key?(envelope, "soap:Body") -> {:ok, envelope["soap:Body"]}
-      Map.has_key?(envelope, "Body") -> {:ok, envelope["Body"]}
-      true -> {:error, "No SOAP body found"}
+  defp extract_body(envelope) do
+    case Elements.get(envelope, "Body") do
+      nil -> {:error, "No SOAP body found"}
+      body -> {:ok, body}
     end
   end
-
-  defp extract_body(_), do: {:error, "No SOAP body found"}
 
   # Extract operation name and parameters from body
   defp extract_operation(body) when is_map(body) do
@@ -55,7 +51,7 @@ defmodule Lather.Server.RequestParser do
       operation_keys =
         Map.keys(body)
         |> Enum.reject(fn key ->
-          key in ["soap:Header", "Header", "soap:Fault", "Fault"]
+          String.starts_with?(key, "@") or Elements.local_name(key) in ["Header", "Fault"]
         end)
 
       # Keep all operation keys - empty operations are valid
@@ -77,8 +73,6 @@ defmodule Lather.Server.RequestParser do
   defp extract_operation(body) when is_binary(body) and body == "" do
     {:error, "No operation found in SOAP body"}
   end
-
-  defp extract_operation(nil), do: {:error, "No operation found in SOAP body"}
 
   defp extract_operation(_), do: {:error, "Invalid SOAP body structure"}
 

@@ -580,4 +580,23 @@ defmodule Lather.Server.RequestParserTest do
       assert parsed.params == %{"data" => "value"}
     end
   end
+
+  describe "namespace prefixes (issue #10)" do
+    test "accepts soapenv:, SOAP-ENV:, s: and unprefixed envelopes" do
+      for prefix <- ["soapenv", "SOAP-ENV", "s", nil] do
+        {open, decl} =
+          case prefix do
+            nil -> {"", ~s(xmlns="http://schemas.xmlsoap.org/soap/envelope/")}
+            p -> {"#{p}:", ~s(xmlns:#{p}="http://schemas.xmlsoap.org/soap/envelope/")}
+          end
+
+        xml =
+          "<#{open}Envelope #{decl}><#{open}Header/><#{open}Body><ns:GetUser xmlns:ns=\"u\"><ns:userId>7</ns:userId></ns:GetUser></#{open}Body></#{open}Envelope>"
+
+        assert {:ok, %{operation: "GetUser", params: %{"userId" => "7"}}} =
+                 RequestParser.parse(xml),
+               "prefix #{inspect(prefix)}"
+      end
+    end
+  end
 end

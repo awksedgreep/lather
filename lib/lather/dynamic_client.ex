@@ -10,6 +10,7 @@ defmodule Lather.DynamicClient do
   alias Lather.Wsdl.Analyzer
   alias Lather.Operation.Builder
   alias Lather.Error
+  alias Lather.Soap.Elements
 
   defstruct [:base_client, :service_info, :default_options]
 
@@ -411,18 +412,15 @@ defmodule Lather.DynamicClient do
   end
 
   defp extract_soap_fault(parsed_response) do
-    fault =
-      get_in(parsed_response, ["Envelope", "Body", "Fault"]) ||
-        get_in(parsed_response, ["soap:Envelope", "soap:Body", "soap:Fault"]) ||
-        get_in(parsed_response, ["SOAP-ENV:Envelope", "SOAP-ENV:Body", "SOAP-ENV:Fault"])
+    # Prefix-agnostic lookup: peers use soap:, soapenv:, SOAP-ENV:, s:, ...
+    fault = Elements.get_in(parsed_response, ["Envelope", "Body", "Fault"])
 
     if fault do
       fault_info = %{
-        fault_code: extract_text_content(fault["faultcode"] || fault["soap:faultcode"] || ""),
-        fault_string:
-          extract_text_content(fault["faultstring"] || fault["soap:faultstring"] || ""),
-        fault_actor: extract_text_content(fault["faultactor"] || fault["soap:faultactor"] || ""),
-        detail: extract_text_content(fault["detail"] || fault["soap:detail"] || "")
+        fault_code: extract_text_content(Elements.get(fault, "faultcode") || ""),
+        fault_string: extract_text_content(Elements.get(fault, "faultstring") || ""),
+        fault_actor: extract_text_content(Elements.get(fault, "faultactor") || ""),
+        detail: extract_text_content(Elements.get(fault, "detail") || "")
       }
 
       {:ok, fault_info}

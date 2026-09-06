@@ -1,4 +1,6 @@
 defmodule Lather.Error do
+  alias Lather.Soap.Elements
+
   @moduledoc """
   Comprehensive error handling for SOAP operations.
 
@@ -375,10 +377,8 @@ defmodule Lather.Error do
 
   defp extract_fault_from_xml(parsed_xml, _options) do
     # Try different SOAP fault structures
-    fault_data =
-      get_in(parsed_xml, ["Envelope", "Body", "Fault"]) ||
-        get_in(parsed_xml, ["soap:Envelope", "soap:Body", "soap:Fault"]) ||
-        get_in(parsed_xml, ["soapenv:Envelope", "soapenv:Body", "soapenv:Fault"])
+    # Prefix-agnostic lookup: peers use soap:, soapenv:, SOAP-ENV:, s:, ...
+    fault_data = Elements.get_in(parsed_xml, ["Envelope", "Body", "Fault"])
 
     case fault_data do
       nil ->
@@ -397,19 +397,19 @@ defmodule Lather.Error do
   end
 
   defp extract_fault_code(fault) do
-    fault["faultcode"] || fault["Code"] || fault["soap:faultcode"] || "Unknown"
+    Elements.get(fault, "faultcode") || Elements.get(fault, "Code") || "Unknown"
   end
 
   defp extract_fault_string(fault) do
-    fault["faultstring"] || fault["Reason"] || fault["soap:faultstring"] || "Unknown error"
+    Elements.get(fault, "faultstring") || Elements.get(fault, "Reason") || "Unknown error"
   end
 
   defp extract_fault_actor(fault) do
-    fault["faultactor"] || fault["Actor"] || fault["soap:faultactor"]
+    Elements.get(fault, "faultactor") || Elements.get(fault, "Actor")
   end
 
   defp extract_fault_detail(fault) do
-    detail = fault["detail"] || fault["Detail"] || fault["soap:detail"]
+    detail = Elements.get(fault, "detail") || Elements.get(fault, "Detail")
 
     case detail do
       nil -> nil

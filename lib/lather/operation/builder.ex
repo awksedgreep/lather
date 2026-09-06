@@ -6,6 +6,7 @@ defmodule Lather.Operation.Builder do
   defined in a WSDL, without requiring hardcoded service implementations.
   """
 
+  alias Lather.Soap.Elements
   alias Lather.Soap.Envelope
   alias Lather.Error
 
@@ -533,64 +534,22 @@ defmodule Lather.Operation.Builder do
       (String.contains?(type, "Type") and not String.contains?(type, "Complex"))
   end
 
+  # Envelope/Body are matched by local name (any namespace prefix).
   defp extract_response_body(response_envelope) do
-    case response_envelope do
-      %{"Envelope" => %{"Body" => body}} ->
-        {:ok, body}
-
-      %{"soap:Envelope" => %{"soap:Body" => body}} ->
-        {:ok, body}
-
-      %{"SOAP-ENV:Envelope" => %{"SOAP-ENV:Body" => body}} ->
-        {:ok, body}
-
-      _ ->
-        # Try to find envelope/body with any namespace prefix
-        case find_envelope_body(response_envelope) do
-          {:ok, body} ->
-            {:ok, body}
-
-          :not_found ->
-            error =
-              Error.validation_error(:soap_response, :invalid_soap_response, %{
-                message: "Response does not contain valid SOAP envelope structure",
-                received_structure: inspect(response_envelope)
-              })
-
-            {:error, error}
-        end
-    end
-  end
-
-  # Dynamically find envelope and body elements with any namespace prefix
-  defp find_envelope_body(response_envelope) when is_map(response_envelope) do
-    envelope_key =
-      Enum.find(Map.keys(response_envelope), fn key ->
-        key_str = to_string(key)
-        String.ends_with?(key_str, "Envelope") or String.ends_with?(key_str, ":Envelope")
-      end)
-
-    case envelope_key do
+    case Elements.get_in(response_envelope, ["Envelope", "Body"]) do
       nil ->
-        :not_found
+        error =
+          Error.validation_error(:soap_response, :invalid_soap_response, %{
+            message: "Response does not contain valid SOAP envelope structure",
+            received_structure: inspect(response_envelope)
+          })
 
-      key ->
-        envelope_content = response_envelope[key]
+        {:error, error}
 
-        body_key =
-          Enum.find(Map.keys(envelope_content || %{}), fn k ->
-            k_str = to_string(k)
-            String.ends_with?(k_str, "Body") or String.ends_with?(k_str, ":Body")
-          end)
-
-        case body_key do
-          nil -> :not_found
-          bk -> {:ok, envelope_content[bk]}
-        end
+      body ->
+        {:ok, body}
     end
   end
-
-  defp find_envelope_body(_), do: :not_found
 
   defp parse_operation_response(operation_info, body_content, style) do
     case style do

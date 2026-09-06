@@ -535,7 +535,7 @@ defmodule Lather.Soap.EnvelopeTest do
         {:error, {:http_error, 404, "<html><body>Not Found</body></html>"}} ->
           assert true
 
-        {:error, {:soap_fault, :invalid_soap_response}} ->
+        {:error, :invalid_soap_response} ->
           assert true
 
         {:error, {:parse_error, _reason}} ->
@@ -595,14 +595,7 @@ defmodule Lather.Soap.EnvelopeTest do
         """
       }
 
-      case Envelope.parse_response(response) do
-        {:error, {:soap_fault, :invalid_soap_response}} ->
-          assert true
-
-        {:error, {:http_error, 200, _body}} ->
-          # Depending on implementation, this might also be acceptable
-          assert true
-      end
+      assert {:error, :invalid_soap_response} = Envelope.parse_response(response)
     end
 
     test "handles complex nested response data" do
@@ -925,6 +918,93 @@ defmodule Lather.Soap.EnvelopeTest do
           # Also acceptable if there are parsing limits
           assert true
       end
+    end
+  end
+
+  describe "parse_response/1 - namespace prefixes (issue #10)" do
+    @prefixes ["soapenv", "SOAP-ENV", "s", "env", "S", nil]
+
+    defp envelope_with(prefix, ns, inner) do
+      {open, decl} =
+        case prefix do
+          nil -> {"", ~s(xmlns="#{ns}")}
+          p -> {"#{p}:", ~s(xmlns:#{p}="#{ns}")}
+        end
+
+      "<#{open}Envelope #{decl}><#{open}Body>#{inner}</#{open}Body></#{open}Envelope>"
+    end
+
+    test "successful responses are accepted with any envelope prefix" do
+      for prefix <- @prefixes do
+        body =
+          envelope_with(
+            prefix,
+            "http://schemas.xmlsoap.org/soap/envelope/",
+            "<GetR><x>1</x></GetR>"
+          )
+
+        assert {:ok, %{"x" => "1"}} = Envelope.parse_response(%{status: 200, body: body}),
+               "prefix #{inspect(prefix)}"
+      end
+    end
+
+    test "SOAP 1.1 faults are detected with any envelope prefix" do
+      for prefix <- @prefixes do
+        open = if prefix, do: "#{prefix}:", else: ""
+
+        body =
+          envelope_with(
+            prefix,
+            "http://schemas.xmlsoap.org/soap/envelope/",
+            "<#{open}Fault><faultcode>Server</faultcode><faultstring>boom</faultstring></#{open}Fault>"
+          )
+
+        assert {:error, {:soap_fault, %{code: "Server", string: "boom", soap_version: :v1_1}}} =
+                 Envelope.parse_response(%{status: 500, body: body}),
+               "prefix #{inspect(prefix)}"
+      end
+    end
+
+    test "SOAP 1.2 version and faults are detected from the namespace of any prefix" do
+      body =
+        envelope_with(
+          "env",
+          "http://www.w3.org/2003/05/soap-envelope",
+          "<env:Fault><env:Code><env:Value>env:Sender</env:Value><env:Subcode><env:Value>x:Bad</env:Value></env:Subcode></env:Code>" <>
+            "<env:Reason><env:Text xml:lang=\"en\">nope</env:Text></env:Reason></env:Fault>"
+        )
+
+      assert {:error, {:soap_fault, fault}} = Envelope.parse_response(%{status: 500, body: body})
+      assert fault.soap_version == :v1_2
+      assert fault.code == "env:Sender"
+      assert fault.subcode == "x:Bad"
+      assert fault.string == "nope"
+    end
+
+    test "a document without an Envelope is reported as :invalid_soap_response, not a fault" do
+      assert {:error, :invalid_soap_response} =
+               Envelope.parse_response(%{status: 200, body: "<Nope><x/></Nope>"})
+    end
+  end
+
+  describe "parse_response/1 - empty body (issue #11)" do
+    test "an empty <Body/> yields an empty result instead of raising" do
+      body =
+        ~s(<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body/></soap:Envelope>)
+
+      assert {:ok, %{}} = Envelope.parse_response(%{status: 200, body: body})
+
+      body =
+        ~s(<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body></soap:Body></soap:Envelope>)
+
+      assert {:ok, %{}} = Envelope.parse_response(%{status: 200, body: body})
+    end
+
+    test "an empty <Envelope/> is an invalid response instead of raising" do
+      body = ~s(<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"/>)
+
+      assert {:error, :invalid_soap_response} =
+               Envelope.parse_response(%{status: 200, body: body})
     end
   end
 end

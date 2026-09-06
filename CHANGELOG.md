@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `Lather.Soap.Elements`: prefix-agnostic lookups (`get/2`, `get_in/2`,
+  `local_name/1`, `soap_version/1`) over parsed SOAP documents.
+
 ### Changed
 - `Lather.Xml.Builder`: a bare list value under a key now renders as repeated
   sibling elements (`%{"Item" => ["1", "2"]}` → `<Item>1</Item><Item>2</Item>`),
@@ -15,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of `{key, value}` pairs keeps its ordered-children meaning (#9).
 
 ### Fixed
+- SOAP envelopes with any namespace prefix (`soapenv:`, `SOAP-ENV:`, `s:`,
+  `env:`, none, ...) are now accepted by `Lather.Soap.Envelope.parse_response/1`,
+  `Lather.Server.RequestParser`, `Lather.DynamicClient` fault detection,
+  `Lather.Error.parse_soap_fault/2` and `Lather.Operation.Builder`; the SOAP
+  version is detected from the namespace bound to whichever prefix is used. A
+  document without an Envelope is reported as `{:error, :invalid_soap_response}`
+  instead of `{:error, {:soap_fault, :invalid_soap_response}}` (#10).
+- `Lather.Soap.Envelope.parse_response/1` returns `{:ok, %{}}` for an empty
+  `<Body/>` instead of raising (#11).
 - `Lather.Xml.Builder`: a `parse/1` → `build_fragment/1` round-trip no longer
   collapses repeated elements into one element with joined text (#9).
 - `Lather.Xml.Builder`: an element can now carry attributes and repeated child
