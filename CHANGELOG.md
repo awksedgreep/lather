@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of `{:error, {:soap_fault, :invalid_soap_response}}` (#10).
 - `Lather.Soap.Envelope.parse_response/1` returns `{:ok, %{}}` for an empty
   `<Body/>` instead of raising (#11).
+- `Lather.Server.Handler`: malformed XML now yields a 400 Client fault instead
+  of raising (#12); successful responses are no longer double-wrapped in
+  `<Response><OpResponse>` and match `Lather.Server.Plug` byte for byte (#13);
+  every `POST` is a SOAP call and every `GET` serves the WSDL, so paths that
+  happen to contain "wsdl" no longer get a 405 (#14). Transport-level faults
+  are built with `ResponseBuilder.build_fault/1` so fault strings are escaped.
 - `Lather.Xml.Builder`: a `parse/1` → `build_fragment/1` round-trip no longer
   collapses repeated elements into one element with joined text (#9).
 - `Lather.Xml.Builder`: an element can now carry attributes and repeated child

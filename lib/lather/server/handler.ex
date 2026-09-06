@@ -56,8 +56,12 @@ defmodule Lather.Server.Handler do
   * `:base_url` - Base URL for WSDL generation (default: "http://localhost:4000")
   * `:max_body_size` - Maximum request body size in bytes (default: 10MB).
     Bodies exceeding this limit are rejected with HTTP 413.
+
+  Any `GET` serves the WSDL (when `:generate_wsdl` is enabled) and any
+  `POST` is treated as a SOAP call, regardless of path — matching
+  `Lather.Server.Plug`. Other methods get a 405 fault.
   """
-  def handle_request(method, path, headers, body, service, opts \\ []) do
+  def handle_request(method, _path, _headers, body, service, opts \\ []) do
     unless function_exported?(service, :__soap_service__, 0) do
       raise ArgumentError,
             "#{service} is not a valid SOAP service module. Did you forget to `use Lather.Server`?"
@@ -71,22 +75,16 @@ defmodule Lather.Server.Handler do
       max_body_size: Keyword.get(opts, :max_body_size, 10 * 1024 * 1024)
     }
 
-    case {method, is_wsdl_request?(path, headers)} do
-      {"GET", true} when config.generate_wsdl ->
+    case method do
+      "GET" when config.generate_wsdl ->
         handle_wsdl_request(config)
 
-      {"POST", false} ->
+      "POST" ->
         handle_soap_request(body, config)
 
       _ ->
-        {:error, 405, [{"content-type", "text/xml"}],
-         soap_fault_xml("Client", "Method not allowed")}
+        {:error, 405, [{"content-type", "text/xml"}], fault_xml("Client", "Method not allowed")}
     end
-  end
-
-  # Check if this is a WSDL request
-  defp is_wsdl_request?(path, _headers) do
-    String.contains?(path, "wsdl") or String.contains?(path, "WSDL")
   end
 
   # Handle WSDL generation requests
@@ -101,7 +99,7 @@ defmodule Lather.Server.Handler do
         Logger.error("WSDL generation failed: #{inspect(error)}")
 
         {:error, 500, [{"content-type", "text/xml"}],
-         soap_fault_xml("Server", "WSDL generation failed")}
+         fault_xml("Server", "WSDL generation failed")}
     end
   end
 
@@ -110,26 +108,32 @@ defmodule Lather.Server.Handler do
     body_size = if is_binary(body), do: byte_size(body), else: 0
 
     if body_size > config.max_body_size do
-      {:error, 413, [{"content-type", "text/xml"}],
-       soap_fault_xml("Client", "Request body too large")}
+      {:error, 413, [{"content-type", "text/xml"}], fault_xml("Client", "Request body too large")}
     else
       with {:ok, parsed_request} <- RequestParser.parse(body),
-         {:ok, result} <- dispatch_operation(parsed_request, config) do
-      response_xml = ResponseBuilder.build_response(result, parsed_request.operation)
-      {:ok, 200, [{"content-type", "text/xml"}], response_xml}
-    else
-      {:error, {:soap_fault, fault}} ->
-        fault_xml = ResponseBuilder.build_fault(fault)
-        {:error, 500, [{"content-type", "text/xml"}], fault_xml}
+           {:ok, result, operation} <- dispatch_operation(parsed_request, config) do
+        # Pass the operation *definition* so ResponseBuilder recognises the
+        # "<Op>Response" wrapper format_response/2 already applied (#13).
+        response_xml = ResponseBuilder.build_response(result, operation)
+        {:ok, 200, [{"content-type", "text/xml"}], response_xml}
+      else
+        {:error, {:soap_fault, fault}} ->
+          fault_xml = ResponseBuilder.build_fault(fault)
+          {:error, 500, [{"content-type", "text/xml"}], fault_xml}
 
-      {:error, {:parse_error, reason}} ->
-        Logger.warning("SOAP parse error: #{reason}")
+        {:error, {:parse_error, reason}} ->
+          # `reason` is a string for structural problems and a nested
+          # tuple/exception for malformed XML; never interpolate it (#12).
+          Logger.warning("SOAP parse error: #{inspect(reason)}")
 
-        {:error, 400, [{"content-type", "text/xml"}],
-         soap_fault_xml("Client", "Invalid SOAP request: #{reason}")}
+          {:error, 400, [{"content-type", "text/xml"}],
+           fault_xml("Client", parse_error_message(reason))}
       end
     end
   end
+
+  defp parse_error_message(reason) when is_binary(reason), do: "Invalid SOAP request: #{reason}"
+  defp parse_error_message(_reason), do: "Invalid SOAP request: malformed XML"
 
   # Dispatch the operation to the service module
   defp dispatch_operation(request, %{service: service, validate_params: validate?}) do
@@ -137,8 +141,9 @@ defmodule Lather.Server.Handler do
 
     if operation do
       with {:ok, params} <- validate_operation_params(request.params, operation, validate?),
-           {:ok, result} <- call_operation_function(service, operation, params) do
-        Lather.Server.format_response(result, operation)
+           {:ok, result} <- call_operation_function(service, operation, params),
+           {:ok, formatted} <- Lather.Server.format_response(result, operation) do
+        {:ok, formatted, operation}
       end
     else
       {:error,
@@ -213,18 +218,9 @@ defmodule Lather.Server.Handler do
     end
   end
 
-  # Generate a simple SOAP fault XML
-  defp soap_fault_xml(fault_code, fault_string) do
-    """
-    <?xml version="1.0" encoding="UTF-8"?>
-    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-      <soap:Body>
-        <soap:Fault>
-          <faultcode>#{fault_code}</faultcode>
-          <faultstring>#{fault_string}</faultstring>
-        </soap:Fault>
-      </soap:Body>
-    </soap:Envelope>
-    """
+  # Fault XML for transport-level errors; goes through ResponseBuilder so
+  # the fault string is escaped.
+  defp fault_xml(fault_code, fault_string) do
+    ResponseBuilder.build_fault(%{fault_code: fault_code, fault_string: fault_string})
   end
 end
