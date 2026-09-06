@@ -547,4 +547,48 @@ defmodule Lather.Auth.WSSecurityTest do
       assert Map.has_key?(digest_security["wsse:UsernameToken"], "wsse:Nonce")
     end
   end
+
+  describe "digest without nonce/created (issue #20)" do
+    defp password_of(token),
+      do: get_in(token, ["wsse:Security", "wsse:UsernameToken", "wsse:Password"])
+
+    test "digest is still a digest when created is disabled" do
+      token = WSSecurity.username_token("u", "p", password_type: :digest, include_created: false)
+      assert password_of(token)["@Type"] =~ "PasswordDigest"
+      refute password_of(token)["#text"] == "p"
+    end
+
+    test "digest is still a digest when nonce is disabled" do
+      token = WSSecurity.username_token("u", "p", password_type: :digest, include_nonce: false)
+      assert password_of(token)["@Type"] =~ "PasswordDigest"
+      refute password_of(token)["#text"] == "p"
+    end
+
+    test "digest with neither nonce nor created is SHA-1 of the password" do
+      token =
+        WSSecurity.username_token("u", "p",
+          password_type: :digest,
+          include_nonce: false,
+          include_created: false
+        )
+
+      assert password_of(token)["#text"] == Base.encode64(:crypto.hash(:sha, "p"))
+    end
+
+    test "digest verifies against nonce + created + password" do
+      token = WSSecurity.username_token("u", "p", password_type: :digest)
+      ut = get_in(token, ["wsse:Security", "wsse:UsernameToken"])
+      nonce = Base.decode64!(ut["wsse:Nonce"]["#text"])
+      created = ut["wsu:Created"]
+
+      assert ut["wsse:Password"]["#text"] ==
+               Base.encode64(:crypto.hash(:sha, nonce <> created <> "p"))
+    end
+
+    test "unknown password_type raises instead of sending clear text" do
+      assert_raise ArgumentError, fn ->
+        WSSecurity.username_token("u", "p", password_type: :plain)
+      end
+    end
+  end
 end

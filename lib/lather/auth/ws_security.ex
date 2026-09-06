@@ -207,8 +207,10 @@ defmodule Lather.Auth.WSSecurity do
     }
   end
 
-  defp build_password_element(password, :digest, nonce, created)
-       when is_binary(nonce) and is_binary(created) do
+  # Password_Digest = Base64(SHA-1(nonce + created + password)); nonce and
+  # created are each optional per the UsernameToken profile, so a digest is
+  # always produced when :digest is requested — never a clear-text fallback.
+  defp build_password_element(password, :digest, nonce, created) do
     digest = generate_password_digest(password, nonce, created)
 
     %{
@@ -218,9 +220,9 @@ defmodule Lather.Auth.WSSecurity do
     }
   end
 
-  defp build_password_element(password, :digest, _nonce, _created) do
-    # Fallback to text if nonce or created is missing
-    build_password_element(password, :text, nil, nil)
+  defp build_password_element(_password, other, _nonce, _created) do
+    raise ArgumentError,
+          "unsupported :password_type #{inspect(other)}; expected :text or :digest"
   end
 
   defp generate_nonce do
@@ -239,10 +241,10 @@ defmodule Lather.Auth.WSSecurity do
   end
 
   defp generate_password_digest(password, nonce, created) do
-    nonce_decoded = Base.decode64!(nonce)
+    nonce_decoded = if nonce, do: Base.decode64!(nonce), else: ""
 
     # Password digest = Base64(SHA1(nonce + created + password))
-    digest_input = nonce_decoded <> created <> password
+    digest_input = nonce_decoded <> (created || "") <> password
 
     :crypto.hash(:sha, digest_input)
     |> Base.encode64()

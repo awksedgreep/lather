@@ -48,6 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Authorization` header and WS-Security as a `UsernameToken` SOAP header;
   `{:wssecurity, u, p, opts}` passes options such as `password_type: :digest`
   (#19).
+- `Lather.Auth.WSSecurity.username_token/3` with `password_type: :digest` always
+  produces a digest (nonce and created are optional inputs to it) instead of
+  silently falling back to `PasswordText`; an unknown `password_type` raises (#20).
 - `Lather.Server.validate_param_types/2` validates the lexical form of simple
   XSD types (`int`, `decimal`, `boolean`, `dateTime`, `date`, `time`, ...),
   accepts DSL atom types and `xsd:` prefixes, and returns a Client fault instead
