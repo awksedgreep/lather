@@ -114,8 +114,13 @@ defmodule Lather.Server.ResponseBuilder do
     %{"Response" => format_response_data(result)}
   end
 
-  # Format response data for XML serialization
+  # Format response data for XML serialization.
+  # Struct clauses must precede the generic `is_map` clause: structs are
+  # maps, so the reverse order would make these unreachable (issue #7).
   defp format_response_data(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
+  defp format_response_data(%NaiveDateTime{} = dt), do: NaiveDateTime.to_iso8601(dt)
+  defp format_response_data(%Date{} = date), do: Date.to_iso8601(date)
+  defp format_response_data(%Time{} = time), do: Time.to_iso8601(time)
 
   defp format_response_data(data) when is_map(data) do
     Enum.into(data, %{}, fn {key, value} ->

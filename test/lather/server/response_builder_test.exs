@@ -571,4 +571,48 @@ defmodule Lather.Server.ResponseBuilderTest do
       assert String.contains?(xml, "<help_url>https://example.com/auth-help</help_url>")
     end
   end
+
+  describe "build_response/2 - date/time values (issue #7)" do
+    test "DateTime in a result serializes to ISO 8601" do
+      xml =
+        ResponseBuilder.build_response(
+          %{"createdAt" => ~U[2026-01-02 03:04:05Z]},
+          %{name: "GetRecord"}
+        )
+
+      assert String.contains?(xml, "<createdAt>2026-01-02T03:04:05Z</createdAt>")
+    end
+
+    test "Date and Time in a result serialize to ISO 8601" do
+      xml =
+        ResponseBuilder.build_response(
+          %{"day" => ~D[2026-01-02], "at" => ~T[03:04:05]},
+          %{name: "GetRecord"}
+        )
+
+      assert String.contains?(xml, "<day>2026-01-02</day>")
+      assert String.contains?(xml, "<at>03:04:05</at>")
+    end
+
+    test "NaiveDateTime in a result serializes to ISO 8601" do
+      xml =
+        ResponseBuilder.build_response(
+          %{"at" => ~N[2026-01-02 03:04:05]},
+          %{name: "GetRecord"}
+        )
+
+      assert String.contains?(xml, "<at>2026-01-02T03:04:05</at>")
+    end
+
+    test "date/time values nested in lists serialize" do
+      xml =
+        ResponseBuilder.build_response(
+          %{"dates" => [~D[2026-01-02], ~D[2026-01-03]]},
+          %{name: "GetDates"}
+        )
+
+      assert String.contains?(xml, "<dates>2026-01-02</dates>")
+      assert String.contains?(xml, "<dates>2026-01-03</dates>")
+    end
+  end
 end

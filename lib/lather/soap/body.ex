@@ -50,6 +50,9 @@ defmodule Lather.Soap.Body do
 
   Handles various Elixir types and converts them to XML-safe representations.
   """
+  # Struct and boolean clauses must precede the generic `is_map` / `is_atom`
+  # clauses: structs are maps and booleans are atoms, so the reverse order
+  # makes them unreachable and crashes on date/time values (issue #7).
   @spec serialize_params(any()) :: any()
   def serialize_params(%DateTime{} = datetime) do
     DateTime.to_iso8601(datetime)
