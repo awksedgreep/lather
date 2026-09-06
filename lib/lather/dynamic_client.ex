@@ -9,6 +9,7 @@ defmodule Lather.DynamicClient do
   alias Lather.Client
   alias Lather.Wsdl.Analyzer
   alias Lather.Operation.Builder
+  alias Lather.Auth.WSSecurity
   alias Lather.Error
   alias Lather.Soap.Elements
 
@@ -33,7 +34,11 @@ defmodule Lather.DynamicClient do
     * `:service_name` - Specific service name if WSDL contains multiple services
     * `:endpoint_override` - Override the endpoint URL from WSDL
     * `:default_headers` - Default headers to include in all requests
-    * `:authentication` - Authentication configuration
+    * `:authentication` - `{:basic, username, password}` sends an HTTP
+      `Authorization` header; `{:wssecurity, username, password}` (or
+      `{:wssecurity, username, password, opts}` with the options of
+      `Lather.Auth.WSSecurity.username_token/3`, e.g. `password_type: :digest`)
+      adds a WS-Security `UsernameToken` SOAP header to every call
     * `:timeout` - Default request timeout
     * `:soap_version` - SOAP protocol version (`:v1_1` or `:v1_2`, auto-detected if not specified)
     * `:namespace_prefix` - Default namespace prefix for operation elements in all calls (e.g. `"ns0"`).
@@ -294,16 +299,29 @@ defmodule Lather.DynamicClient do
   defp apply_authentication(client, options) do
     case Keyword.get(options, :authentication) do
       {:basic, username, password} ->
-        # Add basic auth header to default headers
-        auth_header = {"Authorization", "Basic " <> Base.encode64("#{username}:#{password}")}
-        %{client | headers: [auth_header | client.headers]}
-
-      {:wssecurity, username, password} ->
-        # WS-Security will be handled in SOAP headers during request building
-        Map.put(client, :ws_security, {username, password})
+        # Transport.build_headers/1 turns :basic_auth into the Authorization
+        # header; Lather.Client has no :headers field to prepend to.
+        %{client | options: Keyword.put(client.options, :basic_auth, {username, password})}
 
       _ ->
+        # WS-Security is a SOAP header, added per request in build_request/4.
         client
+    end
+  end
+
+  # `{:wssecurity, username, password}` or
+  # `{:wssecurity, username, password, opts}` (opts as accepted by
+  # `Lather.Auth.WSSecurity.username_token/3`, e.g. `password_type: :digest`).
+  defp ws_security_headers(options) do
+    case Keyword.get(options, :authentication) do
+      {:wssecurity, username, password} ->
+        [WSSecurity.username_token(username, password)]
+
+      {:wssecurity, username, password, ws_opts} ->
+        [WSSecurity.username_token(username, password, ws_opts)]
+
+      _ ->
+        []
     end
   end
 
@@ -334,7 +352,7 @@ defmodule Lather.DynamicClient do
   end
 
   defp build_request(operation_info, parameters, service_info, options) do
-    headers = Keyword.get(options, :headers, [])
+    headers = ws_security_headers(options) ++ List.wrap(Keyword.get(options, :headers, []))
     soap_version = Keyword.get(options, :soap_version, :v1_1)
 
     request_options = [

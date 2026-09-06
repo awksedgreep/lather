@@ -42,6 +42,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#17).
 - `Lather.Operation.Builder.validate_parameters/2` no longer requires parts the
   WSDL marks `minOccurs="0"`, matching `get_operation_metadata/1` (#18).
+- `Lather.DynamicClient` `:authentication` option: `{:basic, u, p}` raised a
+  `KeyError` (the client struct has no `headers` field) and
+  `{:wssecurity, u, p}` was silently ignored. Basic auth is now sent as the
+  `Authorization` header and WS-Security as a `UsernameToken` SOAP header;
+  `{:wssecurity, u, p, opts}` passes options such as `password_type: :digest`
+  (#19).
 - `Lather.Xml.Builder`: a `parse/1` → `build_fragment/1` round-trip no longer
   collapses repeated elements into one element with joined text (#9).
 - `Lather.Xml.Builder`: an element can now carry attributes and repeated child
