@@ -6,6 +6,7 @@ defmodule Lather.Operation.Builder do
   defined in a WSDL, without requiring hardcoded service implementations.
   """
 
+  alias Lather.Soap.Body
   alias Lather.Soap.Elements
   alias Lather.Soap.Envelope
   alias Lather.Error
@@ -27,6 +28,17 @@ defmodule Lather.Operation.Builder do
     * `:headers` - Additional SOAP headers
     * `:version` - SOAP version (`:v1_1` or `:v1_2`, default: `:v1_1`)
     * `:namespace_prefix` - Optional namespace prefix for the operation element (e.g. `"ns0"`)
+    * `:types` - Type definitions from `Lather.Wsdl.Analyzer` (`service_info.types`),
+      used to pick the item element name for array-typed parts
+
+  Parameter values are serialised with `Lather.Soap.Body.serialize_params/1`:
+  nested maps become nested elements, lists become repeated sibling
+  elements, and `DateTime`/`Date`/`Time`/booleans are rendered as XML
+  schema literals. Parts whose WSDL type is an array (`ArrayOf...`,
+  `xsd:string[]`) wrap list values in the array's item element
+  (`<part><item>..</item><item>..</item></part>`), using the single
+  repeating element of the array type when `:types` is given and `item`
+  otherwise.
 
   ## Examples
 
@@ -62,13 +74,14 @@ defmodule Lather.Operation.Builder do
 
     namespace = Keyword.get(options, :namespace, "")
     headers = Keyword.get(options, :headers, [])
+    types = Keyword.get(options, :types, [])
 
     # Check if this is element-based document/literal (body is already properly structured)
     input_parts = operation_info.input.parts || []
     element_based = Enum.any?(input_parts, fn part -> part[:element] != nil end)
 
     with {:ok, body_content} <-
-           build_operation_body(operation_info, parameters, style, use_type, namespace) do
+           build_operation_body(operation_info, parameters, style, use_type, namespace, types) do
       # Extract operation name and parameters from body content
       operation_name = operation_info.name
 
@@ -149,7 +162,11 @@ defmodule Lather.Operation.Builder do
   """
   @spec validate_parameters(map(), map()) :: :ok | {:error, term()}
   def validate_parameters(operation_info, parameters) do
-    required_parts = operation_info.input.parts || []
+    # Only parts the WSDL marks as required are checked; `min_occurs: "0"`
+    # parts may be omitted (consistent with get_operation_metadata/1).
+    required_parts =
+      (operation_info.input.parts || [])
+      |> Enum.reject(&optional_part?/1)
 
     Enum.reduce_while(required_parts, :ok, fn part, _acc ->
       part_name = part.name
@@ -242,23 +259,23 @@ defmodule Lather.Operation.Builder do
 
   # Private helper functions
 
-  defp build_operation_body(operation_info, parameters, style, use_type, namespace) do
+  defp build_operation_body(operation_info, parameters, style, use_type, namespace, types) do
     case style do
       :document ->
-        build_document_style_body(operation_info, parameters, use_type, namespace)
+        build_document_style_body(operation_info, parameters, use_type, namespace, types)
 
       "document" ->
-        build_document_style_body(operation_info, parameters, use_type, namespace)
+        build_document_style_body(operation_info, parameters, use_type, namespace, types)
 
       :rpc ->
-        build_rpc_style_body(operation_info, parameters, use_type, namespace)
+        build_rpc_style_body(operation_info, parameters, use_type, namespace, types)
 
       "rpc" ->
-        build_rpc_style_body(operation_info, parameters, use_type, namespace)
+        build_rpc_style_body(operation_info, parameters, use_type, namespace, types)
     end
   end
 
-  defp build_document_style_body(operation_info, parameters, :literal, namespace) do
+  defp build_document_style_body(operation_info, parameters, :literal, namespace, types) do
     input_parts = operation_info.input.parts || []
 
     # Check if this is element-based document/literal (parts have element attributes)
@@ -272,19 +289,12 @@ defmodule Lather.Operation.Builder do
 
           if param_value != nil do
             # Extract element name from element attribute (remove namespace prefix)
-            element_name =
-              case String.split(part.element, ":") do
-                [_namespace, name] -> name
-                [name] -> name
-              end
+            element_name = Elements.local_name(part.element)
 
-            # Build element content - for empty maps, create empty element
             element_content =
-              if param_value == %{} do
-                %{"@xmlns" => namespace}
-              else
-                # For non-empty content, merge with namespace
-                Map.put(param_value, "@xmlns", namespace)
+              case Body.serialize_params(param_value) do
+                content when is_map(content) -> Map.put(content, "@xmlns", namespace)
+                content -> %{"@xmlns" => namespace, "#text" => content}
               end
 
             Map.put(acc, element_name, element_content)
@@ -297,20 +307,7 @@ defmodule Lather.Operation.Builder do
     else
       # Traditional document/literal - operation name as wrapper
       operation_name = operation_info.name
-
-      # Build parameter elements as a map with param names as keys
-      param_elements =
-        Enum.reduce(input_parts, %{}, fn part, acc ->
-          param_name = part.name
-          param_value = Map.get(parameters, param_name)
-
-          if param_value != nil do
-            element = build_parameter_element(param_name, param_value, part.type)
-            Map.put(acc, param_name, element)
-          else
-            acc
-          end
-        end)
+      param_elements = build_parameter_elements(input_parts, parameters, types, false)
 
       # Wrap in operation element with namespace and params
       body_content = %{
@@ -321,144 +318,99 @@ defmodule Lather.Operation.Builder do
     end
   end
 
-  defp build_document_style_body(operation_info, parameters, :encoded, _namespace) do
+  defp build_document_style_body(operation_info, parameters, :encoded, _namespace, types) do
     # For document/encoded, build similar to literal but with encoded semantics
     operation_name = operation_info.name
     input_parts = operation_info.input.parts || []
 
-    # Build parameter elements for encoded style
-    param_elements =
-      Enum.map(input_parts, fn part ->
-        param_name = part.name
-        param_value = Map.get(parameters, param_name)
-
-        if param_value != nil do
-          element = build_parameter_element(param_name, param_value, part.type)
-          %{param_name => element}
-        else
-          nil
-        end
-      end)
-      |> Enum.filter(&(&1 != nil))
-
-    # Create the operation wrapper element
-    body_content = %{
-      operation_name =>
-        param_elements
-        |> Enum.reduce(%{}, fn element, acc ->
-          Map.merge(acc, element)
-        end)
-    }
-
-    {:ok, body_content}
+    {:ok, %{operation_name => build_parameter_elements(input_parts, parameters, types, false)}}
   end
 
   # Handle string versions of use_type
-  defp build_document_style_body(operation_info, parameters, "literal", namespace) do
-    build_document_style_body(operation_info, parameters, :literal, namespace)
+  defp build_document_style_body(operation_info, parameters, "literal", namespace, types) do
+    build_document_style_body(operation_info, parameters, :literal, namespace, types)
   end
 
-  defp build_document_style_body(operation_info, parameters, "encoded", namespace) do
-    build_document_style_body(operation_info, parameters, :encoded, namespace)
+  defp build_document_style_body(operation_info, parameters, "encoded", namespace, types) do
+    build_document_style_body(operation_info, parameters, :encoded, namespace, types)
   end
 
-  defp build_rpc_style_body(operation_info, parameters, use_type, namespace) do
+  defp build_rpc_style_body(operation_info, parameters, use_type, namespace, types) do
     operation_name = operation_info.name
     input_parts = operation_info.input.parts || []
+    encoded? = use_type in [:encoded, "encoded"]
 
-    # Build parameter elements according to RPC style
-    param_elements =
-      Enum.reduce(input_parts, %{}, fn part, acc ->
-        param_name = part.name
-        param_value = Map.get(parameters, param_name)
-
-        if param_value do
-          element =
-            case use_type do
-              :literal -> build_parameter_element(param_name, param_value, part.type)
-              :encoded -> build_encoded_parameter_element(param_name, param_value, part.type)
-              "literal" -> build_parameter_element(param_name, param_value, part.type)
-              "encoded" -> build_encoded_parameter_element(param_name, param_value, part.type)
-            end
-
-          Map.put(acc, param_name, element)
-        else
-          acc
-        end
-      end)
+    param_elements = build_parameter_elements(input_parts, parameters, types, encoded?)
 
     # Wrap in operation element with namespace
     body_content = %{
-      operation_name =>
-        %{
-          "@xmlns" => namespace
-        }
-        |> Map.merge(param_elements)
+      operation_name => Map.merge(%{"@xmlns" => namespace}, param_elements)
     }
 
     {:ok, body_content}
   end
 
-  defp build_parameter_element(_name, value, type) do
+  # Builds `%{part_name => element}` for every part that has a value.
+  defp build_parameter_elements(input_parts, parameters, types, encoded?) do
+    Enum.reduce(input_parts, %{}, fn part, acc ->
+      case Map.get(parameters, part.name) do
+        nil ->
+          acc
+
+        value ->
+          element =
+            if encoded? do
+              build_encoded_parameter_element(value, part.type, types)
+            else
+              build_parameter_element(value, part.type, types)
+            end
+
+          Map.put(acc, part.name, element)
+      end
+    end)
+  end
+
+  # Values are serialised recursively by Body.serialize_params/1 (nested
+  # maps, lists, dates, booleans, escaping). Array-typed parts wrap list
+  # values in the array's item element.
+  defp build_parameter_element(value, type, types) do
     case classify_parameter_type(type) do
-      :simple ->
-        build_simple_parameter(value, type)
-
-      :complex ->
-        build_complex_parameter(value, type)
-
-      :array ->
-        build_array_parameter(value, type)
+      :array -> build_array_parameter(value, type, types)
+      _ -> Body.serialize_params(value)
     end
   end
 
-  defp build_encoded_parameter_element(name, value, type) do
+  defp build_encoded_parameter_element(value, type, types) do
     # Add SOAP encoding information
-    base_element = build_parameter_element(name, value, type)
-
-    case base_element do
-      element when is_map(element) ->
-        Map.put(element, "@xsi:type", type)
-
-      simple_value ->
-        %{"#text" => simple_value, "@xsi:type" => type}
+    case build_parameter_element(value, type, types) do
+      element when is_map(element) -> Map.put(element, "@xsi:type", type)
+      elements when is_list(elements) -> elements
+      simple_value -> %{"#text" => simple_value, "@xsi:type" => type}
     end
   end
 
-  defp build_simple_parameter(value, _type)
-       when is_binary(value) or is_number(value) or is_boolean(value) do
-    to_string(value)
+  defp build_array_parameter(values, type, types) when is_list(values) do
+    %{array_item_name(type, types) => Enum.map(values, &Body.serialize_params/1)}
   end
 
-  defp build_simple_parameter(value, type) when is_map(value) do
-    # If a map is classified as simple, treat it as complex instead
-    build_complex_parameter(value, type)
+  defp build_array_parameter(value, _type, _types), do: Body.serialize_params(value)
+
+  # The item element of an array type: the single repeating element of the
+  # matching complex type from the WSDL, else "item".
+  defp array_item_name(type, types) when is_list(types) do
+    local = Elements.local_name(type)
+
+    types
+    |> Enum.find(fn t -> is_map(t) and t[:category] == :complex_type and t[:name] == local end)
+    |> case do
+      %{elements: [%{name: name, max_occurs: max}]} when max != "1" -> name
+      _ -> "item"
+    end
   end
 
-  defp build_simple_parameter(value, _type) do
-    to_string(value)
-  end
+  defp array_item_name(_type, _types), do: "item"
 
-  defp build_complex_parameter(value, _type) when is_map(value) do
-    # Convert map to XML elements - avoid recursive calls that cause string conversion issues
-    Enum.reduce(value, %{}, fn {key, val}, acc ->
-      Map.put(acc, to_string(key), to_string(val))
-    end)
-  end
-
-  defp build_complex_parameter(value, _type) do
-    %{"#text" => to_string(value)}
-  end
-
-  defp build_array_parameter(values, _type) when is_list(values) do
-    Enum.map(values, fn value ->
-      build_parameter_element("item", value, "")
-    end)
-  end
-
-  defp build_array_parameter(value, type) do
-    build_simple_parameter(value, type)
-  end
+  defp optional_part?(part), do: part[:min_occurs] in ["0", 0]
 
   defp classify_parameter_type(type) do
     cond do

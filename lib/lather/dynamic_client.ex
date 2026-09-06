@@ -343,7 +343,8 @@ defmodule Lather.DynamicClient do
       style: get_operation_style(operation_info),
       use: get_operation_use(operation_info),
       version: soap_version,
-      namespace_prefix: Keyword.get(options, :namespace_prefix)
+      namespace_prefix: Keyword.get(options, :namespace_prefix),
+      types: Map.get(service_info, :types, [])
     ]
 
     Builder.build_request(operation_info, parameters, request_options)

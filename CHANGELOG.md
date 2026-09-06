@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every `POST` is a SOAP call and every `GET` serves the WSDL, so paths that
   happen to contain "wsdl" no longer get a 405 (#14). Transport-level faults
   are built with `ResponseBuilder.build_fault/1` so fault strings are escaped.
+- `Lather.Operation.Builder` (used by `Lather.DynamicClient.call/4`) serialises
+  parameters with `Lather.Soap.Body.serialize_params/1`: nested maps no longer
+  raise, lists render as repeated elements instead of being concatenated, and
+  dates/booleans are rendered as XML literals. Array-typed parts wrap list values
+  in the array's item element (from WSDL `:types` when available, else `item`)
+  (#17).
+- `Lather.Operation.Builder.validate_parameters/2` no longer requires parts the
+  WSDL marks `minOccurs="0"`, matching `get_operation_metadata/1` (#18).
 - `Lather.Xml.Builder`: a `parse/1` → `build_fragment/1` round-trip no longer
   collapses repeated elements into one element with joined text (#9).
 - `Lather.Xml.Builder`: an element can now carry attributes and repeated child

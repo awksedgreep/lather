@@ -463,4 +463,157 @@ defmodule Lather.Operation.BuilderTest do
       assert parsed.params["divisor"] == "4"
     end
   end
+
+  describe "build_request/3 - complex and array parameters (issue #17)" do
+    @create_op %{
+      name: "Create",
+      input: %{message: "CreateReq", parts: [%{name: "order", type: "tns:Order"}]},
+      output: %{message: "CreateResp", parts: []},
+      soap_action: ""
+    }
+
+    test "nested maps become nested elements instead of raising" do
+      params = %{"order" => %{"customer" => %{"name" => "A", "address" => %{"city" => "X"}}}}
+      {:ok, xml} = Builder.build_request(@create_op, params, namespace: "http://x")
+      {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+
+      assert get_in(parsed, ["soap:Envelope", "soap:Body", "Create", "order", "customer"]) ==
+               %{"name" => "A", "address" => %{"city" => "X"}}
+    end
+
+    test "lists inside complex types render as repeated siblings" do
+      params = %{
+        "order" => %{"tags" => ["a", "b"], "lines" => [%{"sku" => "1"}, %{"sku" => "2"}]}
+      }
+
+      {:ok, xml} = Builder.build_request(@create_op, params, namespace: "http://x")
+
+      assert xml =~ "<tags>a</tags>"
+      assert xml =~ "<tags>b</tags>"
+      refute xml =~ "<tags>ab</tags>"
+
+      {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+      order = get_in(parsed, ["soap:Envelope", "soap:Body", "Create", "order"])
+      assert order["tags"] == ["a", "b"]
+      assert order["lines"] == [%{"sku" => "1"}, %{"sku" => "2"}]
+    end
+
+    test "dates, booleans and special characters are serialised" do
+      params = %{"order" => %{"when" => ~D[2026-01-02], "rush" => true, "note" => "a < b & c"}}
+      {:ok, xml} = Builder.build_request(@create_op, params, namespace: "http://x")
+
+      assert xml =~ "<when>2026-01-02</when>"
+      assert xml =~ "<rush>true</rush>"
+      {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+
+      assert get_in(parsed, ["soap:Envelope", "soap:Body", "Create", "order", "note"]) ==
+               "a < b & c"
+    end
+
+    @array_op %{
+      name: "Tag",
+      input: %{message: "TagReq", parts: [%{name: "names", type: "tns:ArrayOfString"}]},
+      output: %{message: "TagResp", parts: []},
+      soap_action: ""
+    }
+
+    test "array parts wrap items in <item> by default" do
+      {:ok, xml} =
+        Builder.build_request(@array_op, %{"names" => ["A", "B"]}, namespace: "http://x")
+
+      {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+
+      assert get_in(parsed, ["soap:Envelope", "soap:Body", "Tag", "names"]) == %{
+               "item" => ["A", "B"]
+             }
+    end
+
+    test "array parts use the repeating element name from WSDL types when given" do
+      types = [
+        %{
+          category: :complex_type,
+          name: "ArrayOfString",
+          elements: [
+            %{name: "string", type: "xsd:string", min_occurs: "0", max_occurs: "unbounded"}
+          ]
+        }
+      ]
+
+      {:ok, xml} =
+        Builder.build_request(@array_op, %{"names" => ["A", "B"]},
+          namespace: "http://x",
+          types: types
+        )
+
+      {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+
+      assert get_in(parsed, ["soap:Envelope", "soap:Body", "Tag", "names"]) == %{
+               "string" => ["A", "B"]
+             }
+    end
+
+    test "rpc/encoded array parts are not wrapped in a #text element" do
+      op =
+        Map.merge(@array_op, %{
+          style: :rpc,
+          input: %{
+            message: "TagReq",
+            use: :encoded,
+            parts: [%{name: "names", type: "xsd:string[]"}]
+          }
+        })
+
+      {:ok, xml} = Builder.build_request(op, %{"names" => ["A", "B"]}, namespace: "http://x")
+
+      assert xml =~ "<item>A</item>"
+      assert xml =~ "<item>B</item>"
+      refute xml =~ "#text"
+    end
+
+    test "element-based parts accept scalar values" do
+      op = %{
+        name: "Ping",
+        input: %{
+          message: "PingReq",
+          parts: [%{name: "body", type: "tns:PingRequest", element: "tns:PingRequest"}]
+        },
+        output: %{message: "PingResp", parts: []},
+        soap_action: ""
+      }
+
+      {:ok, xml} = Builder.build_request(op, %{"body" => "hello"}, namespace: "http://x")
+      assert xml =~ ~s(<PingRequest xmlns="http://x">hello</PingRequest>)
+    end
+  end
+
+  describe "validate_parameters/2 - optional parts (issue #18)" do
+    @opt_op %{
+      name: "Get",
+      input: %{
+        message: "GetReq",
+        parts: [
+          %{name: "id", type: "xsd:string"},
+          %{name: "opt", type: "xsd:string", min_occurs: "0"}
+        ]
+      },
+      output: %{message: "GetResp", parts: []},
+      soap_action: "",
+      documentation: nil
+    }
+
+    test "parts with min_occurs 0 may be omitted" do
+      assert :ok = Builder.validate_parameters(@opt_op, %{"id" => "1"})
+    end
+
+    test "parts without min_occurs are still required" do
+      assert {:error, %{reason: :missing_required_parameter, field: "id"}} =
+               Builder.validate_parameters(@opt_op, %{"opt" => "x"})
+    end
+
+    test "validation agrees with get_operation_metadata/1" do
+      meta = Builder.get_operation_metadata(@opt_op)
+      assert meta.required_parameters == ["id"]
+      assert meta.optional_parameters == ["opt"]
+    end
+  end
 end
