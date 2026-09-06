@@ -182,4 +182,53 @@ defmodule Lather.Server.HandlerTest do
       assert xml =~ "Invalid s: expected a string value"
     end
   end
+
+  describe "SOAP 1.2 requests (issue #22)" do
+    @soap12_headers [{"content-type", "application/soap+xml; charset=utf-8"}]
+
+    defp envelope12(inner) do
+      ~s(<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body>#{inner}</env:Body></env:Envelope>)
+    end
+
+    test "a SOAP 1.2 request gets a SOAP 1.2 envelope and content type" do
+      body = envelope12("<Echo><message>hi</message></Echo>")
+
+      assert {:ok, 200, headers, xml} =
+               Handler.handle_request("POST", "/soap", @soap12_headers, body, TestService)
+
+      assert {"content-type", "application/soap+xml"} in headers
+      assert xml =~ ~s(xmlns:soap="http://www.w3.org/2003/05/soap-envelope")
+      assert xml =~ "<EchoResponse>"
+    end
+
+    test "faults for SOAP 1.2 requests use Code/Reason" do
+      body = envelope12("<Nope/>")
+
+      assert {:error, 500, headers, xml} =
+               Handler.handle_request("POST", "/soap", @soap12_headers, body, TestService)
+
+      assert {"content-type", "application/soap+xml"} in headers
+      assert xml =~ "<soap:Value>soap:Sender</soap:Value>"
+      assert xml =~ "Unknown operation: Nope"
+      refute xml =~ "faultcode"
+    end
+
+    test "parse errors use the Content-Type hint for the fault version" do
+      assert {:error, 400, headers, xml} =
+               Handler.handle_request("POST", "/soap", @soap12_headers, "<not xml", TestService)
+
+      assert {"content-type", "application/soap+xml"} in headers
+      assert xml =~ "soap:Reason"
+    end
+
+    test "SOAP 1.1 requests still get SOAP 1.1 responses" do
+      body = envelope("<Echo><message>hi</message></Echo>")
+
+      assert {:ok, 200, headers, xml} =
+               Handler.handle_request("POST", "/soap", @headers, body, TestService)
+
+      assert {"content-type", "text/xml"} in headers
+      assert xml =~ ~s(xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/")
+    end
+  end
 end

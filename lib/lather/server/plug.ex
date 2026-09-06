@@ -73,7 +73,7 @@ defmodule Lather.Server.Plug do
   def call(conn, _config) do
     conn
     |> put_resp_content_type("text/xml")
-    |> send_resp(405, soap_fault_xml("Client", "Method not allowed"))
+    |> send_resp(405, fault_xml("Client", "Method not allowed"))
   end
 
   # Handle WSDL generation requests
@@ -91,56 +91,62 @@ defmodule Lather.Server.Plug do
 
         conn
         |> put_resp_content_type("text/xml")
-        |> send_resp(500, soap_fault_xml("Server", "WSDL generation failed"))
+        |> send_resp(500, fault_xml("Server", "WSDL generation failed"))
     end
   end
 
-  # Handle SOAP operation requests
+  # Handle SOAP operation requests. The response uses the SOAP version of
+  # the request envelope; errors raised before the envelope is parsed use
+  # the Content-Type header as a hint.
   defp handle_soap_request(conn, config) do
+    hint = RequestParser.soap_version_from_headers(conn.req_headers)
+
     with {:ok, body} <- read_full_body(conn, config.max_body_size),
-         {:ok, parsed_request} <- RequestParser.parse(body),
-         {:ok, authenticated_conn} <- authenticate(conn, config),
-         {:ok, result, operation} <- dispatch_operation(parsed_request, config) do
-      response_xml = ResponseBuilder.build_response(result, operation)
- 
-      authenticated_conn
-      |> put_resp_content_type("text/xml")
-      |> send_resp(200, response_xml)
+         {:ok, parsed_request} <- RequestParser.parse(body) do
+      dispatch_soap_request(conn, config, parsed_request)
     else
       {:error, :body_too_large} ->
-        conn
-        |> put_resp_content_type("text/xml")
-        |> send_resp(413, soap_fault_xml("Client", "Request body too large"))
- 
+        send_fault(conn, 413, "Client", "Request body too large", hint)
+
+      {:error, {:parse_error, reason}} ->
+        Logger.warning("SOAP parse error: #{inspect(reason)}")
+        send_fault(conn, 400, "Client", "Invalid SOAP request", hint)
+
+      {:error, reason} ->
+        Logger.error("SOAP request failed: #{inspect(reason)}")
+        send_fault(conn, 500, "Server", "Internal server error", hint)
+    end
+  end
+
+  defp dispatch_soap_request(conn, config, parsed_request) do
+    version = parsed_request.soap_version
+
+    with {:ok, authenticated_conn} <- authenticate(conn, config),
+         {:ok, result, operation} <- dispatch_operation(parsed_request, config) do
+      response_xml = ResponseBuilder.build_response(result, operation, soap_version: version)
+
+      authenticated_conn
+      |> put_resp_content_type(ResponseBuilder.content_type(version))
+      |> send_resp(200, response_xml)
+    else
       {:error, :authentication_failed} ->
         conn
         |> put_resp_header("www-authenticate", "Basic realm=\"SOAP Service\"")
-        |> put_resp_content_type("text/xml")
-        |> send_resp(401, soap_fault_xml("Client", "Authentication required"))
- 
+        |> put_resp_content_type(ResponseBuilder.content_type(version))
+        |> send_resp(401, fault_xml("Client", "Authentication required", version))
+
       {:error, {:soap_fault, fault}} ->
-        fault_xml = ResponseBuilder.build_fault(fault)
- 
         conn
-        |> put_resp_content_type("text/xml")
-        |> send_resp(500, fault_xml)
- 
-      {:error, {:parse_error, reason}} ->
-        Logger.warning("SOAP parse error: #{inspect(reason)}")
- 
-        conn
-        |> put_resp_content_type("text/xml")
-        |> send_resp(400, soap_fault_xml("Client", "Invalid SOAP request"))
- 
-      {:error, reason} ->
-        Logger.error("SOAP request failed: #{inspect(reason)}")
- 
-        conn
-        |> put_resp_content_type("text/xml")
-        |> send_resp(500, soap_fault_xml("Server", "Internal server error"))
+        |> put_resp_content_type(ResponseBuilder.content_type(version))
+        |> send_resp(500, ResponseBuilder.build_fault(fault, soap_version: version))
     end
   end
 
+  defp send_fault(conn, status, code, message, version) do
+    conn
+    |> put_resp_content_type(ResponseBuilder.content_type(version))
+    |> send_resp(status, fault_xml(code, message, version))
+  end
 
   # Read the complete request body
   defp read_full_body(conn, max_size, body \\ "") do
@@ -150,21 +156,24 @@ defmodule Lather.Server.Plug do
       case Plug.Conn.read_body(conn) do
         {:ok, chunk, _conn} ->
           new_body = body <> chunk
+
           if byte_size(new_body) > max_size do
             {:error, :body_too_large}
           else
             {:ok, new_body}
           end
- 
+
         {:more, chunk, conn} ->
           new_body = body <> chunk
+
           if byte_size(new_body) > max_size do
             {:error, :body_too_large}
           else
             read_full_body(conn, max_size, new_body)
           end
- 
-        {:error, reason} -> {:error, reason}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     end
   end
@@ -280,18 +289,10 @@ defmodule Lather.Server.Plug do
     "#{scheme}://#{host}#{port}#{path}"
   end
 
-  # Generate a simple SOAP fault XML
-  defp soap_fault_xml(fault_code, fault_string) do
-    """
-    <?xml version="1.0" encoding="UTF-8"?>
-    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-      <soap:Body>
-        <soap:Fault>
-          <faultcode>#{fault_code}</faultcode>
-          <faultstring>#{fault_string}</faultstring>
-        </soap:Fault>
-      </soap:Body>
-    </soap:Envelope>
-    """
+  # Fault XML for transport-level errors (escaped by ResponseBuilder).
+  defp fault_xml(fault_code, fault_string, version \\ :v1_1) do
+    ResponseBuilder.build_fault(%{fault_code: fault_code, fault_string: fault_string},
+      soap_version: version
+    )
   end
 end

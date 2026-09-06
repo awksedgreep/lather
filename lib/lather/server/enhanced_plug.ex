@@ -139,8 +139,12 @@ defmodule Lather.Server.EnhancedPlug do
       Map.has_key?(conn.query_params, "op") ->
         {:operation_form, conn.query_params["op"]}
 
-      # Check path for protocol version
+      # Check path or Content-Type for protocol version
       String.contains?(conn.request_path, "/v1.2") ->
+        :soap_1_2
+
+      conn.method == "POST" and
+          RequestParser.soap_version_from_headers(conn.req_headers) == :v1_2 ->
         :soap_1_2
 
       String.contains?(conn.request_path, "/api") ->
@@ -259,49 +263,52 @@ defmodule Lather.Server.EnhancedPlug do
     redirect_to_wsdl(conn)
   end
 
-  # Handle SOAP requests (1.1 and 1.2)
-  defp handle_soap_request(conn, config, soap_version) do
+  # Handle SOAP requests (1.1 and 1.2). `hint` comes from the path /
+  # Content-Type; once the envelope is parsed its namespace is
+  # authoritative for the response version.
+  defp handle_soap_request(conn, config, hint) do
     with {:ok, body} <- read_full_body(conn, config.max_body_size),
-         {:ok, parsed_request} <- RequestParser.parse(body),
-         {:ok, operation_name} <- extract_operation_name(parsed_request),
+         {:ok, parsed_request} <- RequestParser.parse(body) do
+      dispatch_soap_request(conn, config, parsed_request)
+    else
+      {:error, :body_too_large} ->
+        send_fault(conn, 413, "Client", "Request body too large", hint)
+
+      {:error, reason} ->
+        Logger.warning("SOAP request failed: #{inspect(reason)}")
+        send_fault(conn, 400, "Client", "Invalid SOAP request", hint)
+    end
+  end
+
+  defp dispatch_soap_request(conn, config, parsed_request) do
+    version = parsed_request.soap_version
+
+    with {:ok, operation_name} <- extract_operation_name(parsed_request),
          {:ok, operation_info} <- get_operation_info(config.service, operation_name),
          {:ok, validated_params} <-
            validate_and_extract_params(parsed_request, operation_info, config),
          {:ok, result} <- call_operation(config.service, operation_name, validated_params) do
-      # Format and send SOAP response
-      response_xml = ResponseBuilder.build_response(result, operation_info)
-
-      content_type =
-        case soap_version do
-          :v1_1 -> "text/xml; charset=utf-8"
-          :v1_2 -> "application/soap+xml; charset=utf-8"
-        end
+      response_xml = ResponseBuilder.build_response(result, operation_info, soap_version: version)
 
       conn
-      |> put_resp_content_type(content_type)
+      |> put_resp_content_type(ResponseBuilder.content_type(version))
       |> send_resp(200, response_xml)
     else
-      {:error, :body_too_large} ->
-        conn
-        |> put_resp_content_type("text/xml; charset=utf-8")
-        |> send_resp(413, soap_fault_xml("Client", "Request body too large"))
-
       {:error, {:soap_fault, fault}} ->
-        fault_xml = ResponseBuilder.build_fault(fault)
-
         conn
-        |> put_resp_content_type("text/xml; charset=utf-8")
-        |> send_resp(500, fault_xml)
+        |> put_resp_content_type(ResponseBuilder.content_type(version))
+        |> send_resp(500, ResponseBuilder.build_fault(fault, soap_version: version))
 
       {:error, reason} ->
         Logger.warning("SOAP request failed: #{inspect(reason)}")
-
-        fault_xml = soap_fault_xml("Client", "Invalid SOAP request")
-
-        conn
-        |> put_resp_content_type("text/xml; charset=utf-8")
-        |> send_resp(400, fault_xml)
+        send_fault(conn, 400, "Client", "Invalid SOAP request", version)
     end
+  end
+
+  defp send_fault(conn, status, code, message, version) do
+    conn
+    |> put_resp_content_type(ResponseBuilder.content_type(version))
+    |> send_resp(status, soap_fault_xml(code, message, version))
   end
 
   # Handle JSON/REST requests
@@ -548,18 +555,10 @@ defmodule Lather.Server.EnhancedPlug do
     end
   end
 
-  defp soap_fault_xml(fault_code, fault_string) do
-    """
-    <?xml version="1.0" encoding="utf-8"?>
-    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-    <soap:Body>
-    <soap:Fault>
-    <faultcode>#{fault_code}</faultcode>
-    <faultstring>#{fault_string}</faultstring>
-    </soap:Fault>
-    </soap:Body>
-    </soap:Envelope>
-    """
+  defp soap_fault_xml(fault_code, fault_string, version \\ :v1_1) do
+    ResponseBuilder.build_fault(%{fault_code: fault_code, fault_string: fault_string},
+      soap_version: version
+    )
   end
 
   defp generate_error_page(message) do

@@ -50,6 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#19).
 - `Lather.Auth.Basic.decode/1` accepts the `Basic` scheme case-insensitively and
   tolerates extra whitespace, per RFC 7235 (#21).
+- SOAP 1.2 requests now get SOAP 1.2 responses from `Lather.Server.Plug`,
+  `Handler` and `EnhancedPlug`: the envelope namespace, `Code/Value` +
+  `Reason/Text` fault structure and `application/soap+xml` content type follow
+  the version of the request envelope (`RequestParser` now reports
+  `:soap_version`). `ResponseBuilder.build_response/3` and `build_fault/2` take
+  a `:soap_version` option (#22).
 - `Lather.Auth.WSSecurity.username_token/3` with `password_type: :digest` always
   produces a digest (nonce and created are optional inputs to it) instead of
   silently falling back to `PasswordText`; an unknown `password_type` raises (#20).

@@ -61,7 +61,7 @@ defmodule Lather.Server.Handler do
   `POST` is treated as a SOAP call, regardless of path — matching
   `Lather.Server.Plug`. Other methods get a 405 fault.
   """
-  def handle_request(method, _path, _headers, body, service, opts \\ []) do
+  def handle_request(method, _path, headers, body, service, opts \\ []) do
     unless function_exported?(service, :__soap_service__, 0) do
       raise ArgumentError,
             "#{service} is not a valid SOAP service module. Did you forget to `use Lather.Server`?"
@@ -80,7 +80,7 @@ defmodule Lather.Server.Handler do
         handle_wsdl_request(config)
 
       "POST" ->
-        handle_soap_request(body, config)
+        handle_soap_request(body, headers, config)
 
       _ ->
         {:error, 405, [{"content-type", "text/xml"}], fault_xml("Client", "Method not allowed")}
@@ -103,33 +103,48 @@ defmodule Lather.Server.Handler do
     end
   end
 
-  # Handle SOAP operation requests
-  defp handle_soap_request(body, config) do
+  # Handle SOAP operation requests. The response uses the SOAP version of
+  # the request envelope; errors raised before the envelope is parsed use
+  # the Content-Type header as a hint.
+  defp handle_soap_request(body, headers, config) do
+    hint = RequestParser.soap_version_from_headers(headers)
     body_size = if is_binary(body), do: byte_size(body), else: 0
 
     if body_size > config.max_body_size do
-      {:error, 413, [{"content-type", "text/xml"}], fault_xml("Client", "Request body too large")}
+      fault_response(413, "Client", "Request body too large", hint)
     else
-      with {:ok, parsed_request} <- RequestParser.parse(body),
-           {:ok, result, operation} <- dispatch_operation(parsed_request, config) do
-        # Pass the operation *definition* so ResponseBuilder recognises the
-        # "<Op>Response" wrapper format_response/2 already applied (#13).
-        response_xml = ResponseBuilder.build_response(result, operation)
-        {:ok, 200, [{"content-type", "text/xml"}], response_xml}
-      else
-        {:error, {:soap_fault, fault}} ->
-          fault_xml = ResponseBuilder.build_fault(fault)
-          {:error, 500, [{"content-type", "text/xml"}], fault_xml}
+      case RequestParser.parse(body) do
+        {:ok, parsed_request} ->
+          dispatch_soap_request(parsed_request, config)
 
         {:error, {:parse_error, reason}} ->
           # `reason` is a string for structural problems and a nested
           # tuple/exception for malformed XML; never interpolate it (#12).
           Logger.warning("SOAP parse error: #{inspect(reason)}")
-
-          {:error, 400, [{"content-type", "text/xml"}],
-           fault_xml("Client", parse_error_message(reason))}
+          fault_response(400, "Client", parse_error_message(reason), hint)
       end
     end
+  end
+
+  defp dispatch_soap_request(parsed_request, config) do
+    version = parsed_request.soap_version
+
+    case dispatch_operation(parsed_request, config) do
+      {:ok, result, operation} ->
+        # Pass the operation *definition* so ResponseBuilder recognises the
+        # "<Op>Response" wrapper format_response/2 already applied (#13).
+        response_xml = ResponseBuilder.build_response(result, operation, soap_version: version)
+        {:ok, 200, [{"content-type", ResponseBuilder.content_type(version)}], response_xml}
+
+      {:error, {:soap_fault, fault}} ->
+        fault_xml = ResponseBuilder.build_fault(fault, soap_version: version)
+        {:error, 500, [{"content-type", ResponseBuilder.content_type(version)}], fault_xml}
+    end
+  end
+
+  defp fault_response(status, code, message, version) do
+    {:error, status, [{"content-type", ResponseBuilder.content_type(version)}],
+     fault_xml(code, message, version)}
   end
 
   defp parse_error_message(reason) when is_binary(reason), do: "Invalid SOAP request: #{reason}"
@@ -220,7 +235,9 @@ defmodule Lather.Server.Handler do
 
   # Fault XML for transport-level errors; goes through ResponseBuilder so
   # the fault string is escaped.
-  defp fault_xml(fault_code, fault_string) do
-    ResponseBuilder.build_fault(%{fault_code: fault_code, fault_string: fault_string})
+  defp fault_xml(fault_code, fault_string, version \\ :v1_1) do
+    ResponseBuilder.build_fault(%{fault_code: fault_code, fault_string: fault_string},
+      soap_version: version
+    )
   end
 end

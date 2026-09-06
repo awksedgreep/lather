@@ -10,19 +10,41 @@ defmodule Lather.Server.RequestParser do
   Parses a SOAP request XML and extracts the operation name and parameters.
 
   Returns:
-  - `{:ok, %{operation: operation_name, params: params_map}}`
+  - `{:ok, %{operation: operation_name, params: params_map, soap_version: :v1_1 | :v1_2}}`
   - `{:error, {:parse_error, reason}}`
+
+  `soap_version` is detected from the namespace bound to the Envelope
+  element (SOAP 1.1 when it cannot be determined).
   """
   def parse(soap_xml) do
     with {:ok, parsed} <- Parser.parse(soap_xml),
          {:ok, envelope} <- extract_envelope(parsed),
          {:ok, body} <- extract_body(envelope),
          {:ok, operation_data} <- extract_operation(body) do
-      {:ok, operation_data}
+      {:ok, Map.put(operation_data, :soap_version, Elements.soap_version(parsed))}
     else
       {:error, reason} -> {:error, {:parse_error, reason}}
     end
   end
+
+  @doc """
+  Guesses the SOAP version from request headers (a list of
+  `{name, value}` pairs): `application/soap+xml` means SOAP 1.2. Used for
+  error responses produced before the envelope could be parsed.
+  """
+  @spec soap_version_from_headers([{String.t(), String.t()}]) :: :v1_1 | :v1_2
+  def soap_version_from_headers(headers) when is_list(headers) do
+    content_type =
+      Enum.find_value(headers, "", fn {name, value} ->
+        if String.downcase(to_string(name)) == "content-type", do: to_string(value)
+      end)
+
+    if String.starts_with?(String.downcase(content_type), "application/soap+xml"),
+      do: :v1_2,
+      else: :v1_1
+  end
+
+  def soap_version_from_headers(_), do: :v1_1
 
   # Extract SOAP envelope from parsed XML. Element names are matched by
   # local name so any prefix (soap:, soapenv:, SOAP-ENV:, s:, none) works.

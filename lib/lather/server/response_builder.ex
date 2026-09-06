@@ -1,73 +1,136 @@
 defmodule Lather.Server.ResponseBuilder do
   @moduledoc """
   Builds SOAP response XML from operation results.
+
+  Responses and faults can be rendered for SOAP 1.1 (default) or SOAP 1.2
+  via the `:soap_version` option; SOAP 1.2 uses the
+  `http://www.w3.org/2003/05/soap-envelope` namespace and the
+  `Code/Value` + `Reason/Text` fault structure.
   """
 
+  alias Lather.Soap.Elements
   alias Lather.Xml.Builder
+
+  @type soap_version :: :v1_1 | :v1_2
+
+  @doc """
+  The MIME type for a response of the given SOAP version
+  (`text/xml` for 1.1, `application/soap+xml` for 1.2).
+  """
+  @spec content_type(soap_version()) :: String.t()
+  def content_type(:v1_2), do: "application/soap+xml"
+  def content_type(_), do: "text/xml"
 
   @doc """
   Builds a SOAP response envelope containing the operation result.
+
+  ## Options
+
+  * `:soap_version` - `:v1_1` (default) or `:v1_2`
   """
-  def build_response(result, operation) do
+  def build_response(result, operation, opts \\ []) do
+    version = Keyword.get(opts, :soap_version, :v1_1)
     response_body = build_response_body(result, operation)
 
-    envelope = %{
-      "soap:Envelope" => %{
-        "@xmlns:soap" => "http://schemas.xmlsoap.org/soap/envelope/",
-        "soap:Body" => response_body
-      }
-    }
-
-    case Builder.build_fragment(envelope) do
+    case Builder.build_fragment(envelope(response_body, version)) do
       {:ok, xml} -> "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" <> xml
-      {:error, _reason} -> build_error_response("Failed to build response XML")
+      {:error, _reason} -> build_error_response("Failed to build response XML", version)
     end
   end
 
   @doc """
   Builds a SOAP fault response.
+
+  The fault map may carry `:fault_code`, `:fault_string` and `:detail`
+  (atom or string keys). For SOAP 1.2 the 1.1 codes `Client`/`Server` are
+  mapped to `soap:Sender`/`soap:Receiver`.
+
+  ## Options
+
+  * `:soap_version` - `:v1_1` (default) or `:v1_2`
   """
-  def build_fault(nil) do
-    build_fault(%{fault_code: "Server", fault_string: "Internal error"})
+  def build_fault(fault, opts \\ [])
+
+  def build_fault(nil, opts) do
+    build_fault(%{fault_code: "Server", fault_string: "Internal error"}, opts)
   end
 
-  def build_fault(fault) when is_map(fault) do
+  def build_fault(fault, opts) when is_map(fault) do
+    version = Keyword.get(opts, :soap_version, :v1_1)
     fault_code = Map.get(fault, :fault_code) || Map.get(fault, "fault_code", "Server")
 
     fault_string =
       Map.get(fault, :fault_string) || Map.get(fault, "fault_string", "Internal error")
 
-    fault_body = %{
-      "soap:Fault" => %{
-        "faultcode" => fault_code,
-        "faultstring" => fault_string
-      }
-    }
-
     detail = Map.get(fault, :detail) || Map.get(fault, "detail")
+    detail = if detail && detail != %{}, do: format_response_data(detail), else: nil
 
-    fault_body =
-      if detail && detail != %{} do
-        put_in(fault_body["soap:Fault"]["detail"], detail)
-      else
-        fault_body
-      end
+    fault_body = %{"soap:Fault" => fault_element(version, fault_code, fault_string, detail)}
 
-    envelope = %{
+    case Builder.build_fragment(envelope(fault_body, version)) do
+      {:ok, xml} -> "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" <> xml
+      {:error, _reason} -> build_error_response("Failed to build fault XML", version)
+    end
+  end
+
+  defp envelope(body, version) do
+    %{
       "soap:Envelope" => %{
-        "@xmlns:soap" => "http://schemas.xmlsoap.org/soap/envelope/",
-        "soap:Body" => fault_body
+        "@xmlns:soap" => namespace(version),
+        "soap:Body" => body
       }
     }
+  end
 
-    case Builder.build_fragment(envelope) do
-      {:ok, xml} -> "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" <> xml
-      {:error, _reason} -> build_error_response("Failed to build fault XML")
+  defp namespace(:v1_2), do: Elements.soap_1_2_namespace()
+  defp namespace(_), do: Elements.soap_1_1_namespace()
+
+  defp fault_element(:v1_2, code, string, detail) do
+    %{
+      "soap:Code" => %{"soap:Value" => soap_1_2_code(code)},
+      "soap:Reason" => %{"soap:Text" => %{"@xml:lang" => "en", "#text" => string}}
+    }
+    |> maybe_put("soap:Detail", detail)
+  end
+
+  defp fault_element(_v1_1, code, string, detail) do
+    %{"faultcode" => code, "faultstring" => string}
+    |> maybe_put("detail", detail)
+  end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  # SOAP 1.2 fault codes are QNames in the envelope namespace.
+  defp soap_1_2_code(code) do
+    code = to_string(code)
+
+    cond do
+      String.contains?(code, ":") -> code
+      String.starts_with?(code, "Client") -> "soap:Sender"
+      String.starts_with?(code, "Server") -> "soap:Receiver"
+      code in ["VersionMismatch", "MustUnderstand", "DataEncodingUnknown"] -> "soap:" <> code
+      code in ["Sender", "Receiver"] -> "soap:" <> code
+      true -> "soap:Receiver"
     end
   end
 
   # Build a simple error response when XML building fails
-  defp build_error_response(message) do
+  defp build_error_response(message, :v1_2) do
+    """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+      <soap:Body>
+        <soap:Fault>
+          <soap:Code><soap:Value>soap:Receiver</soap:Value></soap:Code>
+          <soap:Reason><soap:Text xml:lang="en">#{message}</soap:Text></soap:Reason>
+        </soap:Fault>
+      </soap:Body>
+    </soap:Envelope>
+    """
+  end
+
+  defp build_error_response(message, _v1_1) do
     """
     <?xml version="1.0" encoding="UTF-8"?>
     <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">

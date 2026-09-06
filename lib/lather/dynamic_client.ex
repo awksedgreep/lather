@@ -435,11 +435,25 @@ defmodule Lather.DynamicClient do
     fault = Elements.get_in(parsed_response, ["Envelope", "Body", "Fault"])
 
     if fault do
+      # SOAP 1.1 (faultcode/faultstring) and 1.2 (Code/Value, Reason/Text)
       fault_info = %{
-        fault_code: extract_text_content(Elements.get(fault, "faultcode") || ""),
-        fault_string: extract_text_content(Elements.get(fault, "faultstring") || ""),
-        fault_actor: extract_text_content(Elements.get(fault, "faultactor") || ""),
-        detail: extract_text_content(Elements.get(fault, "detail") || "")
+        fault_code:
+          extract_text_content(
+            Elements.get(fault, "faultcode") || Elements.get_in(fault, ["Code", "Value"]) || ""
+          ),
+        fault_string:
+          extract_text_content(
+            Elements.get(fault, "faultstring") || Elements.get_in(fault, ["Reason", "Text"]) ||
+              ""
+          ),
+        fault_actor:
+          extract_text_content(
+            Elements.get(fault, "faultactor") || Elements.get(fault, "Role") || ""
+          ),
+        detail:
+          extract_text_content(
+            Elements.get(fault, "detail") || Elements.get(fault, "Detail") || ""
+          )
       }
 
       {:ok, fault_info}

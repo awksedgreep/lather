@@ -615,4 +615,58 @@ defmodule Lather.Server.ResponseBuilderTest do
       assert String.contains?(xml, "<dates>2026-01-03</dates>")
     end
   end
+
+  describe "SOAP 1.2 responses (issue #22)" do
+    test "build_response/3 uses the SOAP 1.2 namespace when asked" do
+      xml = ResponseBuilder.build_response(%{"r" => "1"}, %{name: "Op"}, soap_version: :v1_2)
+      assert xml =~ ~s(xmlns:soap="http://www.w3.org/2003/05/soap-envelope")
+      refute xml =~ "schemas.xmlsoap.org"
+      assert xml =~ "<OpResponse>"
+    end
+
+    test "build_response/2 defaults to SOAP 1.1" do
+      xml = ResponseBuilder.build_response(%{"r" => "1"}, %{name: "Op"})
+      assert xml =~ ~s(xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/")
+    end
+
+    test "build_fault/2 renders the SOAP 1.2 Code/Reason structure" do
+      xml =
+        ResponseBuilder.build_fault(
+          %{fault_code: "Client", fault_string: "bad <input>", detail: %{"field" => "x"}},
+          soap_version: :v1_2
+        )
+
+      {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+      fault = get_in(parsed, ["soap:Envelope", "soap:Body", "soap:Fault"])
+      assert fault["soap:Code"]["soap:Value"] == "soap:Sender"
+      assert fault["soap:Reason"]["soap:Text"]["#text"] == "bad <input>"
+      assert fault["soap:Reason"]["soap:Text"]["@xml:lang"] == "en"
+      assert fault["soap:Detail"] == %{"field" => "x"}
+      refute xml =~ "faultcode"
+
+      # the client-side parser understands it
+      assert {:error,
+              {:soap_fault, %{code: "soap:Sender", string: "bad <input>", soap_version: :v1_2}}} =
+               Lather.Soap.Envelope.parse_response(%{status: 500, body: xml})
+    end
+
+    test "SOAP 1.2 fault codes are mapped from 1.1 names" do
+      for {code, expected} <- [
+            {"Server", "soap:Receiver"},
+            {"Client.Auth", "soap:Sender"},
+            {"VersionMismatch", "soap:VersionMismatch"},
+            {"ns:Custom", "ns:Custom"}
+          ] do
+        xml =
+          ResponseBuilder.build_fault(%{fault_code: code, fault_string: "x"}, soap_version: :v1_2)
+
+        assert xml =~ "<soap:Value>#{expected}</soap:Value>", code
+      end
+    end
+
+    test "content_type/1" do
+      assert ResponseBuilder.content_type(:v1_1) == "text/xml"
+      assert ResponseBuilder.content_type(:v1_2) == "application/soap+xml"
+    end
+  end
 end
