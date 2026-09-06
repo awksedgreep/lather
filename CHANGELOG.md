@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-09-05
 
 ### Added
 - `Lather.Soap.Elements`: prefix-agnostic lookups (`get/2`, `get_in/2`,
@@ -328,7 +328,7 @@ forms = Lather.Server.FormGenerator.generate_service_overview(service_info, base
 - HTTP and HTTPS transport
 - Works with any SOAP service (tested with multiple public APIs)
 
-## [Unreleased]
+## [1.1.0] - 2026-09-05
 
 ### Planned for v1.0.0
 - SOAP 1.2 support
