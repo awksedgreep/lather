@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- `Lather.Xml.Builder`: a bare list value under a key now renders as repeated
+  sibling elements (`%{"Item" => ["1", "2"]}` → `<Item>1</Item><Item>2</Item>`),
+  mirroring how `Lather.Xml.Parser` represents repeated elements. Previously a
+  list rendered as a single element whose content was the joined items. A list
+  of `{key, value}` pairs keeps its ordered-children meaning (#9).
+
+### Fixed
+- `Lather.Xml.Builder`: a `parse/1` → `build_fragment/1` round-trip no longer
+  collapses repeated elements into one element with joined text (#9).
+- `Lather.Xml.Builder`: an element can now carry attributes and repeated child
+  siblings, e.g. `%{"@xsi:type" => "...", "string" => ["A", "B"]}`; `#content`
+  with `{tag, value}` pairs remains available for ordered children (#8).
+- `Lather.Xml.Builder`: mixed content (`#text` alongside child elements) emits a
+  text node instead of a literal `<#text>` element.
+- `Lather.Soap.Body.serialize_params/1` and
+  `Lather.Server.ResponseBuilder`: `DateTime`/`Date`/`Time` (and boolean)
+  clauses are ordered ahead of the generic map/atom clauses so date/time values
+  serialize to ISO 8601 instead of raising; regression tests added (#7).
+
 ## [1.0.49] - 2026-06-08
 
 ### Changed

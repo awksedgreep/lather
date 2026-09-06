@@ -752,4 +752,164 @@ defmodule Lather.Xml.BuilderTest do
       assert length(lines) >= 5
     end
   end
+
+  describe "Repeated elements from bare list values (issue #9)" do
+    test "list of strings renders as repeated sibling elements" do
+      {:ok, xml} = Builder.build_fragment(%{"Root" => %{"Item" => ["1", "2", "3"]}})
+
+      assert String.contains?(xml, "<Item>1</Item>")
+      assert String.contains?(xml, "<Item>2</Item>")
+      assert String.contains?(xml, "<Item>3</Item>")
+      assert length(Regex.scan(~r/<Item>/, xml)) == 3
+    end
+
+    test "list of maps renders as repeated sibling elements, not merged children" do
+      {:ok, xml} =
+        Builder.build_fragment(%{
+          "Root" => %{"P" => [%{"c" => "A"}, %{"c" => "B"}]}
+        })
+
+      assert length(Regex.scan(~r/<P>/, xml)) == 2
+      {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+      assert parsed == %{"Root" => %{"P" => [%{"c" => "A"}, %{"c" => "B"}]}}
+    end
+
+    test "list items may carry attributes" do
+      {:ok, xml} =
+        Builder.build_fragment(%{
+          "Root" => %{
+            "Item" => [
+              %{"@id" => "1", "#text" => "one"},
+              %{"@id" => "2", "#text" => "two"}
+            ]
+          }
+        })
+
+      assert String.contains?(xml, ~s(<Item id="1">one</Item>))
+      assert String.contains?(xml, ~s(<Item id="2">two</Item>))
+    end
+
+    test "empty list renders an empty element" do
+      {:ok, xml} = Builder.build_fragment(%{"items" => []})
+      assert String.contains?(xml, "<items/>")
+    end
+
+    test "parse -> build_fragment round-trip preserves repeated elements" do
+      original = "<Root><Item>1</Item><Item>2</Item><Item>3</Item></Root>"
+      {:ok, parsed} = Lather.Xml.Parser.parse(original)
+      assert parsed == %{"Root" => %{"Item" => ["1", "2", "3"]}}
+
+      {:ok, xml} = Builder.build_fragment(parsed)
+      {:ok, reparsed} = Lather.Xml.Parser.parse(xml)
+
+      assert reparsed == parsed
+    end
+
+    test "parse -> build round-trip preserves repeated complex elements" do
+      original =
+        "<ParameterList soap-enc:arrayType=\"cwmp:ParameterValueStruct[2]\" xmlns:soap-enc=\"http://schemas.xmlsoap.org/soap/encoding/\">" <>
+          "<ParameterValueStruct><Name>a</Name><Value>1</Value></ParameterValueStruct>" <>
+          "<ParameterValueStruct><Name>b</Name><Value>2</Value></ParameterValueStruct>" <>
+          "</ParameterList>"
+
+      {:ok, parsed} = Lather.Xml.Parser.parse(original)
+      {:ok, xml} = Builder.build_fragment(parsed)
+      {:ok, reparsed} = Lather.Xml.Parser.parse(xml)
+
+      assert reparsed == parsed
+      assert length(Regex.scan(~r/<ParameterValueStruct>/, xml)) == 2
+    end
+
+    test "ordered pair lists keep their attributes-plus-children meaning" do
+      {:ok, xml} =
+        Builder.build_fragment([
+          {"root", [{"@xmlns", "http://example.com"}, {"child", "v"}, {"rep", ["1", "2"]}]}
+        ])
+
+      assert String.contains?(xml, ~s(<root xmlns="http://example.com">))
+      assert String.contains?(xml, "<child>v</child>")
+      assert String.contains?(xml, "<rep>1</rep>")
+      assert String.contains?(xml, "<rep>2</rep>")
+      assert length(Regex.scan(~r/<root /, xml)) == 1
+    end
+  end
+
+  describe "Attributes with repeated children (issue #8)" do
+    test "map with attributes and a list-valued key renders repeated siblings" do
+      {:ok, xml} =
+        Builder.build_fragment(%{
+          "ParameterNames" => %{
+            "@xsi:type" => "cwmp:ParameterNames",
+            "@soap-enc:arrayType" => "xsd:string[2]",
+            "string" => ["A", "B"]
+          }
+        })
+
+      assert String.contains?(xml, ~s(xsi:type="cwmp:ParameterNames"))
+      assert String.contains?(xml, ~s(soap-enc:arrayType="xsd:string[2]"))
+      assert String.contains?(xml, "<string>A</string>")
+      assert String.contains?(xml, "<string>B</string>")
+      assert length(Regex.scan(~r/<string>/, xml)) == 2
+      refute String.contains?(xml, "<string>\n")
+    end
+
+    test "#content with {tag, value} pairs renders ordered repeated siblings with attributes" do
+      {:ok, xml} =
+        Builder.build_fragment(%{
+          "ParameterNames" => %{
+            "@xsi:type" => "cwmp:ParameterNames",
+            "#content" => [{"string", "B"}, {"string", "A"}]
+          }
+        })
+
+      assert String.contains?(xml, ~s(<ParameterNames xsi:type="cwmp:ParameterNames">))
+      b_pos = :binary.match(xml, "<string>B</string>") |> elem(0)
+      a_pos = :binary.match(xml, "<string>A</string>") |> elem(0)
+      assert b_pos < a_pos
+    end
+
+    test "#content entries with list values render repeated siblings" do
+      {:ok, xml} =
+        Builder.build_fragment(%{
+          "Root" => %{"@a" => "1", "#content" => [{"x", ["1", "2"]}, {"y", "3"}]}
+        })
+
+      assert String.contains?(xml, "<x>1</x>")
+      assert String.contains?(xml, "<x>2</x>")
+      assert String.contains?(xml, "<y>3</y>")
+    end
+
+    test "attributes plus repeated children round-trip through parse" do
+      {:ok, xml} =
+        Builder.build_fragment(%{
+          "P" => %{"@a" => "1", "c" => ["A", "B"]}
+        })
+
+      {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+      assert parsed == %{"P" => %{"@a" => "1", "c" => ["A", "B"]}}
+    end
+  end
+
+  describe "Mixed content" do
+    test "#text alongside child elements renders a text node, not a <#text> element" do
+      {:ok, xml} =
+        Builder.build_fragment(%{"root" => %{"#text" => "tc", "child" => "cc"}})
+
+      refute String.contains?(xml, "#text")
+      assert String.contains?(xml, "tc")
+      assert String.contains?(xml, "<child>cc</child>")
+    end
+
+    test "#text with attributes and children round-trips" do
+      {:ok, xml} =
+        Builder.build_fragment(%{
+          "root" => %{"@a" => "1", "#text" => "tc", "child" => "cc"}
+        })
+
+      {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+      assert parsed["root"]["@a"] == "1"
+      assert parsed["root"]["child"] == "cc"
+      assert String.trim(parsed["root"]["#text"]) == "tc"
+    end
+  end
 end
