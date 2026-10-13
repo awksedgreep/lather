@@ -4,8 +4,9 @@ defmodule Lather.MixProject do
   def project do
     [
       app: :lather,
-      version: "1.1.0",
+      version: "1.2.0",
       elixir: "~> 1.14",
+      test_coverage: [summary: [threshold: 56]],
       start_permanent: Mix.env() == :prod,
       description:
         "Production-ready SOAP library for Elixir featuring SOAP 1.1/1.2 support, dynamic WSDL parsing, " <>
@@ -31,7 +32,7 @@ defmodule Lather.MixProject do
     [
       {:finch, "~> 0.16"},
       {:sweet_xml, "~> 0.7"},
-      {:xml_builder, "~> 2.2"},
+      {:xml_builder, ">= 2.4.1 and < 3.0.0"},
       {:telemetry, "~> 1.2"},
       {:jason, "~> 1.4", optional: true},
       {:plug, "~> 1.14"},
@@ -73,7 +74,7 @@ defmodule Lather.MixProject do
     [
       main: "readme",
       name: "Lather SOAP Library",
-      source_ref: "v1.1.0",
+      source_ref: "v1.2.0",
       source_url: "https://github.com/awksedgreep/lather",
       extras: [
         "README.md",

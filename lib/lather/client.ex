@@ -22,7 +22,12 @@ defmodule Lather.Client do
 
   * `:timeout` - Request timeout in milliseconds (default: 30_000)
   * `:headers` - Additional HTTP headers to include with requests
-  * `:ssl` - SSL options for HTTPS connections
+  * `:ssl_options` - SSL options for HTTPS connections
+  * `:soap_version` - SOAP version (`:v1_1` or `:v1_2`)
+  * `:soap_headers` - SOAP envelope headers
+  * `:namespace` - Target namespace for the operation
+  * `:namespace_prefix` - Prefix for the operation namespace
+  * `:raw_body` - Use parameters directly as the SOAP body
 
   ## Examples
 
@@ -48,6 +53,9 @@ defmodule Lather.Client do
   * `params` - Parameters for the operation
   * `options` - Request-specific options
 
+  Call options override options passed to `new/2`. `:headers` contains HTTP
+  headers; use `:soap_headers` for headers inside the SOAP envelope.
+
   ## Examples
 
       iex> _client = Lather.Client.new("https://example.com/soap")
@@ -57,8 +65,27 @@ defmodule Lather.Client do
   """
   @spec call(t(), atom() | String.t(), map(), keyword()) :: {:ok, any()} | {:error, any()}
   def call(client, operation, params, options \\ []) do
-    with {:ok, envelope} <- Envelope.build(operation, params),
-         {:ok, response} <- Transport.post(client.endpoint, envelope, client.options ++ options),
+    options = Keyword.merge(client.options, options)
+
+    envelope_options =
+      [
+        version: Keyword.get(options, :soap_version, :v1_1),
+        headers: Keyword.get(options, :soap_headers, [])
+      ] ++ Keyword.take(options, [:namespace, :namespace_prefix, :raw_body])
+
+    transport_options =
+      Keyword.take(options, [
+        :timeout,
+        :pool_timeout,
+        :headers,
+        :soap_action,
+        :soap_version,
+        :ssl_options,
+        :basic_auth
+      ])
+
+    with {:ok, envelope} <- Envelope.build(operation, params, envelope_options),
+         {:ok, response} <- Transport.post(client.endpoint, envelope, transport_options),
          {:ok, result} <- Envelope.parse_response(response) do
       {:ok, result}
     end

@@ -41,4 +41,16 @@ defmodule Lather.Soap.BodyTest do
       assert String.contains?(xml, "<startsAt>2026-01-02T03:04:05Z</startsAt>")
     end
   end
+
+  test "nested strings remain raw until the XML builder renders them" do
+    params = %{
+      "notes" => ["Fish & Chips", "<tag>", "literal &amp;"],
+      "account" => %{"password" => "A&B<123>"}
+    }
+
+    assert {:ok, xml} = Body.create(:Echo, params) |> Builder.build()
+    assert {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+    assert parsed["Echo"]["notes"] == params["notes"]
+    assert parsed["Echo"]["account"]["password"] == "A&B<123>"
+  end
 end

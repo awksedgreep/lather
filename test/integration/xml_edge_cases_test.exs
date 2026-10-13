@@ -80,6 +80,14 @@ defmodule Lather.Integration.XmlEdgeCasesTest do
       assert response["result"] == text
     end
 
+    test "preserves literal XML entity text through the WSDL client", %{base_url: base_url} do
+      {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
+
+      text = "Fish &amp; Chips <tag>"
+      assert {:ok, response} = Lather.DynamicClient.call(client, "EchoText", %{"text" => text})
+      assert response["result"] == text
+    end
+
     test "handles less-than character", %{base_url: base_url} do
       {:ok, client} = Lather.DynamicClient.new("#{base_url}/soap?wsdl", timeout: 5000)
 
@@ -359,5 +367,4 @@ defmodule Lather.Integration.XmlEdgeCasesTest do
     Process.sleep(50)
     {:ok, port: actual_port, base_url: "http://localhost:#{actual_port}"}
   end
-
 end

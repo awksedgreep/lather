@@ -4,6 +4,25 @@
 
 The Lather SOAP library includes comprehensive integration tests that validate functionality against real-world SOAP APIs. However, these tests make actual HTTP requests to public services, which raises important considerations about responsible usage.
 
+## Automated regression checks
+
+Run `mix test --cover` before a release. CI runs it on pushes and pull requests
+using the Elixir and Erlang versions in `.tool-versions`; external API tests are
+excluded. The line coverage floor is 56%, based on a measured 56.87% baseline
+on 2026-10-13. Raise the floor as coverage improves.
+
+Protocol changes need assertions at the public boundary: capture the HTTP
+request and check its headers together with the parsed SOAP envelope. XML
+serialization changes need round-trip tests that include bare ampersands,
+angle brackets, literal entity-looking text, nested values, and namespaces.
+
+The largest measured gaps are `Lather.Http.Pool`,
+`Lather.Server.EnhancedWSDLGenerator`, `Lather.Server.FormGenerator`,
+`Lather.Types.Generator`, and `Lather.Types.Mapper` (each at 0% line coverage).
+Next, either exercise their public behavior or remove unused modules before
+raising the project-wide threshold. Line coverage alone cannot show whether
+the protocol combinations above were asserted.
+
 ## The Challenge with Live API Testing
 
 ### Benefits of Live API Testing ✅

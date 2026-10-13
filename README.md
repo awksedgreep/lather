@@ -507,26 +507,10 @@ This project is licensed under the MIT License - see the LICENSE file in the rep
 
 ## 🗺️ Roadmap
 
-### v1.1.0 (Next Release)
-- [ ] MTOM/XOP binary attachments
-- [ ] Enhanced WS-Security features (XML Signature, Encryption)
-- [ ] Performance optimizations and benchmarking
-- [ ] Additional server examples and templates
-
-### v1.2.0 
-- [ ] WS-Addressing and WS-ReliableMessaging
-- [ ] OpenAPI 3.0 SOAP extension support
-- [ ] GraphQL-style query interface for SOAP
-- [ ] Advanced caching strategies
-
-### Future Releases  
-- [ ] Service mesh integration patterns
-- [ ] gRPC interoperability layer
-- [ ] Kubernetes-native deployment tools
-- [ ] Advanced monitoring and observability
+See [TODO.md](TODO.md) for planned features and maintenance work.
 
 ---
 
-**Lather v1.0.4** - Making SOAP integration in Elixir as smooth as possible! 🧼✨
+**Lather v1.2.0** - SOAP client and XML interoperability fixes. 🧼✨
 
 *Released December 2025 with complete SOAP 1.2 support and multi-protocol capabilities.*

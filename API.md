@@ -634,24 +634,28 @@ XML document parsing.
 
 ### Functions
 
-#### parse/2
+#### parse/1
 
 Parses XML content into Elixir data structures.
 
 ```elixir
-@spec parse(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+@spec parse(String.t()) :: {:ok, map()} | {:error, term()}
 ```
 
-**Options:**
-- `:namespace_aware` - Enable namespace handling
-- `:custom_parsers` - Custom type parsers
+#### element_document/2
 
-#### extract_namespaces/1
-
-Extracts namespace declarations from XML.
+Extracts an element from XML as a standalone document, adding namespace
+declarations inherited from its ancestors. Pass a path of qualified names from
+the root. This is useful when a SOAP operation element needs to be parsed or
+forwarded separately from its envelope.
 
 ```elixir
-@spec extract_namespaces(String.t()) :: map()
+@spec element_document(String.t(), [String.t() | atom()]) ::
+        {:ok, String.t()} | {:error, term()}
+
+{:ok, rpc_xml} = Lather.Xml.Parser.element_document(xml, [
+  "soap:Envelope", "soap:Body", "cwmp:Inform"
+])
 ```
 
 ## Lather.Types.Mapper

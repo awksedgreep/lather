@@ -49,17 +49,8 @@ defmodule Lather.Xml.Parser do
   @spec parse(String.t()) :: {:ok, map()} | {:error, any()}
   def parse(xml_string) when is_binary(xml_string) do
     try do
-      # Clean the XML string to handle common issues
-      cleaned_xml =
-        xml_string
-        |> String.trim()
-        |> remove_bom()
-
-      # Parse with SweetXml and build the structure
-      doc = SweetXml.parse(cleaned_xml, dtd: :none, namespace_conformant: true)
- 
+      doc = parse_document(xml_string)
       parsed = parse_node(doc)
-
 
       {:ok, parsed}
     rescue
@@ -72,6 +63,92 @@ defmodule Lather.Xml.Parser do
   end
 
   def parse(_), do: {:error, :invalid_input}
+
+  @doc """
+  Extracts an element as a standalone XML document.
+
+  `path` is a list of qualified element names from the document root, such as
+  `["soap:Envelope", "soap:Body", "cwmp:Inform"]`. The first matching element
+  at each level is selected. Namespace declarations inherited from ancestors
+  are added to the extracted root, including prefixes used only in attribute
+  values such as `xsi:type="xsd:string"`.
+
+  Returns `{:error, :element_not_found}` when the path does not exist. Parsing
+  uses the same DTD restrictions as `parse/1`.
+  """
+  @spec element_document(String.t(), [String.t() | atom()]) ::
+          {:ok, String.t()} | {:error, any()}
+  def element_document(xml_string, path)
+      when is_binary(xml_string) and is_list(path) and path != [] do
+    if Enum.all?(path, &(is_binary(&1) or is_atom(&1))) do
+      try do
+        doc = parse_document(xml_string)
+
+        with {:ok, element, namespaces} <- find_element(doc, path, %{}) do
+          attributes = elem(element, 7)
+          existing_names = MapSet.new(attributes, &to_string(elem(&1, 1)))
+
+          inherited =
+            namespaces
+            |> Enum.reject(fn {name, _} -> MapSet.member?(existing_names, name) end)
+            |> Enum.sort_by(&elem(&1, 0))
+            |> Enum.map(&elem(&1, 1))
+
+          element = put_elem(element, 7, attributes ++ inherited)
+          xml = :xmerl.export([element], :xmerl_xml) |> IO.iodata_to_binary()
+          {:ok, xml}
+        end
+      rescue
+        error -> {:error, {:parse_error, error}}
+      catch
+        :exit, reason -> {:error, {:parse_error, reason}}
+      end
+    else
+      {:error, :invalid_input}
+    end
+  end
+
+  def element_document(_, _), do: {:error, :invalid_input}
+
+  defp parse_document(xml_string) do
+    xml_string
+    |> String.trim()
+    |> remove_bom()
+    |> SweetXml.parse(dtd: :none, namespace_conformant: true)
+  end
+
+  defp find_element(node, [name | rest], inherited) do
+    if to_string(elem(node, 1)) == to_string(name) do
+      namespaces =
+        Enum.reduce(elem(node, 7), inherited, fn attribute, acc ->
+          attribute_name = to_string(elem(attribute, 1))
+
+          if attribute_name == "xmlns" or String.starts_with?(attribute_name, "xmlns:") do
+            Map.put(acc, attribute_name, attribute)
+          else
+            acc
+          end
+        end)
+
+      case rest do
+        [] ->
+          {:ok, node, namespaces}
+
+        _ ->
+          node
+          |> elem(8)
+          |> Enum.filter(&(elem(&1, 0) == :xmlElement))
+          |> Enum.find_value({:error, :element_not_found}, fn child ->
+            case find_element(child, rest, namespaces) do
+              {:ok, _, _} = found -> found
+              _ -> nil
+            end
+          end)
+      end
+    else
+      {:error, :element_not_found}
+    end
+  end
 
   # Remove Byte Order Mark (BOM) if present
   defp remove_bom(<<0xEF, 0xBB, 0xBF, rest::binary>>), do: rest

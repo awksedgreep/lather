@@ -6,8 +6,6 @@ defmodule Lather.Soap.Body do
   including parameter serialization and response parsing.
   """
 
-  alias Lather.Xml.Builder
-
   @doc """
   Creates a SOAP body element for the given operation and parameters.
 
@@ -48,7 +46,8 @@ defmodule Lather.Soap.Body do
   @doc """
   Serializes Elixir data structures to XML-compatible format.
 
-  Handles various Elixir types and converts them to XML-safe representations.
+  Handles various Elixir types and converts them to values for the XML builder.
+  Text remains raw here; `Lather.Xml.Builder` escapes it when rendering XML.
   """
   # Struct and boolean clauses must precede the generic `is_map` / `is_atom`
   # clauses: structs are maps and booleans are atoms, so the reverse order
@@ -84,14 +83,7 @@ defmodule Lather.Soap.Body do
     to_string(params)
   end
 
-  def serialize_params(params) when is_binary(params) do
-    # Pre-escaped with Builder.escape_text: XmlBuilder's renderer is
-    # entity-aware (it preserves well-formed `&amp;`/`&lt;`/etc.), so raw
-    # literals like "Fish &amp; Chips" would otherwise be interpreted as
-    # pre-escaped entities and corrupted on round-trip. Pre-escaping keeps
-    # the historical raw-text-in / escaped-XML-out contract exact.
-    Builder.escape_text(params)
-  end
+  def serialize_params(params) when is_binary(params), do: params
 
   def serialize_params(params), do: to_string(params)
 

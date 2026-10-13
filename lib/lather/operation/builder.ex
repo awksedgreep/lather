@@ -371,7 +371,7 @@ defmodule Lather.Operation.Builder do
   end
 
   # Values are serialised recursively by Body.serialize_params/1 (nested
-  # maps, lists, dates, booleans, escaping). Array-typed parts wrap list
+  # maps, lists, dates, booleans). Array-typed parts wrap list
   # values in the array's item element.
   defp build_parameter_element(value, type, types) do
     case classify_parameter_type(type) do

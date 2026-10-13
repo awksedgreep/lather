@@ -275,6 +275,69 @@ defmodule Lather.Xml.ParserTest do
     end
   end
 
+  describe "element_document/2" do
+    test "extracts a CWMP RPC with all inherited namespace declarations" do
+      xml = """
+      <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
+                     xmlns:soap-enc="http://schemas.xmlsoap.org/soap/encoding/"
+                     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                     xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+        <soap:Body>
+          <cwmp:Inform xmlns:cwmp="urn:dslforum-org:cwmp-1-0">
+            <Event soap-enc:arrayType="cwmp:EventStruct[1]">
+              <Value xsi:type="xsd:string">Fish &amp; Chips</Value>
+            </Event>
+          </cwmp:Inform>
+        </soap:Body>
+      </soap:Envelope>
+      """
+
+      assert {:ok, extracted} =
+               Parser.element_document(xml, ["soap:Envelope", "soap:Body", "cwmp:Inform"])
+
+      assert extracted =~ ~s(xmlns:soap-enc="http://schemas.xmlsoap.org/soap/encoding/")
+      assert extracted =~ ~s(xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance")
+      assert extracted =~ ~s(xmlns:xsd="http://www.w3.org/2001/XMLSchema")
+      assert extracted =~ ~s(xmlns:cwmp="urn:dslforum-org:cwmp-1-0")
+
+      assert {:ok, parsed} = Parser.parse(extracted)
+      event = parsed["cwmp:Inform"]["Event"]
+      assert event["@soap-enc:arrayType"] == "cwmp:EventStruct[1]"
+      assert event["Value"]["@xsi:type"] == "xsd:string"
+      assert event["Value"]["#text"] == "Fish & Chips"
+    end
+
+    test "uses the nearest namespace declaration and reports missing paths" do
+      xml = """
+      <root xmlns:xsi="urn:outer">
+        <Body xmlns:xsi="urn:inner"><Item xsi:type="other:Thing"/></Body>
+      </root>
+      """
+
+      assert {:ok, extracted} = Parser.element_document(xml, ["root", "Body", "Item"])
+      assert extracted =~ ~s(xmlns:xsi="urn:inner")
+      refute extracted =~ ~s(xmlns:xsi="urn:outer")
+      assert {:ok, _} = Parser.parse(extracted)
+      assert {:error, :element_not_found} = Parser.element_document(xml, ["root", "Missing"])
+    end
+
+    test "carries an inherited default namespace into the extracted document" do
+      xml = ~s(<root xmlns="urn:fixture"><wrapper><Item>one</Item></wrapper></root>)
+
+      assert {:ok, extracted} = Parser.element_document(xml, ["root", "wrapper", "Item"])
+      assert extracted =~ ~s(<Item xmlns="urn:fixture">one</Item>)
+
+      assert {:ok, %{"Item" => %{"@xmlns" => "urn:fixture", "#text" => "one"}}} =
+               Parser.parse(extracted)
+    end
+
+    test "rejects DTDs and invalid paths" do
+      xml = ~s(<!DOCTYPE root [<!ENTITY secret "value">]><root><Item/></root>)
+      assert {:error, {:parse_error, _}} = Parser.element_document(xml, ["root", "Item"])
+      assert {:error, :invalid_input} = Parser.element_document("<root/>", [])
+    end
+  end
+
   describe "parse/1 - Complex SOAP structures" do
     test "parses SOAP 1.1 envelope" do
       xml = """

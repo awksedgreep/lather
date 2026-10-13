@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-13
+
+### Added
+- `Lather.Xml.Parser.element_document/2` extracts a namespaced XML subtree
+  with its inherited namespace declarations, so SOAP RPC elements can be parsed
+  independently of the envelope (#23).
+- Local request and XML round-trip regression tests, plus CI that runs the full
+  test suite with a coverage floor on pushes and pull requests.
+
+### Changed
+- Development toolchain pins to Elixir 1.20.4 on Erlang/OTP 29.1.1.
+- Require xml_builder 2.4.1 or newer so text escaping is handled consistently
+  by the renderer.
+
+### Fixed
+- `Lather.Soap.Body.create/3` and WSDL-generated requests preserve raw text
+  containing ampersands, angle brackets, and literal XML entity-looking text
+  when rendered with xml_builder 2.4.1 (#24).
+- `Lather.Client.call/4` uses the selected SOAP version for both the HTTP
+  content type and envelope, forwards operation namespaces, and keeps SOAP
+  headers separate from HTTP headers (#25).
+
 ## [1.1.0] - 2026-09-05
 
 ### Added

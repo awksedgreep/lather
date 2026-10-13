@@ -33,13 +33,9 @@ defmodule Lather.Xml.Builder do
 
   ## Escaping contract
 
-  `XmlBuilder`'s renderer is entity-aware: well-formed entities
-  (`&amp;`, `&lt;`, …) in input pass through and resolve on parse,
-  while bare `&`, `<`, `>`, quotes are escaped. Callers that must
-  preserve literal entity-looking text (e.g. a value containing the
-  characters `&amp;`) should pre-escape with `escape_text/1` — this is
-  what `Lather.Soap.Body.serialize_params/1` does, keeping the
-  historical raw-text-in / escaped-XML-out contract exact.
+  `XmlBuilder` escapes text and attribute values when rendering XML.
+  Pass raw strings, including literal entity-looking text such as `&amp;`.
+  `escape_text/1` is only for XML constructed manually outside this builder.
   """
 
   @doc """
