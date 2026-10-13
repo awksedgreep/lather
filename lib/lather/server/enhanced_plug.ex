@@ -171,8 +171,13 @@ defmodule Lather.Server.EnhancedPlug do
       wsdl_content =
         if Map.has_key?(conn.query_params, "enhanced") do
           # Generate enhanced multi-protocol WSDL
+          protocols =
+            if config.enable_json,
+              do: [:soap_1_1, :soap_1_2, :http],
+              else: [:soap_1_1, :soap_1_2]
+
           EnhancedWSDLGenerator.generate(service_info, base_url,
-            protocols: [:soap_1_1, :soap_1_2, :http],
+            protocols: protocols,
             include_json: config.enable_json
           )
         else
@@ -181,7 +186,7 @@ defmodule Lather.Server.EnhancedPlug do
         end
 
       conn
-      |> put_resp_content_type("text/xml; charset=utf-8")
+      |> put_resp_content_type("text/xml")
       |> put_resp_header(
         "content-disposition",
         "attachment; filename=\"#{service_info.name}.wsdl\""
@@ -218,7 +223,7 @@ defmodule Lather.Server.EnhancedPlug do
             FormGenerator.generate_operation_page(service_info, operation, base_url)
 
           conn
-          |> put_resp_content_type("text/html; charset=utf-8")
+          |> put_resp_content_type("text/html")
           |> send_resp(200, html_content)
       end
     rescue
@@ -246,7 +251,7 @@ defmodule Lather.Server.EnhancedPlug do
       html_content = FormGenerator.generate_service_overview(service_info, base_url)
 
       conn
-      |> put_resp_content_type("text/html; charset=utf-8")
+      |> put_resp_content_type("text/html")
       |> send_resp(200, html_content)
     rescue
       error ->
@@ -318,14 +323,14 @@ defmodule Lather.Server.EnhancedPlug do
 
     with {:ok, body} <- read_full_body(conn, config.max_body_size),
          {:ok, json_params} <- decode_json_body(body),
-         {:ok, operation_info} <- get_operation_info(config.service, operation_name),
+         {:ok, operation_info} <- get_json_operation_info(config.service, operation_name),
          {:ok, validated_params} <- validate_json_params(json_params, operation_info, config),
-         {:ok, result} <- call_operation(config.service, operation_name, validated_params) do
+         {:ok, result} <- call_operation(config.service, operation_info.name, validated_params) do
       # Format JSON response
       json_response = format_json_response(result, operation_info)
 
       conn
-      |> put_resp_content_type("application/json; charset=utf-8")
+      |> put_resp_content_type("application/json")
       |> send_resp(200, encode_json(json_response))
     else
       {:error, :body_too_large} ->
@@ -338,7 +343,7 @@ defmodule Lather.Server.EnhancedPlug do
         }
 
         conn
-        |> put_resp_content_type("application/json; charset=utf-8")
+        |> put_resp_content_type("application/json")
         |> send_resp(413, encode_json(error_response))
 
       {:error, {:soap_fault, fault}} ->
@@ -346,13 +351,16 @@ defmodule Lather.Server.EnhancedPlug do
           error: %{
             code: fault.fault_code || "ServerError",
             message: fault.fault_string || "Operation failed",
-            detail: fault.detail
+            detail: Map.get(fault, :detail)
           }
         }
 
         conn
-        |> put_resp_content_type("application/json; charset=utf-8")
-        |> send_resp(500, encode_json(error_response))
+        |> put_resp_content_type("application/json")
+        |> send_resp(
+          if(fault.fault_code == "Client", do: 400, else: 500),
+          encode_json(error_response)
+        )
 
       {:error, reason} ->
         Logger.warning("JSON request failed: #{inspect(reason)}")
@@ -366,7 +374,7 @@ defmodule Lather.Server.EnhancedPlug do
         }
 
         conn
-        |> put_resp_content_type("application/json; charset=utf-8")
+        |> put_resp_content_type("application/json")
         |> send_resp(400, encode_json(error_response))
     end
   end
@@ -453,6 +461,15 @@ defmodule Lather.Server.EnhancedPlug do
       operation_info ->
         {:ok, operation_info}
     end
+  end
+
+  defp get_json_operation_info(service_module, operation_name) do
+    canonical_name =
+      Enum.find_value(service_module.__soap_operations__(), fn operation ->
+        if String.downcase(operation.name) == String.downcase(operation_name), do: operation.name
+      end)
+
+    get_operation_info(service_module, canonical_name || operation_name)
   end
 
   defp validate_and_extract_params(parsed_request, operation_info, config) do

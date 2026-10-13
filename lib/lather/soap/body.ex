@@ -135,19 +135,28 @@ defmodule Lather.Soap.Body do
       end
 
     element_content =
-      if namespace do
-        Map.put(serialized_params, "@xmlns", namespace)
-      else
-        serialized_params
+      cond do
+        namespace && namespace_prefix ->
+          Map.put(serialized_params, "@xmlns:#{namespace_prefix}", namespace)
+
+        namespace ->
+          Map.put(serialized_params, "@xmlns", namespace)
+
+        true ->
+          serialized_params
       end
 
     %{element_name => element_content}
   end
 
   defp validate_param(value, param_name, rules) do
-    case Enum.reduce_while(rules, :ok, &apply_validation_rule(&1, value, param_name, &2)) do
-      :ok -> :ok
-      {:error, error} -> {:error, error}
+    if is_nil(value) and :optional in rules and :required not in rules do
+      :ok
+    else
+      case Enum.reduce_while(rules, :ok, &apply_validation_rule(&1, value, param_name, &2)) do
+        :ok -> :ok
+        {:error, error} -> {:error, error}
+      end
     end
   end
 
@@ -172,8 +181,12 @@ defmodule Lather.Soap.Body do
   end
 
   defp apply_validation_rule({:max_length, max}, value, param_name, _acc)
-       when is_binary(value) and byte_size(value) > max do
-    {:halt, {:error, "#{param_name} must be at most #{max} characters"}}
+       when is_binary(value) do
+    if String.length(value) > max do
+      {:halt, {:error, "#{param_name} must be at most #{max} characters"}}
+    else
+      {:cont, :ok}
+    end
   end
 
   defp apply_validation_rule(_rule, _value, _param_name, acc) do

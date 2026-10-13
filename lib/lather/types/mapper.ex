@@ -299,7 +299,7 @@ defmodule Lather.Types.Mapper do
       Enum.reduce(type_definition.elements, %{}, fn element, acc ->
         xml_value = Map.get(xml_data, element.name)
 
-        if xml_value do
+        if not is_nil(xml_value) do
           elixir_value = convert_element_value_from_xml(xml_value, element, type_context)
           field_name = String.to_atom(element.name)
           Map.put(acc, field_name, elixir_value)
@@ -338,25 +338,25 @@ defmodule Lather.Types.Mapper do
   end
 
   defp convert_element_value_from_xml(xml_value, element, type_context) do
-    cond do
-      element.type && Map.has_key?(type_context.type_registry, element.type) ->
-        case xml_to_elixir(xml_value, element.type, type_context) do
-          {:ok, converted} -> converted
-          {:error, _} -> xml_value
-        end
+    if element.max_occurs != "1" do
+      xml_value
+      |> List.wrap()
+      |> Enum.map(&convert_single_value_from_xml(&1, element, type_context))
+    else
+      convert_single_value_from_xml(xml_value, element, type_context)
+    end
+  end
 
-      element.max_occurs != "1" ->
-        # Handle arrays
-        case xml_value do
-          values when is_list(values) ->
-            Enum.map(values, &convert_element_value_from_xml(&1, element, type_context))
+  defp convert_single_value_from_xml(xml_value, element, type_context) do
+    type_name = registry_type_name(element.type, type_context)
 
-          single_value ->
-            [convert_element_value_from_xml(single_value, element, type_context)]
-        end
-
-      true ->
-        convert_primitive_value(xml_value, element.type)
+    if type_name && Map.has_key?(type_context.type_registry, type_name) do
+      case xml_to_elixir(xml_value, type_name, type_context) do
+        {:ok, converted} -> converted
+        {:error, _} -> xml_value
+      end
+    else
+      convert_primitive_value(xml_value, element.type)
     end
   end
 
@@ -380,7 +380,7 @@ defmodule Lather.Types.Mapper do
         field_name = String.to_atom(element.name)
         elixir_value = Map.get(elixir_data, field_name)
 
-        if elixir_value do
+        if not is_nil(elixir_value) do
           xml_value = convert_element_value_to_xml(elixir_value, element, type_context)
           Map.put(acc, element.name, xml_value)
         else
@@ -411,21 +411,35 @@ defmodule Lather.Types.Mapper do
   end
 
   defp convert_element_value_to_xml(elixir_value, element, type_context) do
-    cond do
-      element.type && Map.has_key?(type_context.type_registry, element.type) ->
-        case elixir_to_xml(elixir_value, element.type, type_context) do
-          {:ok, converted} -> converted
-          {:error, _} -> to_string(elixir_value)
-        end
-
-      element.max_occurs != "1" && is_list(elixir_value) ->
-        # Handle arrays
-        Enum.map(elixir_value, &convert_element_value_to_xml(&1, element, type_context))
-
-      true ->
-        convert_primitive_value_to_xml(elixir_value, element.type)
+    if element.max_occurs != "1" && is_list(elixir_value) do
+      Enum.map(elixir_value, &convert_single_value_to_xml(&1, element, type_context))
+    else
+      convert_single_value_to_xml(elixir_value, element, type_context)
     end
   end
+
+  defp convert_single_value_to_xml(elixir_value, element, type_context) do
+    type_name = registry_type_name(element.type, type_context)
+
+    if type_name && Map.has_key?(type_context.type_registry, type_name) do
+      case elixir_to_xml(elixir_value, type_name, type_context) do
+        {:ok, converted} -> converted
+        {:error, _} -> to_string(elixir_value)
+      end
+    else
+      convert_primitive_value_to_xml(elixir_value, element.type)
+    end
+  end
+
+  defp registry_type_name(type, type_context) when is_binary(type) do
+    cond do
+      Map.has_key?(type_context.type_registry, type) -> type
+      String.starts_with?(type, ["xsd:", "xs:"]) -> type
+      true -> resolve_type_name(type, nil, type_context.namespaces)
+    end
+  end
+
+  defp registry_type_name(type, _type_context), do: type
 
   defp convert_primitive_value(xml_value, type) do
     case type do

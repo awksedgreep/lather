@@ -4,9 +4,9 @@ defmodule Lather.MixProject do
   def project do
     [
       app: :lather,
-      version: "1.2.0",
+      version: "1.2.1",
       elixir: "~> 1.14",
-      test_coverage: [summary: [threshold: 56]],
+      test_coverage: [summary: [threshold: 75]],
       start_permanent: Mix.env() == :prod,
       description:
         "Production-ready SOAP library for Elixir featuring SOAP 1.1/1.2 support, dynamic WSDL parsing, " <>
@@ -74,7 +74,7 @@ defmodule Lather.MixProject do
     [
       main: "readme",
       name: "Lather SOAP Library",
-      source_ref: "v1.2.0",
+      source_ref: "v1.2.1",
       source_url: "https://github.com/awksedgreep/lather",
       extras: [
         "README.md",

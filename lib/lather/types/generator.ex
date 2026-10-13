@@ -32,7 +32,7 @@ defmodule Lather.Types.Generator do
         field_naming: :snake_case
       )
   """
-  @spec generate_structs(map(), keyword()) :: {:ok, [module()]} | {:error, term()}
+  @spec generate_structs(map(), keyword()) :: {:ok, [{String.t(), module()}]} | {:error, term()}
   def generate_structs(service_info, options \\ []) do
     module_prefix = Keyword.get(options, :module_prefix, DynamicTypes)
     exclude_types = Keyword.get(options, :exclude_types, [])
@@ -65,7 +65,7 @@ defmodule Lather.Types.Generator do
 
     * `xml_data` - Parsed XML data
     * `type_name` - The struct type to create
-    * `generated_modules` - Map of generated modules
+    * `generated_modules` - Generated `{type_name, module}` pairs or a map
 
   ## Examples
 
@@ -76,9 +76,10 @@ defmodule Lather.Types.Generator do
       )
       # %DynamicTypes.User{name: "John", age: 30}
   """
-  @spec create_struct_instance(map(), String.t(), map()) :: {:ok, struct()} | {:error, term()}
+  @spec create_struct_instance(map(), String.t(), list() | map()) ::
+          {:ok, struct()} | {:error, term()}
   def create_struct_instance(xml_data, type_name, generated_modules) do
-    case Map.get(generated_modules, type_name) do
+    case find_generated_module(generated_modules, type_name) do
       nil ->
         {:error, {:struct_not_found, type_name}}
 
@@ -143,12 +144,22 @@ defmodule Lather.Types.Generator do
       true = Lather.Types.Generator.struct_exists?("User", generated_modules)
       false = Lather.Types.Generator.struct_exists?("NonExistent", generated_modules)
   """
-  @spec struct_exists?(String.t(), map()) :: boolean()
+  @spec struct_exists?(String.t(), list() | map()) :: boolean()
   def struct_exists?(type_name, generated_modules) do
-    Map.has_key?(generated_modules, type_name)
+    not is_nil(find_generated_module(generated_modules, type_name))
   end
 
   # Private helper functions
+
+  defp find_generated_module(modules, type_name) when is_map(modules),
+    do: Map.get(modules, type_name)
+
+  defp find_generated_module(modules, type_name) when is_list(modules) do
+    case List.keyfind(modules, type_name, 0) do
+      {^type_name, module} -> module
+      nil -> nil
+    end
+  end
 
   defp filter_types(types, include_only, exclude_types) do
     types
@@ -263,6 +274,14 @@ defmodule Lather.Types.Generator do
   end
 
   defp convert_xml_value(xml_value, element) do
+    if element.max_occurs != "1" and is_list(xml_value) do
+      Enum.map(xml_value, &convert_single_xml_value(&1, element))
+    else
+      convert_single_xml_value(xml_value, element)
+    end
+  end
+
+  defp convert_single_xml_value(xml_value, element) do
     case element.type do
       type when type in ["xsd:string", "xs:string"] ->
         to_string(xml_value)

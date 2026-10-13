@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-10-13
+
+### Added
+- Request-level tests for the enhanced server's form pages, WSDL variants,
+  SOAP versions, and JSON endpoints; raise the CI coverage floor to 75%.
+- SOAP body tests for prefixed namespaces, optional parameters, required types,
+  and Unicode character limits.
+- Type mapper and generated-struct round-trip tests for booleans, repeated
+  values, and nested complex values.
+
+### Fixed
+- Enhanced server responses no longer duplicate the UTF-8 charset in HTML,
+  WSDL, and JSON content types.
+- JSON requests follow lowercase operation paths advertised in enhanced WSDL,
+  and invalid operations or parameters return JSON client errors.
+- Enhanced WSDL omits the HTTP binding when JSON routes are disabled.
+- `Lather.Soap.Body.create/3` declares the namespace used by a prefixed
+  operation, and `validate_params/2` accepts absent optional values and counts
+  characters rather than bytes for `:max_length`.
+- Type mapping preserves `false` values and converts repeated primitive and
+  namespace-prefixed complex values without recursion errors. Generated structs
+  preserve repeated fields and accept the module list returned by
+  `generate_structs/2`.
+
 ## [1.2.0] - 2026-10-13
 
 ### Added

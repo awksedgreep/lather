@@ -511,6 +511,6 @@ See [TODO.md](TODO.md) for planned features and maintenance work.
 
 ---
 
-**Lather v1.2.0** - SOAP client and XML interoperability fixes. 🧼✨
+**Lather v1.2.1** - Enhanced server and type mapping fixes with broader test coverage. 🧼✨
 
 *Released December 2025 with complete SOAP 1.2 support and multi-protocol capabilities.*

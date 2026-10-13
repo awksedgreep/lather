@@ -53,4 +53,57 @@ defmodule Lather.Soap.BodyTest do
     assert parsed["Echo"]["notes"] == params["notes"]
     assert parsed["Echo"]["account"]["password"] == "A&B<123>"
   end
+
+  describe "create/3 namespaces" do
+    test "a default namespace survives XML rendering" do
+      assert {:ok, xml} =
+               Body.create(:Echo, %{message: "hello"}, namespace: "urn:example:echo")
+               |> Builder.build()
+
+      assert xml =~ ~s(<Echo xmlns="urn:example:echo">)
+      assert {:ok, parsed} = Lather.Xml.Parser.parse(xml)
+      assert parsed["Echo"]["message"] == "hello"
+    end
+
+    test "a prefixed operation declares the matching namespace" do
+      assert {:ok, xml} =
+               Body.create(:Echo, %{message: "hello"},
+                 namespace: "urn:example:echo",
+                 namespace_prefix: "e"
+               )
+               |> Builder.build()
+
+      assert xml =~ ~s(<e:Echo xmlns:e="urn:example:echo">)
+      {root, _} = :xmerl_scan.string(String.to_charlist(xml), namespace_conformant: true)
+      assert elem(root, 0) == :xmlElement
+    end
+  end
+
+  describe "validate_params/2" do
+    test "required values and types are checked" do
+      schema = %{"id" => [:required, :integer], "name" => [:required, :string]}
+
+      assert :ok = Body.validate_params(%{"id" => 3, "name" => "Ada"}, schema)
+
+      assert {:error, errors} = Body.validate_params(%{"id" => "3"}, schema)
+      assert "id must be an integer" in errors
+      assert "name is required" in errors
+    end
+
+    test "an absent optional string passes validation" do
+      schema = %{"nickname" => [:optional, :string, {:max_length, 20}]}
+
+      assert :ok = Body.validate_params(%{}, schema)
+      assert :ok = Body.validate_params(%{"nickname" => nil}, schema)
+    end
+
+    test "maximum length counts characters and rejects longer strings" do
+      schema = %{"name" => [:required, :string, {:max_length, 2}]}
+
+      assert :ok = Body.validate_params(%{"name" => "é🙂"}, schema)
+
+      assert {:error, ["name must be at most 2 characters"]} =
+               Body.validate_params(%{"name" => "Ada"}, schema)
+    end
+  end
 end

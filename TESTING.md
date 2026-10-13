@@ -8,7 +8,7 @@ The Lather SOAP library includes comprehensive integration tests that validate f
 
 Run `mix test --cover` before a release. CI runs it on pushes and pull requests
 using the Elixir and Erlang versions in `.tool-versions`; external API tests are
-excluded. The line coverage floor is 56%, based on a measured 56.87% baseline
+excluded. The line coverage floor is 75%, based on a measured 75.75% baseline
 on 2026-10-13. Raise the floor as coverage improves.
 
 Protocol changes need assertions at the public boundary: capture the HTTP
@@ -16,12 +16,12 @@ request and check its headers together with the parsed SOAP envelope. XML
 serialization changes need round-trip tests that include bare ampersands,
 angle brackets, literal entity-looking text, nested values, and namespaces.
 
-The largest measured gaps are `Lather.Http.Pool`,
-`Lather.Server.EnhancedWSDLGenerator`, `Lather.Server.FormGenerator`,
-`Lather.Types.Generator`, and `Lather.Types.Mapper` (each at 0% line coverage).
-Next, either exercise their public behavior or remove unused modules before
-raising the project-wide threshold. Line coverage alone cannot show whether
-the protocol combinations above were asserted.
+The server's overview, operation forms, WSDL variants, SOAP routes, and JSON
+routes have request-level tests. SOAP body and type conversion have XML and
+Elixir round-trip tests. The largest remaining gaps are `Lather.Http.Pool`
+(0%), `Lather.Types.Mapper` (47.39%), and `Lather.Error` (52.99%). Exercise
+their documented behavior before raising the project-wide threshold again.
+Line coverage alone cannot show whether protocol combinations were asserted.
 
 ## The Challenge with Live API Testing
 
