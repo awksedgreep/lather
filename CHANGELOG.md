@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Lather.Client.call/4` uses the selected SOAP version for both the HTTP
   content type and envelope, forwards operation namespaces, and keeps SOAP
   headers separate from HTTP headers (#25).
+- Integration test servers use OS-assigned ports to avoid intermittent address
+  collisions in CI.
 
 ## [1.1.0] - 2026-09-05
 

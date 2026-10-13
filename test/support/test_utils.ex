@@ -4,26 +4,17 @@ defmodule Lather.TestUtils do
   """
 
   @doc """
-  Starts a Bandit server on the given port, incrementing the port if it's already in use.
+  Starts a Bandit server on an OS-assigned port and returns the actual port.
+
+  The requested port argument is retained for existing test callers. Letting
+  the OS choose the port avoids races with other tests and processes.
   """
-  def start_server(plug, port, scheme \\ :http, extra_opts \\ []) do
-    opts = [plug: plug, port: port, scheme: scheme] ++ extra_opts
+  def start_server(plug, _requested_port, scheme \\ :http, extra_opts \\ []) do
+    opts = [plug: plug, port: 0, scheme: scheme] ++ extra_opts
 
-    case Bandit.start_link(opts) do
-      {:ok, pid} ->
-        {:ok, pid, port}
-
-      {:error, reason} ->
-        # If Bandit returns an error tuple for port in use, retry
-        if reason == :eaddrinuse or (is_binary(reason) and String.contains?(reason, "address already in use")) do
-          start_server(plug, port + 1, scheme, extra_opts)
-        else
-          {:error, reason}
-        end
+    with {:ok, pid} <- Bandit.start_link(opts),
+         {:ok, {_address, actual_port}} <- ThousandIsland.listener_info(pid) do
+      {:ok, pid, actual_port}
     end
-  rescue
-    _e ->
-      # If it crashes with :eaddrinuse, retry
-      start_server(plug, port + 1, scheme, extra_opts)
   end
 end
