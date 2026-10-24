@@ -7,6 +7,30 @@ defmodule Lather.Wsdl.Analyzer do
   """
 
   alias Lather.Xml.Parser
+  alias Lather.Soap.Elements
+
+  # Prefix-agnostic child lookup so schemas/binding/etc. are found whether
+  # they use "xs:", "xsd:", "s:", the default prefix, or no prefix at all.
+  defp pick(map, local) when is_map(map), do: Elements.get(map, local)
+  defp pick(_, _), do: nil
+
+  # Prefix-agnostic list of all children with the given local name. A child
+  # that appears more than once is parsed as a list, so we flatten those.
+  defp pick_all(map, local) when is_map(map) do
+    map
+    |> Enum.flat_map(fn {key, value} ->
+      key = to_string(key)
+
+      cond do
+        String.starts_with?(key, "@") -> []
+        key == local or Elements.local_name(key) == local ->
+          if is_list(value), do: value, else: [value]
+        true -> []
+      end
+    end)
+  end
+
+  defp pick_all(_, _), do: []
 
   @doc """
   Analyzes a WSDL document and extracts service information.
@@ -575,31 +599,13 @@ defmodule Lather.Wsdl.Analyzer do
       types = []
 
       # Extract complex types
-      complex_types = schema["complexType"] || []
-
-      complex_list =
-        case complex_types do
-          types when is_list(types) -> types
-          single_type -> [single_type]
-        end
+      complex_list = pick_all(schema, "complexType")
 
       # Extract simple types
-      simple_types = schema["simpleType"] || []
-
-      simple_list =
-        case simple_types do
-          types when is_list(types) -> types
-          single_type -> [single_type]
-        end
+      simple_list = pick_all(schema, "simpleType")
 
       # Extract elements
-      elements = schema["element"] || []
-
-      element_list =
-        case elements do
-          elems when is_list(elems) -> elems
-          single_elem -> [single_elem]
-        end
+      element_list = pick_all(schema, "element")
 
       parsed_complex = Enum.map(complex_list, &parse_complex_type/1)
       parsed_simple = Enum.map(simple_list, &parse_simple_type/1)
@@ -610,16 +616,14 @@ defmodule Lather.Wsdl.Analyzer do
   end
 
   defp get_schema_elements(parsed_wsdl) do
-    # Get schemas from types section and imported schemas (handle both with and without namespace prefix)
-    types_schemas =
-      get_in(parsed_wsdl, ["wsdl:definitions", "wsdl:types", "s:schema"]) ||
-        get_in(parsed_wsdl, ["wsdl:definitions", "wsdl:types", "xsd:schema"]) ||
-        get_in(parsed_wsdl, ["wsdl:definitions", "wsdl:types", "schema"]) ||
-        get_in(parsed_wsdl, ["definitions", "types", "schema"]) || []
+    # Get schemas from the types section (any namespace prefix).
+    types =
+      Elements.get_in(parsed_wsdl, ["definitions", "types"]) ||
+        Elements.get_in(parsed_wsdl, ["types"])
 
-    case types_schemas do
-      schemas when is_list(schemas) -> schemas
-      single_schema -> [single_schema]
+    cond do
+      is_map(types) -> pick_all(types, "schema")
+      true -> []
     end
   end
 
@@ -659,81 +663,33 @@ defmodule Lather.Wsdl.Analyzer do
   end
 
   defp extract_complex_type_elements(type_def) do
-    # Extract elements from sequence, choice, or all
-    elements = []
+    # Extract elements from sequence, choice, or all (any namespace prefix)
+    sequences = pick_all(type_def, "sequence") |> Enum.flat_map(&extract_sequence_elements/1)
+    choices = pick_all(type_def, "choice") |> Enum.flat_map(&extract_choice_elements/1)
+    alls = pick_all(type_def, "all") |> Enum.flat_map(&extract_all_elements/1)
 
-    # Check sequence
-    elements =
-      if sequence = type_def["sequence"] do
-        elements ++ extract_sequence_elements(sequence)
-      else
-        elements
-      end
+    complex_content =
+      pick_all(type_def, "complexContent") |> Enum.flat_map(&extract_complex_content_elements/1)
 
-    # Check choice
-    elements =
-      if choice = type_def["choice"] do
-        elements ++ extract_choice_elements(choice)
-      else
-        elements
-      end
-
-    # Check all
-    elements =
-      if all = type_def["all"] do
-        elements ++ extract_all_elements(all)
-      else
-        elements
-      end
-
-    # Check complexContent
-    if complex_content = type_def["complexContent"] do
-      elements ++ extract_complex_content_elements(complex_content)
-    else
-      elements
-    end
+    sequences ++ choices ++ alls ++ complex_content
   end
 
   defp extract_sequence_elements(sequence) do
-    elements = sequence["element"] || []
-
-    case elements do
-      elements when is_list(elements) ->
-        Enum.map(elements, &parse_element_type/1)
-
-      single_element ->
-        [parse_element_type(single_element)]
-    end
+    pick_all(sequence, "element") |> Enum.map(&parse_element_type/1)
   end
 
   defp extract_choice_elements(choice) do
-    elements = choice["element"] || []
-
-    case elements do
-      elements when is_list(elements) ->
-        Enum.map(elements, &parse_element_type/1)
-
-      single_element ->
-        [parse_element_type(single_element)]
-    end
+    pick_all(choice, "element") |> Enum.map(&parse_element_type/1)
   end
 
   defp extract_all_elements(all) do
-    elements = all["element"] || []
-
-    case elements do
-      elements when is_list(elements) ->
-        Enum.map(elements, &parse_element_type/1)
-
-      single_element ->
-        [parse_element_type(single_element)]
-    end
+    pick_all(all, "element") |> Enum.map(&parse_element_type/1)
   end
 
   defp extract_complex_content_elements(complex_content) do
     # Handle extension or restriction
-    extension = complex_content["extension"]
-    restriction = complex_content["restriction"]
+    extension = pick(complex_content, "extension")
+    restriction = pick(complex_content, "restriction")
 
     cond do
       extension -> extract_extension_elements(extension)
@@ -743,25 +699,17 @@ defmodule Lather.Wsdl.Analyzer do
   end
 
   defp extract_extension_elements(extension) do
-    sequence = extension["sequence"]
+    sequence = pick(extension, "sequence")
     if sequence, do: extract_sequence_elements(sequence), else: []
   end
 
   defp extract_restriction_elements(restriction) do
-    sequence = restriction["sequence"]
+    sequence = pick(restriction, "sequence")
     if sequence, do: extract_sequence_elements(sequence), else: []
   end
 
   defp extract_complex_type_attributes(type_def) do
-    attributes = type_def["attribute"] || []
-
-    case attributes do
-      attributes when is_list(attributes) ->
-        Enum.map(attributes, &parse_attribute/1)
-
-      single_attribute ->
-        [parse_attribute(single_attribute)]
-    end
+    pick_all(type_def, "attribute") |> Enum.map(&parse_attribute/1)
   end
 
   defp parse_attribute(attr_def) do
@@ -775,13 +723,13 @@ defmodule Lather.Wsdl.Analyzer do
 
   defp extract_base_type(type_def) do
     # Check for extension or restriction
-    complex_content = type_def["complexContent"]
-    simple_content = type_def["simpleContent"]
+    complex_content = pick(type_def, "complexContent")
+    simple_content = pick(type_def, "simpleContent")
 
     cond do
       complex_content ->
-        extension = complex_content["extension"]
-        restriction = complex_content["restriction"]
+        extension = pick(complex_content, "extension")
+        restriction = pick(complex_content, "restriction")
 
         cond do
           extension -> extension["@base"]
@@ -790,8 +738,8 @@ defmodule Lather.Wsdl.Analyzer do
         end
 
       simple_content ->
-        extension = simple_content["extension"]
-        restriction = simple_content["restriction"]
+        extension = pick(simple_content, "extension")
+        restriction = pick(simple_content, "restriction")
 
         cond do
           extension -> extension["@base"]
@@ -805,38 +753,35 @@ defmodule Lather.Wsdl.Analyzer do
   end
 
   defp extract_simple_base_type(type_def) do
-    restriction = type_def["restriction"]
+    restriction = pick(type_def, "restriction")
     if restriction, do: restriction["@base"], else: nil
   end
 
   defp extract_restrictions(type_def) do
-    restriction = type_def["restriction"]
+    restriction = pick(type_def, "restriction")
 
     if restriction do
       %{
         base: restriction["@base"],
         enumerations: extract_enumerations(restriction),
-        pattern: restriction["pattern"]["@value"],
-        min_length: restriction["minLength"]["@value"],
-        max_length: restriction["maxLength"]["@value"],
-        min_inclusive: restriction["minInclusive"]["@value"],
-        max_inclusive: restriction["maxInclusive"]["@value"]
+        pattern: attr_of(pick(restriction, "pattern"), "@value"),
+        min_length: attr_of(pick(restriction, "minLength"), "@value"),
+        max_length: attr_of(pick(restriction, "maxLength"), "@value"),
+        min_inclusive: attr_of(pick(restriction, "minInclusive"), "@value"),
+        max_inclusive: attr_of(pick(restriction, "maxInclusive"), "@value")
       }
     else
       %{}
     end
   end
 
+  defp attr_of(map, key) when is_map(map), do: Map.get(map, key)
+  defp attr_of(_, _), do: nil
+
   defp extract_enumerations(restriction) do
-    enums = restriction["enumeration"] || []
-
-    case enums do
-      enums when is_list(enums) ->
-        Enum.map(enums, fn enum -> enum["@value"] end)
-
-      single_enum ->
-        [single_enum["@value"]]
-    end
+    restriction
+    |> pick_all("enumeration")
+    |> Enum.map(fn enum -> enum["@value"] end)
   end
 
   defp detect_authentication(parsed_wsdl) do

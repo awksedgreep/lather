@@ -297,7 +297,18 @@ defmodule Lather.Mtom.Mime do
     ]
 
     headers_section = Enum.join(headers, "\r\n")
-    headers_section <> "\r\n\r\n" <> attachment.data <> "\r\n"
+    headers_section <> "\r\n\r\n" <> encode_attachment_data(attachment) <> "\r\n"
+  end
+
+  # Encode the raw bytes to match the declared Content-Transfer-Encoding so
+  # the MIME part is actually valid. "binary"/"8bit" pass through unchanged.
+  defp encode_attachment_data(%Attachment{content_transfer_encoding: encoding} = attachment) do
+    case encoding do
+      "base64" -> Base.encode64(attachment.data)
+      "binary" -> attachment.data
+      "8bit" -> attachment.data
+      _ -> attachment.data
+    end
   end
 
   defp parse_multipart_body(body, boundary) when is_binary(body) and is_binary(boundary) do
@@ -318,11 +329,24 @@ defmodule Lather.Mtom.Mime do
     parsed_parts =
       Enum.map(parts, fn part ->
         case String.split(part, "\r\n\r\n", parts: 2) do
-          [headers_section, content] ->
-            headers = parse_headers(headers_section)
-            # Trim trailing CRLF from content (added by MIME builder)
-            trimmed_content = String.trim_trailing(content, "\r\n")
-            %{headers: headers, content: trimmed_content}
+        [headers_section, content] ->
+          headers = parse_headers(headers_section)
+          # Trim trailing CRLF from content (added by MIME builder)
+          trimmed_content = String.trim_trailing(content, "\r\n")
+
+          decoded_content =
+            case Map.get(headers, "content-transfer-encoding", "binary") do
+              "base64" ->
+                case Base.decode64(String.replace(trimmed_content, "\n", "")) do
+                  {:ok, decoded} -> decoded
+                  :error -> trimmed_content
+                end
+
+              _ ->
+                trimmed_content
+            end
+
+          %{headers: headers, content: decoded_content}
 
           [content] ->
             # No headers, just content

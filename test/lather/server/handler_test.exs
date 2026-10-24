@@ -231,4 +231,29 @@ defmodule Lather.Server.HandlerTest do
       assert xml =~ ~s(xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/")
     end
   end
+
+  describe "operation faults nested in {:ok, {:error, _}} (issue #26)" do
+    defmodule FaultService do
+      use Lather.Server
+
+      @service_name "FaultService"
+
+      soap_operation "Boom" do
+        description "always fails"
+      end
+
+      def boom(_params), do: {:ok, {:error, "boom"}}
+    end
+
+    test "does not crash and returns a SOAP fault" do
+      body = envelope("<Boom/>")
+
+      assert {:error, status, _headers, xml} =
+               Handler.handle_request("POST", "/soap", @headers, body, FaultService)
+
+      assert status == 500
+      assert xml =~ "<faultcode>Server</faultcode>"
+      assert xml =~ "boom"
+    end
+  end
 end

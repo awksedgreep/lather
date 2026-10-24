@@ -261,4 +261,71 @@ defmodule Lather.Server.EnhancedPlugTest do
     |> conn(path, body)
     |> EnhancedPlug.call(config)
   end
+
+  describe "operation faults and authentication (issues #28, #29)" do
+    defmodule FaultService do
+      use Lather.Server
+
+      @service_name "FaultService"
+
+      soap_operation "Boom" do
+        description "always faults"
+      end
+
+      def boom(_params), do: soap_fault("Client", "boom occurred")
+    end
+
+    defmodule DenyAuth do
+      def authenticate(_conn), do: {:error, :unauthorized}
+    end
+
+    defmodule AllowAuth do
+      def authenticate(conn), do: {:ok, conn}
+    end
+
+    test "an operation that returns a SOAP fault yields a 500 SOAP fault (not 200)" do
+      config = EnhancedPlug.init(service: FaultService, enable_forms: false)
+
+      body =
+        ~s(<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><Boom/></soap:Body></soap:Envelope>)
+
+      response =
+        conn(:post, "/soap", body)
+        |> put_req_header("content-type", "text/xml")
+        |> EnhancedPlug.call(config)
+
+      assert response.status == 500
+      assert response.resp_body =~ "<faultcode>Client</faultcode>"
+      assert response.resp_body =~ "boom occurred"
+    end
+
+    test "the configured auth_handler is enforced on SOAP requests" do
+      config = EnhancedPlug.init(service: FaultService, auth_handler: DenyAuth)
+
+      body =
+        ~s(<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><Boom/></soap:Body></soap:Envelope>)
+
+      response =
+        conn(:post, "/soap", body)
+        |> put_req_header("content-type", "text/xml")
+        |> EnhancedPlug.call(config)
+
+      assert response.status == 401
+      assert get_resp_header(response, "www-authenticate") != []
+    end
+
+    test "a successful auth_handler lets the request through" do
+      config = EnhancedPlug.init(service: FaultService, auth_handler: AllowAuth)
+
+      body =
+        ~s(<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><Boom/></soap:Body></soap:Envelope>)
+
+      response =
+        conn(:post, "/soap", body)
+        |> put_req_header("content-type", "text/xml")
+        |> EnhancedPlug.call(config)
+
+      assert response.status == 500
+    end
+  end
 end

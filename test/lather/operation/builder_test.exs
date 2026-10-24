@@ -616,4 +616,20 @@ defmodule Lather.Operation.BuilderTest do
       assert meta.optional_parameters == ["opt"]
     end
   end
+
+  describe "empty response body (issue #27)" do
+    test "empty <soap:Body/> parses to an empty result instead of crashing" do
+      operation_info = %{
+        name: "Void",
+        input: %{message: "VoidReq", parts: []},
+        output: %{message: "VoidResp", parts: []},
+        soap_action: ""
+      }
+
+      response = %{"soap:Envelope" => %{"soap:Body" => ""}}
+
+      assert {:ok, result} = Builder.parse_response(operation_info, response)
+      assert result == %{}
+    end
+  end
 end

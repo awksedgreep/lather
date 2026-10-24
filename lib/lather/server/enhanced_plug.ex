@@ -105,15 +105,15 @@ defmodule Lather.Server.EnhancedPlug do
 
       # SOAP 1.1 requests (default POST)
       {"POST", :soap_1_1} ->
-        handle_soap_request(conn, config, :v1_1)
+        with_auth(conn, config, fn c -> handle_soap_request(c, config, :v1_1) end)
 
       # SOAP 1.2 requests
       {"POST", :soap_1_2} ->
-        handle_soap_request(conn, config, :v1_2)
+        with_auth(conn, config, fn c -> handle_soap_request(c, config, :v1_2) end)
 
       # JSON/REST requests
       {"POST", :json} when config.enable_json ->
-        handle_json_request(conn, config)
+        with_auth(conn, config, fn c -> handle_json_request(c, config) end)
 
       # Unsupported methods
       _ ->
@@ -126,6 +126,28 @@ defmodule Lather.Server.EnhancedPlug do
       conn
       |> put_resp_content_type("text/xml")
       |> send_resp(500, soap_fault_xml("Server", "Internal server error"))
+  end
+
+  # Run the configured auth handler (if any) before dispatching a request.
+  defp with_auth(conn, %{auth_handler: nil}, handler_fn), do: handler_fn.(conn)
+
+  defp with_auth(conn, %{auth_handler: handler}, handler_fn) do
+    case handler.authenticate(conn) do
+      {:ok, conn} ->
+        handler_fn.(conn)
+
+      {:error, _reason} ->
+        conn
+        |> put_resp_header("www-authenticate", "Basic realm=\"SOAP Service\"")
+        |> put_resp_content_type("text/xml")
+        |> send_resp(401, soap_fault_xml("Client", "Authentication required"))
+
+      _ ->
+        conn
+        |> put_resp_header("www-authenticate", "Basic realm=\"SOAP Service\"")
+        |> put_resp_content_type("text/xml")
+        |> send_resp(401, soap_fault_xml("Client", "Authentication required"))
+    end
   end
 
   # Determine request type from URL and query parameters
@@ -169,7 +191,7 @@ defmodule Lather.Server.EnhancedPlug do
       base_url = get_base_url(conn, config)
 
       wsdl_content =
-        if Map.has_key?(conn.query_params, "enhanced") do
+        if Map.get(conn.query_params, "enhanced") in [nil, "", "1", "true"] do
           # Generate enhanced multi-protocol WSDL
           protocols =
             if config.enable_json,
@@ -549,8 +571,19 @@ defmodule Lather.Server.EnhancedPlug do
 
     if function_exported?(service_module, function_name, 1) do
       try do
-        result = apply(service_module, function_name, [params])
-        {:ok, result}
+        case apply(service_module, function_name, [params]) do
+          {:ok, result} ->
+            {:ok, result}
+
+          {:soap_fault, fault} ->
+            {:error, {:soap_fault, fault}}
+
+          {:error, reason} ->
+            {:error, {:soap_fault, %{fault_code: "Server", fault_string: to_string(reason)}}}
+
+          result ->
+            {:ok, result}
+        end
       rescue
         error ->
           {:error,

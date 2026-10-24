@@ -498,6 +498,14 @@ defmodule Lather.Operation.Builder do
 
         {:error, error}
 
+      body when is_map(body) ->
+        {:ok, body}
+
+      # An empty <soap:Body/> (or self-closing body) parses to "" or nil-ish;
+      # treat it as an empty response body rather than crashing on Map.keys/2.
+      body when is_binary(body) and body == "" ->
+        {:ok, %{}}
+
       body ->
         {:ok, body}
     end

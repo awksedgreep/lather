@@ -303,8 +303,12 @@ defmodule Lather.Error do
     end
   end
 
-  def format_error(error, _options) do
-    "Unknown Error: #{inspect(error)}"
+  def format_error(error, options) do
+    if Keyword.get(options, :format) == :json do
+      encode_json(error)
+    else
+      "Unknown Error: #{inspect(error)}"
+    end
   end
 
   @doc """
@@ -397,11 +401,19 @@ defmodule Lather.Error do
   end
 
   defp extract_fault_code(fault) do
-    Elements.get(fault, "faultcode") || Elements.get(fault, "Code") || "Unknown"
+    # SOAP 1.1: <faultcode>. SOAP 1.2: <Code><Value>...</Value></Code>
+    case Elements.get_in(fault, ["Code", "Value"]) do
+      nil -> Elements.get(fault, "faultcode") || "Unknown"
+      value -> value
+    end
   end
 
   defp extract_fault_string(fault) do
-    Elements.get(fault, "faultstring") || Elements.get(fault, "Reason") || "Unknown error"
+    # SOAP 1.1: <faultstring>. SOAP 1.2: <Reason><Text>...</Text></Reason>
+    case Elements.get_in(fault, ["Reason", "Text"]) do
+      nil -> Elements.get(fault, "faultstring") || "Unknown error"
+      value -> value
+    end
   end
 
   defp extract_fault_actor(fault) do
@@ -469,7 +481,13 @@ defmodule Lather.Error do
   defp get_error_type(_), do: :unknown
 
   defp encode_json(data) do
-    # Simple JSON encoding without external dependencies
-    inspect(data)
+    if Code.ensure_loaded?(Jason) do
+      case Jason.encode(data) do
+        {:ok, json} -> json
+        {:error, _} -> inspect(data)
+      end
+    else
+      inspect(data)
+    end
   end
 end

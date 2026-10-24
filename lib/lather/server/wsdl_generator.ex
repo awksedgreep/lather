@@ -12,7 +12,7 @@ defmodule Lather.Server.WSDLGenerator do
   def generate(service_info, base_url) do
     target_namespace = service_info.target_namespace
     service_name = service_info.name
-    endpoint_url = "#{base_url}#{service_name}"
+    endpoint_url = join_url(base_url, service_name)
 
     """
     <?xml version="1.0" encoding="UTF-8"?>
@@ -54,7 +54,7 @@ defmodule Lather.Server.WSDLGenerator do
   # Generate a complex type definition
   defp generate_complex_type(type) do
     """
-        <xsd:complexType name="#{type.name}">
+        <xsd:complexType name="#{xml_escape(type.name)}">
           <xsd:sequence>
     #{Enum.map_join(type.elements, "\n", &generate_element/1)}
           </xsd:sequence>
@@ -69,7 +69,7 @@ defmodule Lather.Server.WSDLGenerator do
     max_occurs = element.max_occurs || "1"
 
     """
-            <xsd:element name="#{element.name}" type="#{type_attr}"
+            <xsd:element name="#{xml_escape(element.name)}" type="#{type_attr}"
                          minOccurs="#{min_occurs}" maxOccurs="#{max_occurs}"/>
     """
   end
@@ -83,11 +83,11 @@ defmodule Lather.Server.WSDLGenerator do
   # Generate input and output messages for an operation
   defp generate_operation_messages(operation) do
     """
-    <message name="#{operation.name}Request">
+    <message name="#{xml_escape(operation.name)}Request">
     #{Enum.map_join(operation.input, "\n", &generate_message_part/1)}
     </message>
 
-    <message name="#{operation.name}Response">
+    <message name="#{xml_escape(operation.name)}Response">
     #{Enum.map_join(operation.output, "\n", &generate_message_part/1)}
     </message>
     """
@@ -98,14 +98,14 @@ defmodule Lather.Server.WSDLGenerator do
     type_attr = map_elixir_type_to_xsd(param.type)
 
     """
-      <part name="#{param.name}" type="#{type_attr}"/>
+      <part name="#{xml_escape(param.name)}" type="#{type_attr}"/>
     """
   end
 
   # Generate port type with operations
   defp generate_port_type(service_info) do
     """
-    <portType name="#{service_info.name}PortType">
+    <portType name="#{xml_escape(service_info.name)}PortType">
     #{Enum.map_join(service_info.operations, "\n", &generate_port_operation/1)}
     </portType>
     """
@@ -115,15 +115,15 @@ defmodule Lather.Server.WSDLGenerator do
   defp generate_port_operation(operation) do
     description =
       if operation.description do
-        "\n      <documentation>#{operation.description}</documentation>"
+        "\n      <documentation>#{xml_escape(operation.description)}</documentation>"
       else
         ""
       end
 
     """
-      <operation name="#{operation.name}">#{description}
-        <input message="tns:#{operation.name}Request"/>
-        <output message="tns:#{operation.name}Response"/>
+      <operation name="#{xml_escape(operation.name)}">#{description}
+        <input message="tns:#{xml_escape(operation.name)}Request"/>
+        <output message="tns:#{xml_escape(operation.name)}Response"/>
       </operation>
     """
   end
@@ -131,7 +131,7 @@ defmodule Lather.Server.WSDLGenerator do
   # Generate SOAP binding
   defp generate_binding(service_info) do
     """
-    <binding name="#{service_info.name}Binding" type="tns:#{service_info.name}PortType">
+    <binding name="#{xml_escape(service_info.name)}Binding" type="tns:#{xml_escape(service_info.name)}PortType">
       <soap:binding transport="http://schemas.xmlsoap.org/soap/http"/>
     #{Enum.map_join(service_info.operations, "\n", &generate_binding_operation/1)}
     </binding>
@@ -143,8 +143,8 @@ defmodule Lather.Server.WSDLGenerator do
     soap_action = operation.soap_action || "#{operation.name}"
 
     """
-      <operation name="#{operation.name}">
-        <soap:operation soapAction="#{soap_action}"/>
+      <operation name="#{xml_escape(operation.name)}">
+        <soap:operation soapAction="#{xml_escape(soap_action)}"/>
         <input>
           <soap:body use="literal"/>
         </input>
@@ -158,12 +158,28 @@ defmodule Lather.Server.WSDLGenerator do
   # Generate service definition
   defp generate_service(service_info, endpoint_url) do
     """
-    <service name="#{service_info.name}">
-      <port name="#{service_info.name}Port" binding="tns:#{service_info.name}Binding">
-        <soap:address location="#{endpoint_url}"/>
+    <service name="#{xml_escape(service_info.name)}">
+      <port name="#{xml_escape(service_info.name)}Port" binding="tns:#{xml_escape(service_info.name)}Binding">
+        <soap:address location="#{xml_escape(endpoint_url)}"/>
       </port>
     </service>
     """
+  end
+
+  # Join a base URL and a path segment with exactly one "/" between them.
+  defp join_url(base, segment) do
+    base = String.trim_trailing(base, "/")
+    base <> "/" <> segment
+  end
+
+  defp xml_escape(value) do
+    value
+    |> to_string()
+    |> String.replace("&", "&amp;")
+    |> String.replace("<", "&lt;")
+    |> String.replace(">", "&gt;")
+    |> String.replace("\"", "&quot;")
+    |> String.replace("'", "&#39;")
   end
 
   # Map Elixir/internal types to XSD types

@@ -10,7 +10,8 @@ defmodule Lather.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      {Finch, name: Lather.Finch, pools: %{default: [size: 100, count: 1]}}
+      {Finch, name: Lather.Finch, pools: %{default: [size: 100, count: 1]}},
+      Lather.Http.SSLPoolManager
     ]
 
     opts = [strategy: :one_for_one, name: Lather.Supervisor]

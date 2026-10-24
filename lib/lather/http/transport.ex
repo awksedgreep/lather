@@ -167,7 +167,9 @@ defmodule Lather.Http.Transport do
   end
  
   defp handle_request_error(reason, options) do
-    timeout = Keyword.get(options, :timeout, @default_timeout)
+    timeout =
+      Keyword.get(options, :receive_timeout) ||
+        Keyword.get(options, :timeout, @default_timeout)
  
     case reason do
       %Finch.TransportError{} = r ->
@@ -342,13 +344,29 @@ defmodule Lather.Http.Transport do
   defp handle_response(%Finch.Response{status: status, body: body, headers: headers})
        when status in 200..299 do
     Logger.debug("SOAP request completed with status #{status}")
-    {:ok, %{status: status, body: body, headers: headers}}
+
+    # SOAP 1.2 (and some SOAP 1.1 servers) return faults with a successful
+    # HTTP status. Detect them so callers receive the fault rather than a
+    # bogus successful response.
+    case Error.parse_soap_fault(body) do
+      {:ok, fault} -> {:error, {:soap_fault, fault}}
+      _ -> {:ok, %{status: status, body: body, headers: headers}}
+    end
   end
 
   defp handle_response(%Finch.Response{status: status, body: body, headers: headers}) do
     Logger.warning("SOAP request returned HTTP #{status}")
-    error = Error.http_error(status, body, headers)
-    {:error, error}
+
+    # SOAP faults are not limited to HTTP 500: many services return them with
+    # 400/404/etc. If the body carries a SOAP Fault, surface the fault detail
+    # instead of a generic HTTP error so callers get the fault code/string.
+    case Error.parse_soap_fault(body) do
+      {:ok, fault} ->
+        {:error, {:soap_fault, fault}}
+
+      _ ->
+        {:error, Error.http_error(status, body, headers)}
+    end
   end
 
   defp handle_transport_error(reason, label) do

@@ -43,7 +43,7 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
                  targetNamespace="#{target_namespace}">
 
       <documentation>
-        #{service_name} - Multi-Protocol Web Service
+        #{xml_escape(service_name)} - Multi-Protocol Web Service
 
         This service supports multiple protocols for maximum compatibility:
         - SOAP 1.1 (Primary - Maximum Compatibility)
@@ -88,7 +88,7 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
   defp generate_complex_type(type) do
     doc =
       if type.description do
-        "\n        <xsd:annotation>\n          <xsd:documentation>#{type.description}</xsd:documentation>\n        </xsd:annotation>"
+        "\n        <xsd:annotation>\n          <xsd:documentation>#{xml_escape(type.description)}</xsd:documentation>\n        </xsd:annotation>"
       else
         ""
       end
@@ -110,13 +110,13 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
 
     doc =
       if element.description do
-        "\n              <xsd:annotation>\n                <xsd:documentation>#{element.description}</xsd:documentation>\n              </xsd:annotation>"
+        "\n              <xsd:annotation>\n                <xsd:documentation>#{xml_escape(element.description)}</xsd:documentation>\n              </xsd:annotation>"
       else
         ""
       end
 
     """
-            <xsd:element name="#{element.name}" type="#{type_attr}"
+            <xsd:element name="#{xml_escape(element.name)}" type="#{type_attr}"
                          minOccurs="#{min_occurs}" maxOccurs="#{max_occurs}">#{doc}
             </xsd:element>
     """
@@ -132,14 +132,14 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
   defp generate_operation_messages(operation) do
     input_doc =
       if operation.description do
-        "\n    <documentation>Request message for #{operation.name}: #{operation.description}</documentation>"
+        "\n    <documentation>Request message for #{xml_escape(operation.name)}: #{xml_escape(operation.description)}</documentation>"
       else
         ""
       end
 
     output_doc =
       if operation.description do
-        "\n    <documentation>Response message for #{operation.name}: #{operation.description}</documentation>"
+        "\n    <documentation>Response message for #{xml_escape(operation.name)}: #{xml_escape(operation.description)}</documentation>"
       else
         ""
       end
@@ -149,11 +149,11 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
     output_params = Map.get(operation, :output, Map.get(operation, :output_parameters, []))
 
     """
-    <message name="#{operation.name}Request">#{input_doc}
+    <message name="#{xml_escape(operation.name)}Request">#{input_doc}
     #{Enum.map_join(input_params, "\n", &generate_message_part/1)}
     </message>
 
-    <message name="#{operation.name}Response">#{output_doc}
+    <message name="#{xml_escape(operation.name)}Response">#{output_doc}
     #{Enum.map_join(output_params, "\n", &generate_message_part/1)}
     </message>
     """
@@ -164,16 +164,16 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
     type_attr = map_elixir_type_to_xsd(param.type)
 
     """
-      <part name="#{param.name}" type="#{type_attr}"/>
+      <part name="#{xml_escape(param.name)}" type="#{type_attr}"/>
     """
   end
 
   # Generate port type with enhanced documentation
   defp generate_port_type(service_info) do
     """
-    <portType name="#{service_info.name}PortType">
+    <portType name="#{xml_escape(service_info.name)}PortType">
       <documentation>
-        Port type defining all operations for #{service_info.name}.
+        Port type defining all operations for #{xml_escape(service_info.name)}.
         This interface is implemented by all protocol bindings.
       </documentation>
     #{Enum.map_join(service_info.operations, "\n", &generate_port_operation/1)}
@@ -185,15 +185,15 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
   defp generate_port_operation(operation) do
     description =
       if operation.description do
-        "\n      <documentation>#{operation.description}</documentation>"
+        "\n      <documentation>#{xml_escape(operation.description)}</documentation>"
       else
         ""
       end
 
     """
-      <operation name="#{operation.name}">#{description}
-        <input message="tns:#{operation.name}Request"/>
-        <output message="tns:#{operation.name}Response"/>
+      <operation name="#{xml_escape(operation.name)}">#{description}
+        <input message="tns:#{xml_escape(operation.name)}Request"/>
+        <output message="tns:#{xml_escape(operation.name)}Response"/>
       </operation>
     """
   end
@@ -229,7 +229,7 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
   # Generate SOAP 1.1 binding (primary protocol)
   defp generate_soap_1_1_binding(service_info) do
     """
-    <binding name="#{service_info.name}SOAP11Binding" type="tns:#{service_info.name}PortType">
+    <binding name="#{xml_escape(service_info.name)}SOAP11Binding" type="tns:#{xml_escape(service_info.name)}PortType">
       <documentation>SOAP 1.1 Protocol Binding - Primary/Legacy Support</documentation>
       <soap:binding transport="http://schemas.xmlsoap.org/soap/http" style="document"/>
     #{Enum.map_join(service_info.operations, "\n", &generate_soap_1_1_operation/1)}
@@ -239,12 +239,12 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
 
   # Generate SOAP 1.1 operation binding
   defp generate_soap_1_1_operation(operation) do
-    soap_action = operation.soap_action || "#{operation.name}"
+    soap_action = operation.soap_action || "#{xml_escape(operation.name)}"
 
     """
-      <operation name="#{operation.name}">
-        <documentation>SOAP 1.1 binding for #{operation.name}</documentation>
-        <soap:operation soapAction="#{soap_action}" style="document"/>
+      <operation name="#{xml_escape(operation.name)}">
+        <documentation>SOAP 1.1 binding for #{xml_escape(operation.name)}</documentation>
+        <soap:operation soapAction="#{xml_escape(soap_action)}" style="document"/>
         <input>
           <soap:body use="literal"/>
         </input>
@@ -258,7 +258,7 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
   # Generate SOAP 1.2 binding (enhanced protocol)
   defp generate_soap_1_2_binding(service_info) do
     """
-    <binding name="#{service_info.name}SOAP12Binding" type="tns:#{service_info.name}PortType">
+    <binding name="#{xml_escape(service_info.name)}SOAP12Binding" type="tns:#{xml_escape(service_info.name)}PortType">
       <documentation>SOAP 1.2 Protocol Binding - Enhanced Error Handling and Performance</documentation>
       <soap12:binding transport="http://schemas.xmlsoap.org/soap/http" style="document"/>
     #{Enum.map_join(service_info.operations, "\n", &generate_soap_1_2_operation/1)}
@@ -268,12 +268,12 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
 
   # Generate SOAP 1.2 operation binding
   defp generate_soap_1_2_operation(operation) do
-    soap_action = operation.soap_action || "#{operation.name}"
+    soap_action = operation.soap_action || "#{xml_escape(operation.name)}"
 
     """
-      <operation name="#{operation.name}">
-        <documentation>SOAP 1.2 binding for #{operation.name}</documentation>
-        <soap12:operation soapAction="#{soap_action}" style="document"/>
+      <operation name="#{xml_escape(operation.name)}">
+        <documentation>SOAP 1.2 binding for #{xml_escape(operation.name)}</documentation>
+        <soap12:operation soapAction="#{xml_escape(soap_action)}" style="document"/>
         <input>
           <soap12:body use="literal"/>
         </input>
@@ -287,7 +287,7 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
   # Generate HTTP/REST binding (modern protocol)
   defp generate_http_binding(service_info) do
     """
-    <binding name="#{service_info.name}HTTPBinding" type="tns:#{service_info.name}PortType">
+    <binding name="#{xml_escape(service_info.name)}HTTPBinding" type="tns:#{xml_escape(service_info.name)}PortType">
       <documentation>HTTP/REST Protocol Binding - Modern JSON/XML Support</documentation>
       <http:binding verb="POST"/>
     #{Enum.map_join(service_info.operations, "\n", &generate_http_operation/1)}
@@ -298,8 +298,8 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
   # Generate HTTP operation binding with JSON and XML support
   defp generate_http_operation(operation) do
     """
-      <operation name="#{operation.name}">
-        <documentation>HTTP binding for #{operation.name} - Supports JSON and XML</documentation>
+      <operation name="#{xml_escape(operation.name)}">
+        <documentation>HTTP binding for #{xml_escape(operation.name)} - Supports JSON and XML</documentation>
         <http:operation location="/#{String.downcase(operation.name)}"/>
         <input>
           <mime:content type="application/json"/>
@@ -344,9 +344,9 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
     port_list = Enum.reverse(ports) |> Enum.join("\n\n")
 
     """
-    <service name="#{service_info.name}">
+    <service name="#{xml_escape(service_info.name)}">
       <documentation>
-        #{service_info.name} Multi-Protocol Service
+        #{xml_escape(service_info.name)} Multi-Protocol Service
 
         Available Endpoints:
         - SOAP 1.1: Maximum compatibility with legacy systems
@@ -363,24 +363,24 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
 
   # Generate SOAP 1.1 service port
   defp generate_soap_1_1_port(service_info, base_url) do
-    endpoint_url = "#{base_url}soap/v1.1/#{service_info.name}"
+    endpoint_url = "#{base_url}soap/v1.1/#{xml_escape(service_info.name)}"
 
     """
-      <port name="#{service_info.name}SOAP11Port" binding="tns:#{service_info.name}SOAP11Binding">
+      <port name="#{xml_escape(service_info.name)}SOAP11Port" binding="tns:#{xml_escape(service_info.name)}SOAP11Binding">
         <documentation>SOAP 1.1 Endpoint - Use for maximum compatibility</documentation>
-        <soap:address location="#{endpoint_url}"/>
+        <soap:address location="#{xml_escape(endpoint_url)}"/>
       </port>
     """
   end
 
   # Generate SOAP 1.2 service port
   defp generate_soap_1_2_port(service_info, base_url) do
-    endpoint_url = "#{base_url}soap/v1.2/#{service_info.name}"
+    endpoint_url = "#{base_url}soap/v1.2/#{xml_escape(service_info.name)}"
 
     """
-      <port name="#{service_info.name}SOAP12Port" binding="tns:#{service_info.name}SOAP12Binding">
+      <port name="#{xml_escape(service_info.name)}SOAP12Port" binding="tns:#{xml_escape(service_info.name)}SOAP12Binding">
         <documentation>SOAP 1.2 Endpoint - Enhanced features and error handling</documentation>
-        <soap12:address location="#{endpoint_url}"/>
+        <soap12:address location="#{xml_escape(endpoint_url)}"/>
       </port>
     """
   end
@@ -391,9 +391,9 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
       "#{base_url}#{String.trim_leading(base_path, "/")}/#{String.downcase(service_info.name)}"
 
     """
-      <port name="#{service_info.name}HTTPPort" binding="tns:#{service_info.name}HTTPBinding">
+      <port name="#{xml_escape(service_info.name)}HTTPPort" binding="tns:#{xml_escape(service_info.name)}HTTPBinding">
         <documentation>HTTP/REST Endpoint - Modern JSON/XML API</documentation>
-        <http:address location="#{endpoint_url}"/>
+        <http:address location="#{xml_escape(endpoint_url)}"/>
       </port>
     """
   end
@@ -427,6 +427,16 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
   defp map_elixir_type_to_xsd("anyURI"), do: "xsd:anyURI"
   defp map_elixir_type_to_xsd(type) when is_binary(type), do: "tns:#{type}"
   defp map_elixir_type_to_xsd(type), do: "tns:#{type}"
+
+  defp xml_escape(value) do
+    value
+    |> to_string()
+    |> String.replace("&", "&amp;")
+    |> String.replace("<", "&lt;")
+    |> String.replace(">", "&gt;")
+    |> String.replace("\"", "&quot;")
+    |> String.replace("'", "&#39;")
+  end
 
   # Get current library version
   defp get_version do

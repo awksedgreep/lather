@@ -70,7 +70,7 @@ defmodule Lather.Server do
 
       # Set defaults
       @namespace unquote(opts[:namespace] || "http://tempuri.org/")
-      @service_name unquote(opts[:service_name] || to_string(__MODULE__))
+      @service_name unquote(opts[:service_name]) || to_string(__MODULE__)
       @target_namespace @namespace
     end
   end
@@ -228,7 +228,8 @@ defmodule Lather.Server do
   end
 
   defp do_validate_type(value, "boolean") do
-    if String.trim(value) in ["true", "false", "1", "0"],
+    # Accept HTML checkbox values ("on"/"off") emitted by the interactive form.
+    if String.trim(value) in ["true", "false", "1", "0", "on", "off"],
       do: :ok,
       else: {:error, "invalid boolean format"}
   end

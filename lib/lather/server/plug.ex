@@ -57,6 +57,8 @@ defmodule Lather.Server.Plug do
 
   @impl Plug
   def call(%Plug.Conn{method: "GET"} = conn, %{generate_wsdl: true} = config) do
+    conn = Plug.Conn.fetch_query_params(conn)
+
     case Map.get(conn.query_params, "wsdl") do
       val when val in [nil, "", "1", "true"] ->
         handle_wsdl_request(conn, config)
@@ -200,6 +202,12 @@ defmodule Lather.Server.Plug do
            {:ok, result} <- call_operation_function(service, operation, params),
            {:ok, formatted_result} <- Lather.Server.format_response(result, operation) do
         {:ok, formatted_result, operation}
+      else
+        {:soap_fault, fault} ->
+          {:error, {:soap_fault, fault}}
+
+        {:error, {:soap_fault, _}} = error ->
+          error
       end
     else
       {:error,

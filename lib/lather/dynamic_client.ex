@@ -383,15 +383,16 @@ defmodule Lather.DynamicClient do
     # not HTTP headers. Transport.build_headers expects HTTP headers as tuples {name, value}.
     http_call_opts = Keyword.delete(call_opts, :headers)
 
-    # Combine client options with call options, pass soap_action and version
+    # Combine client options with call options (call options win), then pin
+    # the per-call timeout/action/version last so they always take effect.
     transport_options =
-      base_client.options ++
-        http_call_opts ++
-        [
-          timeout: timeout,
-          soap_action: soap_action,
-          soap_version: soap_version
-        ]
+      base_client.options
+      |> Keyword.merge(http_call_opts)
+      |> Keyword.merge([
+        timeout: timeout,
+        soap_action: soap_action,
+        soap_version: soap_version
+      ])
 
     # Send the pre-built envelope directly
     case Transport.post(base_client.endpoint, soap_envelope, transport_options) do
@@ -399,7 +400,12 @@ defmodule Lather.DynamicClient do
         # Parse XML from successful response
         case Parser.parse(response.body) do
           {:ok, parsed_xml} ->
-            {:ok, parsed_xml}
+            # SOAP 1.2 may return a fault with an HTTP 200 status; detect it
+            # even on a successful status code.
+            case extract_soap_fault(parsed_xml) do
+              {:ok, fault} -> {:error, {:soap_fault, fault}}
+              :not_fault -> {:ok, parsed_xml}
+            end
 
           {:error, parse_error} ->
             {:error,

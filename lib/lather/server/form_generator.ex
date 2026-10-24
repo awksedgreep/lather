@@ -21,7 +21,7 @@ defmodule Lather.Server.FormGenerator do
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>#{service_name} - #{operation.name}</title>
+        <title>#{html_escape(service_name)} - #{html_escape(operation.name)}</title>
         <style>
             #{generate_css()}
         </style>
@@ -29,14 +29,14 @@ defmodule Lather.Server.FormGenerator do
     <body>
         <div class="container">
             <div class="header">
-                <h1>#{service_name}</h1>
+                <h1>#{html_escape(service_name)}</h1>
                 <p class="service-description">Powered by Lather SOAP Library</p>
                 <p><a href="?">Click here for a complete list of operations.</a></p>
             </div>
 
             <div class="operation-section">
-                <h2>#{operation.name}</h2>
-                #{if operation.description, do: "<p class=\"operation-description\">#{operation.description}</p>", else: ""}
+                <h2>#{html_escape(operation.name)}</h2>
+                #{if operation.description, do: "<p class=\"operation-description\">#{html_escape(operation.description)}</p>", else: ""}
             </div>
 
             <div class="test-section">
@@ -88,7 +88,7 @@ defmodule Lather.Server.FormGenerator do
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>#{service_name} - Service Overview</title>
+        <title>#{html_escape(service_name)} - Service Overview</title>
         <style>
             #{generate_css()}
         </style>
@@ -96,9 +96,9 @@ defmodule Lather.Server.FormGenerator do
     <body>
         <div class="container">
             <div class="header">
-                <h1>#{service_name}</h1>
+                <h1>#{html_escape(service_name)}</h1>
                 <p class="service-description">Multi-Protocol Web Service</p>
-                <p><strong>Namespace:</strong> #{namespace}</p>
+                <p><strong>Namespace:</strong> #{html_escape(namespace)}</p>
                 <p><strong>Powered by:</strong> Lather SOAP Library v#{get_version()}</p>
             </div>
 
@@ -108,12 +108,12 @@ defmodule Lather.Server.FormGenerator do
                     <div class="protocol-card">
                         <h3>SOAP 1.1</h3>
                         <p>Maximum compatibility with legacy systems</p>
-                        <code>#{base_url}soap/v1.1/#{service_name}</code>
+                        <code>#{base_url}soap/v1.1/#{html_escape(service_name)}</code>
                     </div>
                     <div class="protocol-card">
                         <h3>SOAP 1.2</h3>
                         <p>Enhanced error handling and performance</p>
-                        <code>#{base_url}soap/v1.2/#{service_name}</code>
+                        <code>#{base_url}soap/v1.2/#{html_escape(service_name)}</code>
                     </div>
                     <div class="protocol-card">
                         <h3>JSON/REST</h3>
@@ -146,7 +146,7 @@ defmodule Lather.Server.FormGenerator do
     soap_action = operation.soap_action || operation.name
 
     """
-    <form id="testForm" class="test-form" data-namespace="#{namespace}" data-soap-action="#{soap_action}">
+    <form id="testForm" class="test-form" data-namespace="#{html_escape(namespace)}" data-soap-action="#{html_escape(soap_action)}">
         <table class="parameter-table">
             <thead>
                 <tr>
@@ -159,10 +159,10 @@ defmodule Lather.Server.FormGenerator do
             </tbody>
         </table>
         <div class="form-actions">
-            <button type="button" onclick="invokeOperation('#{form_action}', '#{operation.name}')" class="invoke-btn">
+            <button type="button" onclick="invokeOperation('#{form_action}', '#{html_escape(operation.name)}')" class="invoke-btn">
                 Invoke
             </button>
-            <button type="button" onclick="viewJSON('#{operation.name}')" class="json-btn">
+            <button type="button" onclick="viewJSON('#{html_escape(operation.name)}')" class="json-btn">
                 View JSON Format
             </button>
         </div>
@@ -184,13 +184,13 @@ defmodule Lather.Server.FormGenerator do
     """
                 <tr>
                     <td class="param-name">
-                        #{param.name}
+                        #{html_escape(param.name)}
                         #{if param.required, do: "<span class=\"required-indicator\">*</span>", else: ""}
-                        #{if param.description, do: "<br><small>#{param.description}</small>", else: ""}
+                        #{if param.description, do: "<br><small>#{html_escape(param.description)}</small>", else: ""}
                     </td>
                     <td class="param-value">
                         <input type="#{input_type}"
-                               name="#{param.name}"
+                               name="#{html_escape(param.name)}"
                                placeholder="#{placeholder}"
                                class="param-input#{required_class}" />
                     </td>
@@ -200,7 +200,7 @@ defmodule Lather.Server.FormGenerator do
 
   # Generate SOAP 1.1 example
   defp generate_soap_1_1_example(operation, base_url, service_name, namespace) do
-    endpoint = "#{base_url}soap/v1.1/#{service_name}"
+    endpoint = "#{base_url}soap/v1.1/#{html_escape(service_name)}"
     soap_action = operation.soap_action || operation.name
 
     request_params =
@@ -208,7 +208,7 @@ defmodule Lather.Server.FormGenerator do
         Map.get(operation, :input, Map.get(operation, :input_parameters, [])),
         "\n",
         fn param ->
-          "      <#{param.name}>#{get_type_placeholder(param.type)}</#{param.name}>"
+          "      <#{html_escape(param.name)}>#{get_type_placeholder(param.type)}</#{html_escape(param.name)}>"
         end
       )
 
@@ -217,25 +217,25 @@ defmodule Lather.Server.FormGenerator do
         Map.get(operation, :output, Map.get(operation, :output_parameters, [])),
         "\n",
         fn param ->
-          "      <#{param.name}>#{get_type_placeholder(param.type)}</#{param.name}>"
+          "      <#{html_escape(param.name)}>#{get_type_placeholder(param.type)}</#{html_escape(param.name)}>"
         end
       )
 
     """
     <div class="code-example">
         <h4>Request</h4>
-        <pre><code>POST #{URI.parse(endpoint).path || "/#{service_name}"} HTTP/1.1
+        <pre><code>POST #{URI.parse(endpoint).path || "/#{html_escape(service_name)}"} HTTP/1.1
     Host: #{URI.parse(endpoint).host || "localhost"}
     Content-Type: text/xml; charset=utf-8
-    SOAPAction: "#{soap_action}"
+    SOAPAction: "#{html_escape(soap_action)}"
     Content-Length: length
 
     &lt;?xml version="1.0" encoding="utf-8"?&gt;
     &lt;soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"&gt;
     &lt;soap:Body&gt;
-    &lt;#{operation.name} xmlns="#{namespace}"&gt;
+    &lt;#{html_escape(operation.name)} xmlns="#{html_escape(namespace)}"&gt;
     #{request_params}
-    &lt;/#{operation.name}&gt;
+    &lt;/#{html_escape(operation.name)}&gt;
     &lt;/soap:Body&gt;
     &lt;/soap:Envelope&gt;</code></pre>
 
@@ -247,9 +247,9 @@ defmodule Lather.Server.FormGenerator do
     &lt;?xml version="1.0" encoding="utf-8"?&gt;
     &lt;soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"&gt;
     &lt;soap:Body&gt;
-    &lt;#{operation.name}Response xmlns="#{namespace}"&gt;
+    &lt;#{html_escape(operation.name)}Response xmlns="#{html_escape(namespace)}"&gt;
     #{response_params}
-    &lt;/#{operation.name}Response&gt;
+    &lt;/#{html_escape(operation.name)}Response&gt;
     &lt;/soap:Body&gt;
     &lt;/soap:Envelope&gt;</code></pre>
     </div>
@@ -258,7 +258,7 @@ defmodule Lather.Server.FormGenerator do
 
   # Generate SOAP 1.2 example
   defp generate_soap_1_2_example(operation, base_url, service_name, namespace) do
-    endpoint = "#{base_url}soap/v1.2/#{service_name}"
+    endpoint = "#{base_url}soap/v1.2/#{html_escape(service_name)}"
     soap_action = operation.soap_action || operation.name
 
     request_params =
@@ -266,7 +266,7 @@ defmodule Lather.Server.FormGenerator do
         Map.get(operation, :input, Map.get(operation, :input_parameters, [])),
         "\n",
         fn param ->
-          "      <#{param.name}>#{get_type_placeholder(param.type)}</#{param.name}>"
+          "      <#{html_escape(param.name)}>#{get_type_placeholder(param.type)}</#{html_escape(param.name)}>"
         end
       )
 
@@ -275,24 +275,24 @@ defmodule Lather.Server.FormGenerator do
         Map.get(operation, :output, Map.get(operation, :output_parameters, [])),
         "\n",
         fn param ->
-          "      <#{param.name}>#{get_type_placeholder(param.type)}</#{param.name}>"
+          "      <#{html_escape(param.name)}>#{get_type_placeholder(param.type)}</#{html_escape(param.name)}>"
         end
       )
 
     """
     <div class="code-example">
         <h4>Request</h4>
-        <pre><code>POST #{URI.parse(endpoint).path || "/#{service_name}"} HTTP/1.1
+        <pre><code>POST #{URI.parse(endpoint).path || "/#{html_escape(service_name)}"} HTTP/1.1
     Host: #{URI.parse(endpoint).host || "localhost"}
-    Content-Type: application/soap+xml; charset=utf-8; action="#{soap_action}"
+    Content-Type: application/soap+xml; charset=utf-8; action="#{html_escape(soap_action)}"
     Content-Length: length
 
     &lt;?xml version="1.0" encoding="utf-8"?&gt;
     &lt;soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"&gt;
     &lt;soap12:Body&gt;
-    &lt;#{operation.name} xmlns="#{namespace}"&gt;
+    &lt;#{html_escape(operation.name)} xmlns="#{html_escape(namespace)}"&gt;
     #{request_params}
-    &lt;/#{operation.name}&gt;
+    &lt;/#{html_escape(operation.name)}&gt;
     &lt;/soap12:Body&gt;
     &lt;/soap12:Envelope&gt;</code></pre>
 
@@ -304,9 +304,9 @@ defmodule Lather.Server.FormGenerator do
     &lt;?xml version="1.0" encoding="utf-8"?&gt;
     &lt;soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope"&gt;
     &lt;soap12:Body&gt;
-    &lt;#{operation.name}Response xmlns="#{namespace}"&gt;
+    &lt;#{html_escape(operation.name)}Response xmlns="#{html_escape(namespace)}"&gt;
     #{response_params}
-    &lt;/#{operation.name}Response&gt;
+    &lt;/#{html_escape(operation.name)}Response&gt;
     &lt;/soap12:Body&gt;
     &lt;/soap12:Envelope&gt;</code></pre>
     </div>
@@ -320,18 +320,18 @@ defmodule Lather.Server.FormGenerator do
 
     request_json =
       Map.get(operation, :input, Map.get(operation, :input_parameters, []))
-      |> Enum.map(fn param -> "  \"#{param.name}\": #{get_json_placeholder(param.type)}" end)
+      |> Enum.map(fn param -> "  \"#{html_escape(param.name)}\": #{get_json_placeholder(param.type)}" end)
       |> Enum.join(",\n")
 
     response_json =
       Map.get(operation, :output, Map.get(operation, :output_parameters, []))
-      |> Enum.map(fn param -> "  \"#{param.name}\": #{get_json_placeholder(param.type)}" end)
+      |> Enum.map(fn param -> "  \"#{html_escape(param.name)}\": #{get_json_placeholder(param.type)}" end)
       |> Enum.join(",\n")
 
     """
     <div class="code-example">
         <h4>Request</h4>
-        <pre><code>POST #{URI.parse(endpoint).path || "/api/#{service_name}"} HTTP/1.1
+        <pre><code>POST #{URI.parse(endpoint).path || "/api/#{html_escape(service_name)}"} HTTP/1.1
     Host: #{URI.parse(endpoint).host || "localhost"}
     Content-Type: application/json; charset=utf-8
     Content-Length: length
@@ -356,8 +356,8 @@ defmodule Lather.Server.FormGenerator do
   defp generate_operation_summary(operation, _service_name) do
     """
     <div class="operation-item">
-        <h4><a href="?op=#{operation.name}">#{operation.name}</a></h4>
-        #{if operation.description, do: "<p>#{operation.description}</p>", else: ""}
+        <h4><a href="?op=#{html_escape(operation.name)}">#{html_escape(operation.name)}</a></h4>
+        #{if operation.description, do: "<p>#{html_escape(operation.description)}</p>", else: ""}
         <div class="operation-details">
             <span class="param-count">#{length(Map.get(operation, :input, Map.get(operation, :input_parameters, [])))} input(s)</span>
             <span class="param-count">#{length(Map.get(operation, :output, Map.get(operation, :output_parameters, [])))} output(s)</span>
@@ -1066,6 +1066,17 @@ defmodule Lather.Server.FormGenerator do
   end
 
   # Helper functions for generating appropriate input types and placeholders
+  # Escape a value for safe inclusion in HTML text or attribute values.
+  defp html_escape(value) do
+    value
+    |> to_string()
+    |> String.replace("&", "&amp;")
+    |> String.replace("<", "&lt;")
+    |> String.replace(">", "&gt;")
+    |> String.replace("\"", "&quot;")
+    |> String.replace("'", "&#39;")
+  end
+
   defp get_html_input_type(:string), do: "text"
   defp get_html_input_type(:int), do: "number"
   defp get_html_input_type(:integer), do: "number"

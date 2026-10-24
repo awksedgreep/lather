@@ -20,10 +20,24 @@ defmodule Lather.Http.SSLPoolManager do
   `Lather.Http.Transport.ssl_options/1`) so distinct configurations map
   to a small set of pools. Options are canonicalized (keyword order
   normalized) before hashing so equivalent configurations share a pool.
+
+  The registry is a `GenServer` owned by a supervised process started from
+  `Lather.Application`. Serializing all mutations through that single
+  process removes the check-then-insert race that would otherwise let the
+  limit be exceeded under concurrent requests, and keeps the ETS table
+  alive for the lifetime of the application.
   """
 
-  @table :lather_ssl_pool_registry
+  use GenServer
+
   @default_max 50
+
+  @doc """
+  Starts the registry process. Invoked by `Lather.Application`.
+  """
+  def start_link(_opts \\ []) do
+    GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
+  end
 
   @doc """
   Maximum number of distinct SSL pools allowed.
@@ -74,22 +88,7 @@ defmodule Lather.Http.SSLPoolManager do
   """
   @spec claim(String.t(), keyword()) :: :ok | {:error, :pool_limit_exceeded}
   def claim(url, ssl_opts) do
-    ensure_table!()
-    key = key(url, ssl_opts)
-
-    if :ets.member(@table, key) do
-      :ok
-    else
-      max = max_pools()
-      size = :ets.info(@table, :size)
-
-      if is_integer(size) and size >= max do
-        {:error, :pool_limit_exceeded}
-      else
-        :ets.insert(@table, {key, true})
-        :ok
-      end
-    end
+    GenServer.call(__MODULE__, {:claim, url, ssl_opts})
   end
 
   @doc """
@@ -97,8 +96,7 @@ defmodule Lather.Http.SSLPoolManager do
   """
   @spec count() :: non_neg_integer()
   def count do
-    ensure_table!()
-    :ets.info(@table, :size)
+    GenServer.call(__MODULE__, :count)
   end
 
   @doc """
@@ -110,9 +108,7 @@ defmodule Lather.Http.SSLPoolManager do
   """
   @spec release(String.t(), keyword()) :: :ok
   def release(url, ssl_opts) do
-    ensure_table!()
-    :ets.delete(@table, key(url, ssl_opts))
-    :ok
+    GenServer.call(__MODULE__, {:release, url, ssl_opts})
   end
 
   @doc """
@@ -120,9 +116,49 @@ defmodule Lather.Http.SSLPoolManager do
   """
   @spec reset() :: :ok
   def reset do
-    ensure_table!()
-    :ets.delete_all_objects(@table)
-    :ok
+    GenServer.call(__MODULE__, :reset)
+  end
+
+  @impl true
+  def init(:ok) do
+    table = :ets.new(:lather_ssl_pool_registry, [:named_table, :public, :set, read_concurrency: true])
+    {:ok, table}
+  end
+
+  @impl true
+  def handle_call({:claim, url, ssl_opts}, _from, table) do
+    key = key(url, ssl_opts)
+
+    result =
+      if :ets.member(table, key) do
+        :ok
+      else
+        max = max_pools()
+        size = :ets.info(table, :size)
+
+        if is_integer(size) and size >= max do
+          {:error, :pool_limit_exceeded}
+        else
+          :ets.insert(table, {key, true})
+          :ok
+        end
+      end
+
+    {:reply, result, table}
+  end
+
+  def handle_call(:count, _from, table) do
+    {:reply, :ets.info(table, :size), table}
+  end
+
+  def handle_call({:release, url, ssl_opts}, _from, table) do
+    :ets.delete(table, key(url, ssl_opts))
+    {:reply, :ok, table}
+  end
+
+  def handle_call(:reset, _from, table) do
+    :ets.delete_all_objects(table)
+    {:reply, :ok, table}
   end
 
   defp key(url, ssl_opts) do
@@ -151,20 +187,4 @@ defmodule Lather.Http.SSLPoolManager do
 
   defp normalize_value({k, v}), do: {k, normalize_value(v)}
   defp normalize_value(value), do: value
-
-  defp ensure_table! do
-    case :ets.whereis(@table) do
-      :undefined ->
-        try do
-          :ets.new(@table, [:named_table, :public, :set, read_concurrency: true])
-        rescue
-          ArgumentError -> :ok
-        end
-
-        :ok
-
-      _ ->
-        :ok
-    end
-  end
 end

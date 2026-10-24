@@ -395,7 +395,7 @@ defmodule Lather.Types.Mapper do
     case type_definition.base_type do
       "xsd:string" -> {:ok, to_string(elixir_data)}
       "xsd:int" -> {:ok, to_string(elixir_data)}
-      "xsd:boolean" -> {:ok, if(elixir_data, do: "true", else: "false")}
+      "xsd:boolean" -> {:ok, boolean_to_xsd(elixir_data)}
       "xsd:decimal" -> {:ok, to_string(elixir_data)}
       "xsd:dateTime" -> {:ok, format_datetime(elixir_data)}
       _ -> {:ok, to_string(elixir_data)}
@@ -456,7 +456,7 @@ defmodule Lather.Types.Mapper do
     case type do
       "xsd:string" -> to_string(elixir_value)
       "xsd:int" -> to_string(elixir_value)
-      "xsd:boolean" -> if(elixir_value, do: "true", else: "false")
+      "xsd:boolean" -> boolean_to_xsd(elixir_value)
       "xsd:decimal" -> to_string(elixir_value)
       "xsd:dateTime" -> format_datetime(elixir_value)
       _ -> to_string(elixir_value)
@@ -555,9 +555,9 @@ defmodule Lather.Types.Mapper do
   defp convert_keys_to_strings(data), do: data
 
   defp parse_integer(value) when is_binary(value) do
-    case Integer.parse(value) do
-      {int, _} -> int
-      :error -> 0
+    case Integer.parse(String.trim(value)) do
+      {int, ""} -> int
+      _ -> 0
     end
   end
 
@@ -566,14 +566,16 @@ defmodule Lather.Types.Mapper do
 
   defp parse_boolean("true"), do: true
   defp parse_boolean("false"), do: false
+  defp parse_boolean("1"), do: true
+  defp parse_boolean("0"), do: false
   defp parse_boolean(true), do: true
   defp parse_boolean(false), do: false
   defp parse_boolean(_), do: false
 
   defp parse_decimal(value) when is_binary(value) do
-    case Float.parse(value) do
-      {float, _} -> float
-      :error -> 0.0
+    case Float.parse(String.trim(value)) do
+      {float, ""} -> float
+      _ -> 0.0
     end
   end
 
@@ -594,6 +596,29 @@ defmodule Lather.Types.Mapper do
     DateTime.to_iso8601(datetime)
   end
 
+  defp format_datetime(%Date{} = date) do
+    Date.to_iso8601(date)
+  end
+
+  defp format_datetime(%Time{} = time) do
+    Time.to_iso8601(time)
+  end
+
   defp format_datetime(value) when is_binary(value), do: value
   defp format_datetime(_), do: ""
+
+  # Map a value to a canonical XSD boolean lexical form ("true"/"false").
+  defp boolean_to_xsd(value) do
+    case value do
+      true -> "true"
+      false -> "false"
+      1 -> "true"
+      0 -> "false"
+      "true" -> "true"
+      "false" -> "false"
+      "1" -> "true"
+      "0" -> "false"
+      _ -> "false"
+    end
+  end
 end

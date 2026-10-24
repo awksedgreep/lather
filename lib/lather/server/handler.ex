@@ -159,6 +159,12 @@ defmodule Lather.Server.Handler do
            {:ok, result} <- call_operation_function(service, operation, params),
            {:ok, formatted} <- Lather.Server.format_response(result, operation) do
         {:ok, formatted, operation}
+      else
+        {:soap_fault, fault} ->
+          {:error, {:soap_fault, fault}}
+
+        {:error, {:soap_fault, _}} = error ->
+          error
       end
     else
       {:error,
