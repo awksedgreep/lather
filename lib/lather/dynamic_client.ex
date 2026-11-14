@@ -9,7 +9,18 @@ defmodule Lather.DynamicClient do
   alias Lather.Client
   alias Lather.Wsdl.Analyzer
   alias Lather.Operation.Builder
-  alias Lather.Auth.WSSecurity
+
+  alias Lather.Auth.{
+    WSSecurity,
+    Signature,
+    JWT,
+    APIKey,
+    SAML,
+    XMLEncryption,
+    WSTrust,
+    Certificate
+  }
+
   alias Lather.Error
   alias Lather.Soap.Elements
 
@@ -38,7 +49,12 @@ defmodule Lather.DynamicClient do
       `Authorization` header; `{:wssecurity, username, password}` (or
       `{:wssecurity, username, password, opts}` with the options of
       `Lather.Auth.WSSecurity.username_token/3`, e.g. `password_type: :digest`)
-      adds a WS-Security `UsernameToken` SOAP header to every call
+      adds a WS-Security `UsernameToken` SOAP header to every call;
+      `{:signature, key}`       adds a WS-Security `Signature` header (digest +
+      HMAC-SHA256) verified server-side with `:verify_signature`
+    * `:encryption` - `{:aes256, key}` sends the operation body as an
+      XML-encrypted payload (`xenc:EncryptedData`, AES-256-CBC) that servers
+      configured with `:encryption_key` decrypt transparently
     * `:timeout` - Default request timeout
     * `:soap_version` - SOAP protocol version (`:v1_1` or `:v1_2`, auto-detected if not specified)
     * `:namespace_prefix` - Default namespace prefix for operation elements in all calls (e.g. `"ns0"`).
@@ -75,6 +91,36 @@ defmodule Lather.DynamicClient do
 
       {:ok, dynamic_client}
     end
+  end
+
+  @doc """
+  Warm up the HTTP connection pool for a dynamic client's endpoint.
+
+  Starts a dedicated Finch pool sized for the client so the first requests
+  reuse already-established connections. Pass the returned pool name via
+  the `pool_name:` option on subsequent calls (or set it in the client's
+  default options with `with_pool/2`).
+
+  ## Examples
+
+      {:ok, client} = Lather.DynamicClient.new(wsdl_url)
+      {:ok, pool} = Lather.DynamicClient.warm_pool(client)
+      {:ok, response} = Lather.DynamicClient.call(client, "Echo", %{"message" => "hi"}, pool_name: pool)
+
+  """
+  @spec warm_pool(t(), keyword()) :: {:ok, atom()} | {:error, term()}
+  def warm_pool(%__MODULE__{base_client: base_client}, options \\ []) do
+    alias Lather.Http.Transport
+    Transport.warm_connection(base_client.endpoint, options)
+  end
+
+  @doc """
+  Returns a copy of the client whose default transport options use the
+  given Finch pool.
+  """
+  @spec with_pool(t(), atom()) :: t()
+  def with_pool(%__MODULE__{} = client, pool_name) do
+    %{client | default_options: Keyword.put(client.default_options, :pool_name, pool_name)}
   end
 
   @doc """
@@ -167,20 +213,384 @@ defmodule Lather.DynamicClient do
     %{service_info: service_info, base_client: base_client, default_options: default_opts} =
       dynamic_client
 
-    with {:ok, operation_info} <- find_operation(service_info, operation_name),
+    pool = Keyword.get(options, :prefetch_pool) || Keyword.get(default_opts, :prefetch_pool)
+
+    if pool do
+      case Lather.Prefetch.fetch(pool, operation_name, parameters) do
+        {:ok, result} ->
+          {:ok, Map.put(result, "prefetched", true)}
+
+        :miss ->
+          do_call(
+            dynamic_client,
+            operation_name,
+            parameters,
+            options,
+            service_info,
+            base_client,
+            default_opts,
+            pool
+          )
+      end
+    else
+      do_call(
+        dynamic_client,
+        operation_name,
+        parameters,
+        options,
+        service_info,
+        base_client,
+        default_opts,
+        nil
+      )
+    end
+  end
+
+  defp do_call(
+         %__MODULE__{} = dynamic_client,
+         operation_name,
+         parameters,
+         options,
+         service_info,
+         base_client,
+         default_opts,
+         pool
+       ) do
+    merged_opts = Keyword.merge(default_opts, options)
+    plugins = Keyword.get(merged_opts, :plugins, [])
+
+    merged_opts =
+      Keyword.put(
+        merged_opts,
+        :headers,
+        Keyword.get(merged_opts, :headers, []) ++
+          addressing_headers(merged_opts, base_client.endpoint, operation_name) ++
+          reliable_headers(merged_opts)
+      )
+
+    plugin_before =
+      if plugins == [] do
+        {:ok, merged_opts}
+      else
+        Lather.Plugin.run_before_request(plugins, operation_name, merged_opts)
+      end
+
+    with {:ok, plugin_opts} <- plugin_before,
+         opts = Keyword.merge(merged_opts, plugin_opts),
+         {:ok, operation_info} <- find_operation(service_info, operation_name),
+         :ok <- check_policy_negotiation(opts, base_client.endpoint),
          :ok <- maybe_validate_parameters(operation_info, parameters, options),
          {:ok, soap_envelope} <-
            build_request(
              operation_info,
              parameters,
              service_info,
-             Keyword.merge(default_opts, options)
+             opts
            ),
          {:ok, response} <-
-           send_request(base_client, soap_envelope, operation_info, default_opts, options),
+           traced_send(
+             opts,
+             base_client,
+             soap_envelope,
+             operation_info,
+             default_opts,
+             options
+           ),
          {:ok, parsed_response} <- parse_response(operation_info, response, options) do
+      maybe_prefetch(
+        pool,
+        Keyword.get(options, :prefetch) || Keyword.get(default_opts, :prefetch),
+        dynamic_client,
+        options
+      )
+
+      persist_store = Keyword.get(opts, :persist_store)
+
+      if persist_store do
+        Lather.Persistence.record(persist_store, operation_name, parameters, parsed_response)
+      end
+
       {:ok, parsed_response}
     end
+    |> then(fn result ->
+      if plugins == [] do
+        result
+      else
+        if match?({:error, _}, result) do
+          Lather.Plugin.run_on_error(plugins, operation_name, elem(result, 1))
+        end
+
+        Lather.Plugin.run_after_response(plugins, operation_name, result)
+      end
+    end)
+  end
+
+  defp traced_send(opts, base_client, envelope, operation_info, default_opts, options) do
+    if Keyword.get(opts, :trace, false) do
+      context = Lather.Tracing.trace_context(opts)
+
+      Lather.Tracing.span(
+        operation_info.name,
+        %{
+          operation: operation_info.name,
+          endpoint: base_client.endpoint,
+          trace_id: context[:trace_id],
+          span_id: context[:span_id]
+        },
+        fn ->
+          send_with_reliability(
+            base_client,
+            envelope,
+            operation_info,
+            default_opts,
+            options,
+            opts
+          )
+        end,
+        Keyword.get(opts, :trace_collector)
+      )
+    else
+      send_with_reliability(base_client, envelope, operation_info, default_opts, options, opts)
+    end
+  end
+
+  defp reliable_headers(options) do
+    if Keyword.get(options, :reliable, false) do
+      Lather.ReliableMessaging.headers(Lather.ReliableMessaging.generate_message_id(), 1)
+    else
+      []
+    end
+  end
+
+  defp send_with_reliability(
+         base_client,
+         envelope,
+         operation_info,
+         default_opts,
+         options,
+         merged_opts
+       ) do
+    if Keyword.get(merged_opts, :reliable, false) do
+      retries = Keyword.get(merged_opts, :retries, 3)
+
+      Lather.ReliableMessaging.deliver(
+        fn -> send_request(base_client, envelope, operation_info, default_opts, options) end,
+        retries
+      )
+    else
+      send_request(base_client, envelope, operation_info, default_opts, options)
+    end
+  end
+
+  defp maybe_prefetch(_pool, nil, _client, _options), do: :ok
+
+  defp maybe_prefetch(pool, invocations, client, options) when is_list(invocations) do
+    Task.start(fn ->
+      Enum.each(invocations, fn {operation, params} ->
+        case call(client, operation, params, Keyword.delete(options, :prefetch)) do
+          {:ok, result} -> Lather.Prefetch.put(pool, operation, params, result)
+          _ -> :ok
+        end
+      end)
+    end)
+
+    :ok
+  end
+
+  @doc """
+  Calls a streaming operation and returns a lazy stream of response maps.
+
+  Operations whose handlers return `{:stream, items}` are sent as chunked
+  SOAP responses ("gRPC-style"); each chunk is one response envelope and
+  is parsed as it arrives.
+
+  ## Examples
+
+      stream = Lather.DynamicClient.stream_operation(client, "StreamItems", %{})
+      Enum.take(stream, 3)
+
+  """
+  @spec stream_operation(t(), String.t(), map(), keyword()) :: Enumerable.t()
+  def stream_operation(%__MODULE__{} = dynamic_client, operation_name, parameters, options \\ []) do
+    %{service_info: service_info, default_options: default_opts} =
+      dynamic_client
+
+    case find_operation(service_info, operation_name) do
+      {:ok, operation_info} ->
+        case build_request(
+               operation_info,
+               parameters,
+               service_info,
+               Keyword.merge(default_opts, options)
+             ) do
+          {:ok, envelope} ->
+            start_envelope_stream(dynamic_client, envelope, options, default_opts)
+
+          {:error, reason} ->
+            Stream.map([{:error, reason}], fn item -> item end)
+        end
+
+      {:error, reason} ->
+        Stream.map([{:error, reason}], fn item -> item end)
+    end
+  end
+
+  defp start_envelope_stream(client, envelope, options, default_opts) do
+    sender = self()
+
+    soap_version =
+      Keyword.get(options, :soap_version, Keyword.get(default_opts, :soap_version, :v1_1))
+
+    content_type =
+      if soap_version == :v1_2,
+        do: "application/soap+xml; charset=utf-8",
+        else: "text/xml; charset=utf-8"
+
+    headers =
+      [{"content-type", content_type}, {"accept", "application/soap+xml, text/xml"}] ++
+        List.wrap(Keyword.get(options, :headers, []))
+
+    endpoint = client.base_client.endpoint
+
+    Task.start(fn ->
+      request = Finch.build(:post, endpoint, headers, envelope)
+
+      case Finch.stream_while(request, Lather.Finch, nil, fn event, acc ->
+             case event do
+               {:data, chunk} -> send(sender, {:chunk, chunk})
+               _ -> :ok
+             end
+
+             {:cont, acc}
+           end) do
+        {:ok, _} -> :ok
+        {:error, reason} -> send(sender, {:error, reason})
+      end
+
+      send(sender, :done)
+    end)
+
+    unfold_envelopes("")
+  end
+
+  defp unfold_envelopes(buffer) do
+    Stream.unfold(buffer, fn state -> unfold_step(state) end)
+  end
+
+  defp unfold_step(buffer) do
+    case take_envelope(buffer) do
+      {envelope, rest} ->
+        case Lather.Xml.Parser.parse(envelope) do
+          {:ok, parsed} ->
+            body = get_in(parsed, ["soap:Envelope", "soap:Body"]) || parsed
+            {{:ok, body}, rest}
+
+          {:error, reason} ->
+            {{:error, reason}, rest}
+        end
+
+      nil ->
+        receive do
+          {:chunk, chunk} -> unfold_step(buffer <> chunk)
+          :done -> nil
+          {:error, reason} -> raise "stream failed: #{inspect(reason)}"
+        after
+          30_000 -> nil
+        end
+    end
+  end
+
+  defp take_envelope(buffer) do
+    case :binary.match(buffer, "</soap:Envelope>") do
+      {idx, len} ->
+        {binary_part(buffer, 0, idx + len),
+         binary_part(buffer, idx + len, byte_size(buffer) - idx - len)}
+
+      _ ->
+        nil
+    end
+  end
+
+  @doc """
+  Calls an operation asynchronously, returning a `Task`.
+
+  Await it with `await/2` (or `Task.await/2`).
+
+  ## Examples
+
+      task = Lather.DynamicClient.call_async(client, "GetUser", %{"userId" => "1"})
+      {:ok, response} = Lather.DynamicClient.await(task)
+
+  """
+  @spec call_async(t(), String.t(), map(), keyword()) :: Task.t()
+  def call_async(%__MODULE__{} = client, operation_name, parameters, options \\ []) do
+    Task.async(fn -> call(client, operation_name, parameters, options) end)
+  end
+
+  @doc """
+  Awaits an async call created with `call_async/4`.
+  """
+  @spec await(Task.t(), timeout()) :: {:ok, map()} | {:error, term()}
+  def await(task, timeout \\ 30_000) do
+    Task.await(task, timeout)
+  end
+
+  @doc """
+  Calls many operations concurrently.
+
+  `invocations` is a list of `{operation_name, params}` tuples. Results are
+  returned in invocation order.
+
+  ## Options
+
+    * `:concurrency` - maximum parallel calls (default 10)
+    * `:timeout` - per-call timeout in milliseconds (default 30,000)
+
+  ## Examples
+
+      results = Lather.DynamicClient.call_many(client, [
+        {"GetUser", %{"userId" => "1"}},
+        {"GetUser", %{"userId" => "2"}}
+      ])
+      # [{:ok, %{...}}, {:ok, %{...}}]
+
+  """
+  @spec call_many(t(), [{String.t(), map()}], keyword()) :: [{:ok, map()} | {:error, term()}]
+  def call_many(%__MODULE__{} = client, invocations, options \\ []) do
+    concurrency = Keyword.get(options, :concurrency, 10)
+    timeout = Keyword.get(options, :timeout, 30_000)
+    call_options = Keyword.drop(options, [:concurrency, :timeout])
+
+    invocations
+    |> Task.async_stream(
+      fn {operation_name, params} ->
+        call(client, operation_name, params, call_options)
+      end,
+      max_concurrency: concurrency,
+      timeout: timeout,
+      ordered: true
+    )
+    |> Enum.map(fn
+      {:ok, result} -> result
+      {:error, reason} -> {:error, {:task_failure, reason}}
+    end)
+  end
+
+  @doc """
+  Returns a lazy stream of results for a sequence of invocations, useful
+  for processing large batches without materializing all responses.
+
+  ## Examples
+
+      Lather.DynamicClient.call_stream(client, large_list_of_invocations)
+      |> Enum.take(10)
+
+  """
+  @spec call_stream(t(), [{String.t(), map()}], keyword()) :: Enumerable.t()
+  def call_stream(%__MODULE__{} = client, invocations, options \\ []) do
+    Stream.map(invocations, fn {operation_name, params} ->
+      call(client, operation_name, params, options)
+    end)
   end
 
   @doc """
@@ -287,9 +697,29 @@ defmodule Lather.DynamicClient do
         ""
 
       wsdl_url when is_binary(wsdl_url) ->
-        # Remove ?wsdl or ?WSDL from the URL to get the service endpoint
-        wsdl_url
-        |> String.replace(~r/\?wsdl$/i, "")
+        # Strip the wsdl query parameter (any position) to get the service
+        # endpoint, keeping other query params such as ?tenant=...
+        parts = String.split(wsdl_url, "?", parts: 2)
+        base = hd(parts)
+
+        query =
+          case parts do
+            [_base, q] -> q
+            _other -> ""
+          end
+
+        kept =
+          query
+          |> String.split("&")
+          |> Enum.reject(fn part ->
+            key = part |> String.split("=") |> hd |> String.downcase()
+            key == "wsdl"
+          end)
+
+        case kept do
+          [] -> base
+          _ -> base <> "?" <> Enum.join(kept, "&")
+        end
 
       _ ->
         ""
@@ -325,6 +755,149 @@ defmodule Lather.DynamicClient do
     end
   end
 
+  # `{:signature, key}` adds a WS-Security Signature header (see
+  # Lather.Auth.Signature) computed over the operation and parameters.
+  defp signature_headers(options, operation_name, parameters) do
+    case Keyword.get(options, :authentication) do
+      {:signature, key} when is_binary(key) ->
+        [Signature.sign_header(operation_name, parameters, key)]
+
+      _ ->
+        []
+    end
+  end
+
+  # `{:jwt, secret}` or `{:jwt, secret, claims}` adds a WS-Security header
+  # containing an HS256-signed JWT (see Lather.Auth.JWT).
+  defp jwt_headers(options) do
+    case Keyword.get(options, :authentication) do
+      {:jwt, secret} when is_binary(secret) ->
+        [JWT.security_header(JWT.token(%{}, secret))]
+
+      {:jwt, secret, claims} when is_binary(secret) and is_map(claims) ->
+        [JWT.security_header(JWT.token(claims, secret))]
+
+      _ ->
+        []
+    end
+  end
+
+  # `{:api_key, key}` sends the key as an HTTP `X-API-Key` header
+  # (see Lather.Auth.APIKey).
+  defp api_key_headers(default_opts, call_opts) do
+    case Keyword.get(call_opts, :authentication) || Keyword.get(default_opts, :authentication) do
+      {:api_key, key} when is_binary(key) -> APIKey.header(key)
+      _ -> []
+    end
+  end
+
+  # `{:certificate, pem}` sends the client certificate as an HTTP
+  # `X-Client-Certificate` header (see Lather.Auth.Certificate).
+  defp cert_headers(default_opts, call_opts) do
+    case Keyword.get(call_opts, :authentication) || Keyword.get(default_opts, :authentication) do
+      {:certificate, pem} when is_binary(pem) ->
+        Certificate.header(pem)
+
+      {:certificate, {:file, path}} ->
+        case File.read(path) do
+          {:ok, pem} -> Certificate.header(pem)
+          _ -> []
+        end
+
+      _ ->
+        []
+    end
+  end
+
+  # `{:saml, secret}`, `{:saml, secret, subject}` or
+  # `{:saml, secret, subject, opts}` adds a WS-Security header containing a
+  # signed SAML assertion (see Lather.Auth.SAML).
+  defp saml_headers(options) do
+    case Keyword.get(options, :authentication) do
+      {:saml, secret} when is_binary(secret) ->
+        [SAML.security_header(SAML.assertion("client", secret: secret))]
+
+      {:saml, secret, subject} when is_binary(secret) and is_binary(subject) ->
+        [SAML.security_header(SAML.assertion(subject, secret: secret))]
+
+      {:saml, secret, subject, opts}
+      when is_binary(secret) and is_binary(subject) and is_list(opts) ->
+        [SAML.security_header(SAML.assertion(subject, Keyword.put(opts, :secret, secret)))]
+
+      _ ->
+        []
+    end
+  end
+
+  # `{:wstrust, issuer_secret}`, `{:wstrust, issuer_secret, subject}` issue a
+  # WS-Trust token locally (see Lather.Auth.WSTrust); `{:wstrust_token, token}`
+  # presents a token obtained from an issuer endpoint.
+  defp wstrust_headers(options) do
+    case Keyword.get(options, :authentication) do
+      {:wstrust, secret} when is_binary(secret) ->
+        [WSTrust.security_header(WSTrust.issue_token(secret, "client"))]
+
+      {:wstrust, secret, subject} when is_binary(secret) and is_binary(subject) ->
+        [WSTrust.security_header(WSTrust.issue_token(secret, subject))]
+
+      {:wstrust_token, token} when is_binary(token) ->
+        [WSTrust.security_header(token)]
+
+      _ ->
+        []
+    end
+  end
+
+  # WS-Addressing: `addressing: true` or
+  # `addressing: %{to:, from:, action:, message_id:}` adds wsa:To/wsa:From/
+  # wsa:Action/wsa:MessageID headers to the SOAP envelope.
+  defp addressing_headers(options, endpoint, operation_name) do
+    case Keyword.get(options, :addressing) do
+      nil ->
+        []
+
+      true ->
+        [ws_addressing_header(endpoint, operation_name, nil, nil)]
+
+      opts when is_map(opts) ->
+        [
+          ws_addressing_header(
+            Map.get(opts, "to") || Map.get(opts, :to) || endpoint,
+            Map.get(opts, "action") || Map.get(opts, :action) || operation_name,
+            Map.get(opts, "from") || Map.get(opts, :from),
+            Map.get(opts, "message_id") || Map.get(opts, :message_id)
+          )
+        ]
+
+      _ ->
+        []
+    end
+  end
+
+  defp check_policy_negotiation(options, endpoint) do
+    case Keyword.get(options, :negotiate) do
+      nil ->
+        :ok
+
+      _ ->
+        with {:ok, policy} <- Lather.Policy.negotiate(endpoint) do
+          Lather.Policy.validate(options, policy)
+        end
+    end
+  end
+
+  defp ws_addressing_header(to, action, from, message_id) do
+    header = %{
+      "wsa:To" => to,
+      "wsa:Action" => action,
+      "wsa:MessageID" => message_id || Lather.Wsdl.Addressing.generate_message_id()
+    }
+
+    header = if from, do: Map.put(header, "wsa:From", from), else: header
+
+    Map.put(header, "@xmlns:wsa", "http://www.w3.org/2005/08/addressing")
+  end
+
   defp find_operation(service_info, operation_name) do
     case Enum.find(service_info.operations, fn op -> op.name == operation_name end) do
       nil ->
@@ -352,7 +925,14 @@ defmodule Lather.DynamicClient do
   end
 
   defp build_request(operation_info, parameters, service_info, options) do
-    headers = ws_security_headers(options) ++ List.wrap(Keyword.get(options, :headers, []))
+    headers =
+      ws_security_headers(options) ++
+        signature_headers(options, operation_info.name, parameters) ++
+        jwt_headers(options) ++
+        saml_headers(options) ++
+        wstrust_headers(options) ++
+        List.wrap(Keyword.get(options, :headers, []))
+
     soap_version = Keyword.get(options, :soap_version, :v1_1)
 
     request_options = [
@@ -365,7 +945,25 @@ defmodule Lather.DynamicClient do
       types: Map.get(service_info, :types, [])
     ]
 
-    Builder.build_request(operation_info, parameters, request_options)
+    case Builder.build_request(operation_info, parameters, request_options) do
+      {:ok, envelope} ->
+        {:ok, maybe_encrypt_envelope(envelope, options, operation_info, parameters)}
+
+      other ->
+        other
+    end
+  end
+
+  # `encryption: {:aes256, key}` replaces the operation body with an
+  # XML-encrypted payload (see Lather.Auth.XMLEncryption).
+  defp maybe_encrypt_envelope(envelope, options, operation_info, parameters) do
+    case Keyword.get(options, :encryption) do
+      {:aes256, key} when is_binary(key) ->
+        XMLEncryption.encrypt_envelope(envelope, operation_info.name, parameters, key)
+
+      _ ->
+        envelope
+    end
   end
 
   defp send_request(base_client, soap_envelope, operation_info, default_opts, call_opts) do
@@ -388,11 +986,20 @@ defmodule Lather.DynamicClient do
     transport_options =
       base_client.options
       |> Keyword.merge(http_call_opts)
-      |> Keyword.merge([
+      |> Keyword.merge(
         timeout: timeout,
         soap_action: soap_action,
         soap_version: soap_version
-      ])
+      )
+
+    transport_options =
+      Keyword.put(
+        transport_options,
+        :headers,
+        Keyword.get(transport_options, :headers, []) ++
+          api_key_headers(default_opts, call_opts) ++
+          cert_headers(default_opts, call_opts)
+      )
 
     # Send the pre-built envelope directly
     case Transport.post(base_client.endpoint, soap_envelope, transport_options) do

@@ -585,7 +585,9 @@ defmodule Lather.Integration.BasicAuthTest do
       assert response.status == 401
     end
 
-    test "lowercase 'basic' prefix is accepted (scheme is case-insensitive, RFC 7235)", %{port: port} do
+    test "lowercase 'basic' prefix is accepted (scheme is case-insensitive, RFC 7235)", %{
+      port: port
+    } do
       soap_request = build_greet_request("Test")
       encoded = Base.encode64("#{@valid_username}:#{@valid_password}")
 

@@ -15,7 +15,7 @@ defmodule Lather.Regression.MediumPriorityFixesTest do
       use Lather.Server
 
       soap_operation "Ping" do
-        description "ping"
+        description("ping")
       end
 
       def ping(_), do: {:ok, %{"pong" => "1"}}
@@ -36,6 +36,7 @@ defmodule Lather.Regression.MediumPriorityFixesTest do
           parameter("message", :string, required: true)
         end
       end
+
       def echo(%{"message" => m}), do: {:ok, %{"echo" => m}}
     end
 
@@ -70,6 +71,7 @@ defmodule Lather.Regression.MediumPriorityFixesTest do
           parameter("message", :string, required: true)
         end
       end
+
       def echo(%{"message" => m}), do: {:ok, %{"echo" => m}}
     end
 
@@ -93,7 +95,9 @@ defmodule Lather.Regression.MediumPriorityFixesTest do
   describe "MTOM base64 transfer encoding (issue #42)" do
     test "base64 attachments round-trip to their original bytes" do
       payload = <<0, 1, 2, 255, 10, 13, 0>>
-      attachment = Attachment.new(payload, "application/octet-stream", content_transfer_encoding: "base64")
+
+      attachment =
+        Attachment.new(payload, "application/octet-stream", content_transfer_encoding: "base64")
 
       {_content_type, multipart} =
         Mime.build_multipart_message("<soap:Envelope/>", [attachment], boundary: "BOUNDARY")
@@ -114,7 +118,9 @@ defmodule Lather.Regression.MediumPriorityFixesTest do
       results =
         1..10
         |> Enum.map(fn i ->
-          Task.async(fn -> SSLPoolManager.claim("https://pool#{i}.example.com/soap", verify: :verify_peer) end)
+          Task.async(fn ->
+            SSLPoolManager.claim("https://pool#{i}.example.com/soap", verify: :verify_peer)
+          end)
         end)
         |> Enum.map(&Task.await/1)
 

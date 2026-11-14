@@ -11,6 +11,7 @@ defmodule Lather.Server.EnhancedPlugTest do
 
     @service_name "ExampleService"
     @namespace "urn:example:service"
+    @api_version "2.1.0"
 
     soap_operation "Echo" do
       description("Returns the supplied message")
@@ -58,9 +59,26 @@ defmodule Lather.Server.EnhancedPlugTest do
     assert ["text/html; charset=utf-8"] = get_resp_header(response, "content-type")
     assert response.resp_body =~ "ExampleService - Service Overview"
     assert response.resp_body =~ "urn:example:service"
+    assert response.resp_body =~ ~s(<strong>API Version:</strong> 2.1.0)
+    assert response.resp_body =~ "?openapi"
+    assert response.resp_body =~ "?swagger"
     assert response.resp_body =~ ~s(href="?op=Echo")
     assert response.resp_body =~ ~s(href="?op=Add")
     assert response.resp_body =~ ~s(href="?wsdl&enhanced=true")
+  end
+
+  test "the health endpoint reports service status as JSON" do
+    response = request(:get, "/soap?health")
+
+    assert response.status == 200
+    assert ["application/json; charset=utf-8"] = get_resp_header(response, "content-type")
+
+    body = Jason.decode!(response.resp_body)
+    assert body["status"] == "ok"
+    assert body["service"] == "ExampleService"
+    assert body["version"] == "2.1.0"
+    assert body["operations"] == 2
+    assert is_integer(body["uptime_seconds"])
   end
 
   test "an operation page shows its required inputs and protocol examples" do
@@ -121,6 +139,8 @@ defmodule Lather.Server.EnhancedPlugTest do
     end
 
     assert standard.resp_body =~ "Echo"
+    assert standard.resp_body =~ "Version: 2.1.0"
+    assert enhanced.resp_body =~ "Version: 2.1.0"
     assert enhanced.resp_body =~ ~s(name="ExampleServiceSOAP11Binding")
     assert enhanced.resp_body =~ ~s(name="ExampleServiceSOAP12Binding")
     assert enhanced.resp_body =~ ~s(name="ExampleServiceHTTPBinding")
@@ -262,6 +282,48 @@ defmodule Lather.Server.EnhancedPlugTest do
     |> EnhancedPlug.call(config)
   end
 
+  describe "OpenAPI and Swagger UI" do
+    test "?openapi serves the OpenAPI 3.1 spec" do
+      response = request(:get, "/soap?openapi")
+
+      assert response.status == 200
+      assert get_resp_header(response, "content-type") == ["application/json; charset=utf-8"]
+
+      document = Jason.decode!(response.resp_body)
+      assert document["openapi"] == "3.1.0"
+      assert document["info"]["title"] == "ExampleService API"
+      assert document["paths"]["/api/Echo"]["post"]["operationId"] == "Echo"
+    end
+
+    test "/openapi.json serves the same spec" do
+      response = request(:get, "/soap/openapi.json")
+      assert response.status == 200
+      assert Jason.decode!(response.resp_body)["openapi"] == "3.1.0"
+    end
+
+    test "?swagger serves a Swagger UI page pointing at the spec" do
+      response = request(:get, "/soap?swagger")
+
+      assert response.status == 200
+      assert get_resp_header(response, "content-type") == ["text/html; charset=utf-8"]
+      assert response.resp_body =~ "swagger-ui-bundle.js"
+      assert response.resp_body =~ "ExampleService API Explorer"
+      assert response.resp_body =~ "openapi.json"
+    end
+
+    test "/swagger serves the Swagger UI page" do
+      response = request(:get, "/soap/swagger")
+      assert response.status == 200
+      assert response.resp_body =~ "SwaggerUIBundle"
+    end
+
+    test "Swagger UI is 404 when disabled" do
+      config = EnhancedPlug.init(service: TestService, enable_swagger: false)
+      response = request(:get, "/soap?swagger", "", config)
+      assert response.status == 404
+    end
+  end
+
   describe "operation faults and authentication (issues #28, #29)" do
     defmodule FaultService do
       use Lather.Server
@@ -269,7 +331,7 @@ defmodule Lather.Server.EnhancedPlugTest do
       @service_name "FaultService"
 
       soap_operation "Boom" do
-        description "always faults"
+        description("always faults")
       end
 
       def boom(_params), do: soap_fault("Client", "boom occurred")

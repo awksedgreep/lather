@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lather-soap-service
+  labels:
+    app: lather-soap-service
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: lather-soap-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: lather-soap-service
+    spec:
+      containers:
+        - name: soap-service
+          image: lather-soap-service:latest
+          ports:
+            - containerPort: 4000
+          readinessProbe:
+            httpGet:
+              path: /soap?health
+              port: 4000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /soap?health
+              port: 4000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lather-soap-service
+spec:
+  selector:
+    app: lather-soap-service
+  ports:
+    - port: 80
+      targetPort: 4000
+  type: ClusterIP

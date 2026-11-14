@@ -22,10 +22,14 @@ defmodule Lather.Wsdl.Analyzer do
       key = to_string(key)
 
       cond do
-        String.starts_with?(key, "@") -> []
+        String.starts_with?(key, "@") ->
+          []
+
         key == local or Elements.local_name(key) == local ->
           if is_list(value), do: value, else: [value]
-        true -> []
+
+        true ->
+          []
       end
     end)
   end
@@ -328,7 +332,9 @@ defmodule Lather.Wsdl.Analyzer do
     %{
       name: part["@name"] || "unknown",
       type: part["@type"] || part["@element"] || "",
-      element: part["@element"]
+      element: part["@element"],
+      min_occurs: part["@minOccurs"] || "1",
+      max_occurs: part["@maxOccurs"] || "1"
     }
   end
 

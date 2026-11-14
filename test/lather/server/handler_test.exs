@@ -239,7 +239,7 @@ defmodule Lather.Server.HandlerTest do
       @service_name "FaultService"
 
       soap_operation "Boom" do
-        description "always fails"
+        description("always fails")
       end
 
       def boom(_params), do: {:ok, {:error, "boom"}}

@@ -121,7 +121,9 @@ defmodule Lather.Http.SSLPoolManager do
 
   @impl true
   def init(:ok) do
-    table = :ets.new(:lather_ssl_pool_registry, [:named_table, :public, :set, read_concurrency: true])
+    table =
+      :ets.new(:lather_ssl_pool_registry, [:named_table, :public, :set, read_concurrency: true])
+
     {:ok, table}
   end
 

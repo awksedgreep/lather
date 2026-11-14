@@ -551,7 +551,9 @@ defmodule Lather.Integration.ComplexTypesRoundTripTest do
     {:ok, _} = Application.ensure_all_started(:lather)
 
     port = Enum.random(10000..60000)
-    {:ok, server_pid, actual_port} = Lather.TestUtils.start_server(ComplexTypesRouter, port, :http)
+
+    {:ok, server_pid, actual_port} =
+      Lather.TestUtils.start_server(ComplexTypesRouter, port, :http)
 
     on_exit(fn ->
       try do

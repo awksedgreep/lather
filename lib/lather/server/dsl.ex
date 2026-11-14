@@ -30,7 +30,7 @@ defmodule Lather.Server.DSL do
         # Implementation
       end
   """
-  defmacro soap_operation(name, do: block) do
+  defmacro soap_operation(name, opts \\ [], do: block) do
     snake_case_name = to_snake_case(name)
 
     quote do
@@ -40,7 +40,9 @@ defmodule Lather.Server.DSL do
         input: [],
         output: [],
         description: nil,
-        soap_action: nil
+        soap_action: nil,
+        condition: Keyword.get(unquote(opts), :condition),
+        errors: []
       }
 
       unquote(block)
@@ -120,6 +122,10 @@ defmodule Lather.Server.DSL do
         required: Keyword.get(unquote(opts), :required, false),
         description: Keyword.get(unquote(opts), :description),
         default: Keyword.get(unquote(opts), :default),
+        enum: Keyword.get(unquote(opts), :enum),
+        min: Keyword.get(unquote(opts), :min),
+        max: Keyword.get(unquote(opts), :max),
+        pattern: Keyword.get(unquote(opts), :pattern),
         min_occurs: Keyword.get(unquote(opts), :min_occurs, 0),
         max_occurs: Keyword.get(unquote(opts), :max_occurs, 1)
       }
@@ -130,6 +136,37 @@ defmodule Lather.Server.DSL do
                            @current_operation,
                            @current_param_list,
                            current_params ++ [param]
+                         )
+    end
+  end
+
+  @doc """
+  Declares a custom error mapping for the current operation.
+
+  When the operation handler returns a value matching `match:`, the
+  declared fault (code, subcode, message) is returned instead of the
+  generic fault.
+
+      soap_operation "GetUser" do
+        error "UserNotFound", match: {:error, :not_found}, code: "Sender", subcode: "BadRequest"
+      end
+  """
+  defmacro error(name, opts \\ []) do
+    quote do
+      current_op = @current_operation
+
+      error_def = %{
+        name: unquote(name),
+        match: Keyword.get(unquote(opts), :match),
+        code: Keyword.get(unquote(opts), :code, "Sender"),
+        subcode: Keyword.get(unquote(opts), :subcode),
+        message: Keyword.get(unquote(opts), :message, unquote(name))
+      }
+
+      @current_operation Map.put(
+                           current_op,
+                           :errors,
+                           Map.get(current_op, :errors, []) ++ [error_def]
                          )
     end
   end

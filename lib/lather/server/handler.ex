@@ -171,6 +171,7 @@ defmodule Lather.Server.Handler do
        {:soap_fault,
         %{
           fault_code: "Client",
+          subcode: "BadRequest",
           fault_string: "Unknown operation: #{request.operation}",
           detail: %{available_operations: Enum.map(service.__soap_operations__(), & &1.name)}
         }}}
@@ -180,8 +181,8 @@ defmodule Lather.Server.Handler do
   # Validate operation parameters if enabled
   defp validate_operation_params(params, operation, true) do
     with :ok <- Lather.Server.validate_required_params(params, operation),
-         :ok <- Lather.Server.validate_param_types(params, operation) do
-      {:ok, params}
+         {:ok, validated_params} <- Lather.Server.validate_param_types(params, operation) do
+      {:ok, validated_params}
     else
       {:error, reason} ->
         {:error,
@@ -199,8 +200,75 @@ defmodule Lather.Server.Handler do
   defp call_operation_function(service, operation, params) do
     function_name = String.to_atom(operation.function_name)
 
-    try do
-      case apply(service, function_name, [params]) do
+    case check_condition(operation, params) do
+      :ok ->
+        try do
+          raw = apply(service, function_name, [params])
+          normalize_handler_result(raw, operation)
+        rescue
+          UndefinedFunctionError ->
+            {:error,
+             {:soap_fault,
+              %{
+                fault_code: "Server",
+                fault_string: "Operation function #{function_name}/1 not implemented"
+              }}}
+
+          error ->
+            Logger.error("Operation #{operation.name} failed: #{inspect(error)}")
+
+            {:error,
+             {:soap_fault,
+              %{
+                fault_code: "Server",
+                fault_string: "Internal server error"
+              }}}
+        end
+
+      {:error, fault} ->
+        {:error, fault}
+    end
+  end
+
+  defp check_condition(operation, params) do
+    case operation[:condition] do
+      nil ->
+        :ok
+
+      condition when is_function(condition, 1) ->
+        if condition.(params) do
+          :ok
+        else
+          {:error,
+           {:soap_fault,
+            %{
+              fault_code: "Client",
+              subcode: "BadRequest",
+              fault_string: "Precondition failed for operation #{operation.name}"
+            }}}
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp normalize_handler_result(raw, operation) do
+    mapping =
+      Enum.find(operation[:errors] || [], fn error_def ->
+        error_def[:match] == raw || error_def[:match] == :any
+      end)
+
+    if mapping do
+      {:error,
+       {:soap_fault,
+        %{
+          fault_code: mapping[:code],
+          subcode: mapping[:subcode],
+          fault_string: mapping[:message]
+        }}}
+    else
+      case raw do
         {:ok, result} ->
           {:ok, result}
 
@@ -218,24 +286,6 @@ defmodule Lather.Server.Handler do
         result ->
           {:ok, result}
       end
-    rescue
-      UndefinedFunctionError ->
-        {:error,
-         {:soap_fault,
-          %{
-            fault_code: "Server",
-            fault_string: "Operation function #{function_name}/1 not implemented"
-          }}}
-
-      error ->
-        Logger.error("Operation #{operation.name} failed: #{inspect(error)}")
-
-        {:error,
-         {:soap_fault,
-          %{
-            fault_code: "Server",
-            fault_string: "Internal server error"
-          }}}
     end
   end
 

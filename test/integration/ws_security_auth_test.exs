@@ -1417,7 +1417,8 @@ defmodule Lather.Integration.WSSecurityAuthTest do
 
     Process.sleep(50)
 
-    {:ok, port: actual_port, base_url: "http://localhost:#{actual_port}/soap", server_pid: server_pid}
+    {:ok,
+     port: actual_port, base_url: "http://localhost:#{actual_port}/soap", server_pid: server_pid}
   end
 
   defp make_soap_request(url, body) do

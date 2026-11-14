@@ -305,7 +305,9 @@ defmodule Lather.Integration.Soap12RoundTripTest do
       {:ok, _} = Application.ensure_all_started(:lather)
 
       port = Enum.random(10000..60000)
-      {:ok, server_pid, actual_port} = Lather.TestUtils.start_server(TestSoap12Router, port, :http)
+
+      {:ok, server_pid, actual_port} =
+        Lather.TestUtils.start_server(TestSoap12Router, port, :http)
 
       on_exit(fn ->
         try do

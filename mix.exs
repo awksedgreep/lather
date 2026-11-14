@@ -37,7 +37,9 @@ defmodule Lather.MixProject do
       {:jason, "~> 1.4", optional: true},
       {:plug, "~> 1.14"},
       {:ex_doc, "~> 0.30", only: :dev, runtime: false},
-      {:bandit, "~> 1.0", only: :test}
+      {:bandit, "~> 1.0", only: :test},
+      {:infusion, "~> 0.2", only: :test},
+      {:infusion_runtime, "~> 0.1", only: :test}
     ]
   end
 
@@ -92,14 +94,15 @@ defmodule Lather.MixProject do
         Development: ["TODO.md"]
       ],
       groups_for_modules: [
-        Core: [Lather, Lather.Client, Lather.DynamicClient],
+        Core: [Lather, Lather.Client, Lather.DynamicClient, Lather.Client.Generator],
         Server: [
           Lather.Server,
           Lather.Server.Plug,
           Lather.Server.EnhancedPlug,
           Lather.Server.WSDLGenerator,
           Lather.Server.EnhancedWSDLGenerator,
-          Lather.Server.FormGenerator
+          Lather.Server.FormGenerator,
+          Lather.Server.OpenAPIGenerator
         ],
         "SOAP Processing": [
           Lather.Soap.Envelope,

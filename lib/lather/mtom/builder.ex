@@ -14,6 +14,9 @@ defmodule Lather.Mtom.Builder do
   4. **Build SOAP**: Create SOAP envelope with XOP includes
   5. **Package MIME**: Combine SOAP + attachments into multipart message
 
+  Use `build_message/3` to automatically pick MTOM or a plain inline
+  envelope based on attachment size (`use_mtom?/2`, `mtom_threshold/1`).
+
   ## Examples
 
       # Parameters with attachments
@@ -81,11 +84,117 @@ defmodule Lather.Mtom.Builder do
           {:ok, {String.t(), binary()}} | {:error, term()}
   def build_mtom_message(operation, parameters, options \\ [])
       when is_map(parameters) do
-    with {:ok, {processed_params, attachments}} <- process_parameters(parameters),
+    cache = Keyword.get(options, :mtom_cache)
+
+    with {:ok, {processed_params, attachments}} <- process_parameters(parameters, cache),
          {:ok, soap_envelope} <- build_soap_envelope(operation, processed_params, options),
          {:ok, {content_type, multipart_body}} <-
            build_multipart_message(soap_envelope, attachments, options) do
       {:ok, {content_type, multipart_body}}
+    end
+  end
+
+  @default_mtom_threshold 1024
+
+  @doc """
+  Build an MTOM message as a lazy stream of chunks so large attachments are
+  never fully loaded into memory.
+
+  Attachment sources may be:
+
+    * a binary (sent as a single chunk)
+    * `{:file, path}` - read from disk in `:chunk_size` byte blocks
+    * any enumerable yielding binary chunks
+
+  Returns `{:ok, {content_type, chunk_stream}}`.
+
+  ## Examples
+
+      {:ok, {content_type, chunks}} =
+        Builder.build_message_chunks("Upload", %{"file" => {:attachment, {:file, "big.pdf"}, "application/pdf"}})
+
+  """
+  @spec build_message_chunks(any(), map(), keyword()) ::
+          {:ok, {String.t(), Enumerable.t()}} | {:error, term()}
+  def build_message_chunks(operation, parameters, options \\ []) when is_map(parameters) do
+    {processed_params, specs} = extract_stream_attachments(parameters)
+
+    case build_soap_envelope(operation, processed_params, options) do
+      {:ok, soap_envelope} ->
+        {:ok, Mime.build_multipart_message_chunks(soap_envelope, specs, options)}
+
+      {:error, reason} ->
+        {:error, {:envelope_build_error, reason}}
+    end
+  end
+
+  @doc """
+  Returns the configured MTOM threshold in bytes.
+
+  Resolution order: the `:mtom_threshold` option, then `:lather,
+  :mtom_threshold` application config, then the 1024-byte default.
+  """
+  @spec mtom_threshold(keyword()) :: non_neg_integer()
+  def mtom_threshold(options \\ []) do
+    Keyword.get(
+      options,
+      :mtom_threshold,
+      Application.get_env(:lather, :mtom_threshold, @default_mtom_threshold)
+    )
+  end
+
+  @doc """
+  Decides whether a message should be sent as MTOM or as a plain SOAP
+  envelope with inline (base64) attachments.
+
+  MTOM is used when attachments are present and their combined size
+  exceeds the threshold (see `mtom_threshold/1`). The `:enable_mtom`
+  option can force the decision either way (`true` or `false`).
+
+      Builder.use_mtom?(%{"file" => {:attachment, big_data, "application/pdf"}})
+      # true when big_data is larger than the threshold
+
+  """
+  @spec use_mtom?(map(), keyword()) :: boolean()
+  def use_mtom?(parameters, options \\ []) when is_map(parameters) do
+    case Keyword.get(options, :enable_mtom) do
+      nil -> Enum.sum(collect_attachment_sizes(parameters)) > mtom_threshold(options)
+      force -> force
+    end
+  end
+
+  @doc """
+  Builds a SOAP message, automatically choosing between MTOM and a plain
+  envelope based on attachment size (see `use_mtom?/2`).
+
+  Returns `{:ok, {content_type, body}}` in both cases. In inline mode
+  attachment data is base64-encoded directly into the XML body.
+
+      {:ok, {content_type, body}} = Builder.build_message(:Upload, params)
+
+  """
+  @spec build_message(atom() | String.t(), map(), keyword()) ::
+          {:ok, {String.t(), binary()}} | {:error, term()}
+  def build_message(operation, parameters, options \\ []) when is_map(parameters) do
+    if use_mtom?(parameters, options) do
+      build_mtom_message(operation, parameters, options)
+    else
+      inline_params = inline_attachments(parameters)
+
+      case Envelope.build(operation, inline_params, Keyword.delete(options, :enable_mtom)) do
+        {:ok, xml} ->
+          version = Keyword.get(options, :version, :v1_1)
+
+          content_type =
+            if version == :v1_2,
+              do: "application/soap+xml; charset=utf-8",
+              else: "text/xml; charset=utf-8"
+
+          {:ok, {content_type, xml}}
+
+        {:error, reason} ->
+          {:error, {:envelope_build_error, reason}}
+      end
     end
   end
 
@@ -110,10 +219,11 @@ defmodule Lather.Mtom.Builder do
       # attachments will contain the Attachment struct
 
   """
-  @spec process_parameters(map()) :: {:ok, {map(), [Attachment.t()]}} | {:error, term()}
-  def process_parameters(parameters) when is_map(parameters) do
+  @spec process_parameters(map(), GenServer.on_start() | nil) ::
+          {:ok, {map(), [Attachment.t()]}} | {:error, term()}
+  def process_parameters(parameters, cache \\ nil) when is_map(parameters) do
     try do
-      {processed_params, attachments} = extract_attachments(parameters, %{}, [])
+      {processed_params, attachments} = extract_attachments(parameters, %{}, [], cache)
       {:ok, {processed_params, attachments}}
     rescue
       error -> {:error, {:parameter_processing_error, error}}
@@ -197,6 +307,28 @@ defmodule Lather.Mtom.Builder do
 
   # Private functions
 
+  defp inline_attachments(params) when is_map(params) do
+    Map.new(params, fn {key, value} -> {key, inline_value(value)} end)
+  end
+
+  defp inline_value({:attachment, data, _content_type}) when is_binary(data) do
+    Base.encode64(data)
+  end
+
+  defp inline_value({:attachment, data, _content_type, _options}) when is_binary(data) do
+    Base.encode64(data)
+  end
+
+  defp inline_value(list) when is_list(list) do
+    Enum.map(list, &inline_value/1)
+  end
+
+  defp inline_value(map) when is_map(map) do
+    inline_attachments(map)
+  end
+
+  defp inline_value(value), do: value
+
   defp build_soap_envelope(operation, parameters, options) do
     # Use existing SOAP envelope builder
     # Don't recursively enable MTOM
@@ -228,9 +360,9 @@ defmodule Lather.Mtom.Builder do
   end
 
   # Recursively extract attachments from nested parameter structures
-  defp extract_attachments(params, processed_acc, attachments_acc) when is_map(params) do
+  defp extract_attachments(params, processed_acc, attachments_acc, cache) when is_map(params) do
     Enum.reduce(params, {processed_acc, attachments_acc}, fn {key, value}, {proc_acc, att_acc} ->
-      case extract_attachment_value(value) do
+      case extract_attachment_value(value, cache) do
         {:attachment, attachment, xop_include} ->
           # Replace attachment with XOP include
           new_proc_acc = Map.put(proc_acc, key, xop_include)
@@ -251,25 +383,55 @@ defmodule Lather.Mtom.Builder do
     end)
   end
 
-  defp extract_attachment_value({:attachment, data, content_type})
+  defp extract_attachment_value({:attachment, data, content_type}, cache)
        when is_binary(data) and is_binary(content_type) do
-    attachment = Attachment.new(data, content_type)
+    cached =
+      if cache do
+        case Lather.Mtom.Cache.lookup(cache, data) do
+          {:hit, attachment} -> attachment
+          {:miss, _hash} -> nil
+        end
+      else
+        nil
+      end
+
+    attachment = cached || Attachment.new(data, content_type)
     xop_include = Attachment.xop_include(attachment)
+
+    if cache && !cached do
+      Lather.Mtom.Cache.store(cache, attachment)
+    end
+
     {:attachment, attachment, xop_include}
   end
 
-  defp extract_attachment_value({:attachment, data, content_type, options})
+  defp extract_attachment_value({:attachment, data, content_type, options}, cache)
        when is_binary(data) and is_binary(content_type) and is_list(options) do
-    attachment = Attachment.new(data, content_type, options)
+    cached =
+      if cache do
+        case Lather.Mtom.Cache.lookup(cache, data) do
+          {:hit, attachment} -> attachment
+          {:miss, _hash} -> nil
+        end
+      else
+        nil
+      end
+
+    attachment = cached || Attachment.new(data, content_type, options)
     xop_include = Attachment.xop_include(attachment)
+
+    if cache && !cached do
+      Lather.Mtom.Cache.store(cache, attachment)
+    end
+
     {:attachment, attachment, xop_include}
   end
 
-  defp extract_attachment_value(list) when is_list(list) do
+  defp extract_attachment_value(list, cache) when is_list(list) do
     # Process list items
     {processed_list, attachments} =
       Enum.reduce(list, {[], []}, fn item, {proc_acc, att_acc} ->
-        case extract_attachment_value(item) do
+        case extract_attachment_value(item, cache) do
           {:attachment, attachment, xop_include} ->
             {[xop_include | proc_acc], [attachment | att_acc]}
 
@@ -288,9 +450,9 @@ defmodule Lather.Mtom.Builder do
     end
   end
 
-  defp extract_attachment_value(map) when is_map(map) do
+  defp extract_attachment_value(map, cache) when is_map(map) do
     # Process nested map
-    {processed_map, attachments} = extract_attachments(map, %{}, [])
+    {processed_map, attachments} = extract_attachments(map, %{}, [], cache)
 
     if length(attachments) > 0 do
       {:processed, processed_map, attachments}
@@ -300,36 +462,110 @@ defmodule Lather.Mtom.Builder do
   end
 
   # Catch malformed attachment tuples and raise errors
-  defp extract_attachment_value({:attachment, data, _content_type}) when not is_binary(data) do
-    raise "Invalid attachment: data must be binary, got #{inspect(data)}"
-  end
-
-  defp extract_attachment_value({:attachment, _data, content_type})
-       when not is_binary(content_type) do
-    raise "Invalid attachment: content_type must be binary, got #{inspect(content_type)}"
-  end
-
-  defp extract_attachment_value({:attachment, _data}) do
-    raise "Invalid attachment: missing content type"
-  end
-
-  defp extract_attachment_value({:attachment, data, _content_type, _options})
+  defp extract_attachment_value({:attachment, data, _content_type}, _cache)
        when not is_binary(data) do
     raise "Invalid attachment: data must be binary, got #{inspect(data)}"
   end
 
-  defp extract_attachment_value({:attachment, _data, content_type, _options})
+  defp extract_attachment_value({:attachment, _data, content_type}, _cache)
        when not is_binary(content_type) do
     raise "Invalid attachment: content_type must be binary, got #{inspect(content_type)}"
   end
 
-  defp extract_attachment_value({:attachment, _data, _content_type, options})
+  defp extract_attachment_value({:attachment, _data}, _cache) do
+    raise "Invalid attachment: missing content type"
+  end
+
+  defp extract_attachment_value({:attachment, data, _content_type, _options}, _cache)
+       when not is_binary(data) do
+    raise "Invalid attachment: data must be binary, got #{inspect(data)}"
+  end
+
+  defp extract_attachment_value({:attachment, _data, content_type, _options}, _cache)
+       when not is_binary(content_type) do
+    raise "Invalid attachment: content_type must be binary, got #{inspect(content_type)}"
+  end
+
+  defp extract_attachment_value({:attachment, _data, _content_type, options}, _cache)
        when not is_list(options) do
     raise "Invalid attachment: options must be a list, got #{inspect(options)}"
   end
 
-  defp extract_attachment_value(value) do
+  defp extract_attachment_value(value, _cache) do
     {:no_change, value}
+  end
+
+  defp extract_stream_attachments(params) when is_map(params) do
+    Enum.reduce(params, {params, []}, fn {key, value}, {acc, specs} ->
+      case stream_attachment_value(value) do
+        {:attachment, xop_include, spec} ->
+          {Map.put(acc, key, xop_include), specs ++ [spec]}
+
+        {:processed, new_value, nested_specs} ->
+          {Map.put(acc, key, new_value), specs ++ nested_specs}
+
+        {:no_change, unchanged} ->
+          {Map.put(acc, key, unchanged), specs}
+      end
+    end)
+  end
+
+  defp stream_attachment_value({:attachment, source, content_type})
+       when is_binary(source) or is_binary(content_type) do
+    stream_attachment_value({:attachment, source, content_type, []})
+  end
+
+  defp stream_attachment_value({:attachment, source, content_type, options})
+       when is_binary(content_type) and is_list(options) do
+    cid = Keyword.get(options, :content_id) || generate_stream_cid()
+
+    spec = %{
+      content_id: cid,
+      content_type: content_type,
+      content_transfer_encoding: Keyword.get(options, :content_transfer_encoding, "binary"),
+      data: source
+    }
+
+    xop_include = %{
+      "xop:Include" => %{
+        "@href" => "cid:#{cid}",
+        "@xmlns:xop" => "http://www.w3.org/2004/08/xop/include"
+      }
+    }
+
+    {:attachment, xop_include, spec}
+  end
+
+  defp stream_attachment_value(value) when is_map(value) do
+    {new_map, specs} = extract_stream_attachments(value)
+    {:processed, new_map, specs}
+  end
+
+  defp stream_attachment_value(value) when is_list(value) do
+    {new_list, specs} =
+      Enum.reduce(value, {[], []}, fn item, {acc, att_acc} ->
+        case stream_attachment_value(item) do
+          {:attachment, xop_include, spec} ->
+            {acc ++ [xop_include], att_acc ++ [spec]}
+
+          {:processed, new_value, nested_specs} ->
+            {acc ++ [new_value], att_acc ++ nested_specs}
+
+          {:no_change, unchanged} ->
+            {acc ++ [unchanged], att_acc}
+        end
+      end)
+
+    {:processed, new_list, specs}
+  end
+
+  defp stream_attachment_value(value), do: {:no_change, value}
+
+  defp generate_stream_cid do
+    :crypto.strong_rand_bytes(12)
+    |> Base.encode16(case: :lower)
+    |> binary_part(0, 12)
+    |> Kernel.<>("@lather.soap")
   end
 
   defp detect_attachments(params) when is_map(params) do

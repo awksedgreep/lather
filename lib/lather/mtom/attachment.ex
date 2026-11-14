@@ -29,7 +29,8 @@ defmodule Lather.Mtom.Attachment do
           content_transfer_encoding: String.t(),
           data: binary(),
           content_id: String.t(),
-          size: non_neg_integer()
+          size: non_neg_integer(),
+          content_encoding: String.t() | nil
         }
 
   defstruct [
@@ -38,7 +39,8 @@ defmodule Lather.Mtom.Attachment do
     :content_transfer_encoding,
     :data,
     :content_id,
-    :size
+    :size,
+    content_encoding: nil
   ]
 
   # Default content transfer encoding for binary data
@@ -102,6 +104,8 @@ defmodule Lather.Mtom.Attachment do
 
     * `:content_id` - Custom Content-ID (auto-generated if not provided)
     * `:content_transfer_encoding` - Transfer encoding (default: "binary")
+    * `:compress` - Gzip the attachment data and add a `Content-Encoding: gzip`
+      header when the message is built (default: false)
     * `:validate` - Whether to validate the attachment (default: true)
 
   ## Examples
@@ -118,14 +122,18 @@ defmodule Lather.Mtom.Attachment do
     content_id = Keyword.get(options, :content_id, generate_content_id())
     encoding = Keyword.get(options, :content_transfer_encoding, @default_encoding)
     validate? = Keyword.get(options, :validate, true)
+    compress? = Keyword.get(options, :compress, false)
+
+    stored_data = if compress?, do: :zlib.gzip(data), else: data
 
     attachment = %__MODULE__{
       id: generate_attachment_id(),
       content_type: String.trim(content_type),
       content_transfer_encoding: encoding,
-      data: data,
+      data: stored_data,
       content_id: content_id,
-      size: byte_size(data)
+      size: byte_size(stored_data),
+      content_encoding: if(compress?, do: "gzip", else: nil)
     }
 
     if validate? do
@@ -191,6 +199,24 @@ defmodule Lather.Mtom.Attachment do
       :ok
     end
   end
+
+  @doc """
+  Returns `true` if the attachment's data is stored gzip-compressed.
+  """
+  @spec compressed?(t()) :: boolean()
+  def compressed?(%__MODULE__{content_encoding: "gzip"}), do: true
+  def compressed?(%__MODULE__{}), do: false
+
+  @doc """
+  Returns the attachment with its data gunzipped (no-op if not compressed).
+  """
+  @spec decompress(t()) :: t()
+  def decompress(%__MODULE__{content_encoding: "gzip"} = attachment) do
+    data = :zlib.gunzip(attachment.data)
+    %__MODULE__{attachment | data: data, size: byte_size(data), content_encoding: nil}
+  end
+
+  def decompress(%__MODULE__{} = attachment), do: attachment
 
   @doc """
   Generates a Content-ID header value for the attachment.

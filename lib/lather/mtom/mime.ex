@@ -34,6 +34,8 @@ defmodule Lather.Mtom.Mime do
 
   alias Lather.Mtom.Attachment
 
+  @default_chunk_size 64_000
+
   @doc """
   Generates a unique boundary string for multipart messages.
 
@@ -102,6 +104,89 @@ defmodule Lather.Mtom.Mime do
       )
 
     {content_type_header, multipart_body}
+  end
+
+  @doc """
+  Builds a multipart/related message as a lazy stream of chunks, so large
+  attachments never need to be held in memory all at once.
+
+  ## Parameters
+
+    * `soap_envelope` - The SOAP envelope XML as binary
+    * `attachments` - List of attachment specs:
+      `%{content_id: cid, content_type: type, data: source}` where `source`
+      is a binary, a `{:file, path}` tuple, or any enumerable of binaries
+    * `options` - Same as `build_multipart_message/3` plus `:chunk_size`
+      (default 64_000 bytes) used when reading `{:file, path}` sources
+
+  ## Returns
+
+    * `{content_type_header, chunk_stream}`
+
+  ## Examples
+
+      {content_type, chunks} =
+        Mime.build_multipart_message_chunks(soap_xml, [
+          %{content_id: "doc1", content_type: "application/pdf", data: {:file, "big.pdf"}}
+        ])
+
+  """
+  @spec build_multipart_message_chunks(binary(), [map()], keyword()) ::
+          {String.t(), Enumerable.t()}
+  def build_multipart_message_chunks(soap_envelope, attachments, options \\ [])
+      when is_binary(soap_envelope) and is_list(attachments) do
+    boundary = Keyword.get(options, :boundary, generate_boundary())
+    soap_content_type = Keyword.get(options, :soap_content_type, "application/xop+xml")
+    soap_charset = Keyword.get(options, :soap_charset, "UTF-8")
+    chunk_size = Keyword.get(options, :chunk_size, @default_chunk_size)
+    root_content_id = "rootpart@lather.soap"
+
+    content_type_header = build_content_type_header(boundary, soap_content_type, root_content_id)
+
+    soap_chunk =
+      "--#{boundary}\r\n" <>
+        build_soap_part(soap_envelope, root_content_id, soap_content_type, soap_charset)
+
+    attachment_chunks =
+      Stream.flat_map(attachments, fn spec -> attachment_chunks(spec, boundary, chunk_size) end)
+
+    chunks =
+      [soap_chunk]
+      |> Stream.concat(attachment_chunks)
+      |> Stream.concat(["\r\n--#{boundary}--\r\n"])
+
+    {content_type_header, chunks}
+  end
+
+  defp attachment_chunks(spec, boundary, chunk_size) do
+    content_type = Map.get(spec, :content_type, "application/octet-stream")
+    content_id = Map.get(spec, :content_id, generate_boundary())
+    encoding = Map.get(spec, :content_transfer_encoding, "binary")
+
+    headers =
+      "\r\n--#{boundary}\r\nContent-Type: #{content_type}\r\n" <>
+        "Content-Transfer-Encoding: #{encoding}\r\n" <>
+        "Content-ID: <#{content_id}>\r\n\r\n"
+
+    data_stream =
+      case Map.get(spec, :data) do
+        data when is_binary(data) -> [data]
+        {:file, path} -> file_stream(path, chunk_size)
+        other -> other
+      end
+
+    Stream.concat([headers], Stream.concat(data_stream, ["\r\n"]))
+  end
+
+  defp file_stream(path, chunk_size) do
+    {:ok, handle} = File.open(path)
+
+    Stream.unfold(handle, fn file ->
+      case IO.binread(file, chunk_size) do
+        :eof -> nil
+        data -> {data, file}
+      end
+    end)
   end
 
   @doc """
@@ -290,11 +375,16 @@ defmodule Lather.Mtom.Mime do
   end
 
   defp build_attachment_part(%Attachment{} = attachment) do
-    headers = [
-      "Content-Type: #{attachment.content_type}",
-      "Content-Transfer-Encoding: #{attachment.content_transfer_encoding}",
-      "Content-ID: #{Attachment.content_id_header(attachment)}"
-    ]
+    headers =
+      [
+        "Content-Type: #{attachment.content_type}",
+        "Content-Transfer-Encoding: #{attachment.content_transfer_encoding}",
+        "Content-ID: #{Attachment.content_id_header(attachment)}"
+      ] ++
+        if(attachment.content_encoding,
+          do: ["Content-Encoding: #{attachment.content_encoding}"],
+          else: []
+        )
 
     headers_section = Enum.join(headers, "\r\n")
     headers_section <> "\r\n\r\n" <> encode_attachment_data(attachment) <> "\r\n"
@@ -329,24 +419,37 @@ defmodule Lather.Mtom.Mime do
     parsed_parts =
       Enum.map(parts, fn part ->
         case String.split(part, "\r\n\r\n", parts: 2) do
-        [headers_section, content] ->
-          headers = parse_headers(headers_section)
-          # Trim trailing CRLF from content (added by MIME builder)
-          trimmed_content = String.trim_trailing(content, "\r\n")
+          [headers_section, content] ->
+            headers = parse_headers(headers_section)
+            # Trim trailing CRLF from content (added by MIME builder)
+            trimmed_content = String.trim_trailing(content, "\r\n")
 
-          decoded_content =
-            case Map.get(headers, "content-transfer-encoding", "binary") do
-              "base64" ->
-                case Base.decode64(String.replace(trimmed_content, "\n", "")) do
-                  {:ok, decoded} -> decoded
-                  :error -> trimmed_content
-                end
+            decoded_content =
+              case Map.get(headers, "content-transfer-encoding", "binary") do
+                "base64" ->
+                  case Base.decode64(String.replace(trimmed_content, "\n", "")) do
+                    {:ok, decoded} -> decoded
+                    :error -> trimmed_content
+                  end
 
-              _ ->
-                trimmed_content
-            end
+                _ ->
+                  trimmed_content
+              end
 
-          %{headers: headers, content: decoded_content}
+            decoded_content =
+              case Map.get(headers, "content-encoding") do
+                "gzip" ->
+                  try do
+                    :zlib.gunzip(decoded_content)
+                  rescue
+                    _ -> decoded_content
+                  end
+
+                _ ->
+                  decoded_content
+              end
+
+            %{headers: headers, content: decoded_content}
 
           [content] ->
             # No headers, just content

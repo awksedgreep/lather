@@ -63,6 +63,10 @@ forms = Lather.Server.FormGenerator.generate_service_overview(service_info, base
 - `POST /service` → SOAP 1.1 endpoint (maximum compatibility)
 - `POST /service/v1.2` → SOAP 1.2 endpoint (enhanced features)
 - `POST /service/api` → JSON/REST endpoint (modern applications)
+- `GET  /service?openapi` → OpenAPI 3.1 specification (also at `/service/openapi.json`)
+- `GET  /service?swagger` → Swagger UI explorer for the OpenAPI spec (also at `/service/swagger`)
+- `GET  /service?health` → JSON health check (service, version, operation count, uptime)
+- `GET  /service?metrics` → Usage analytics (request/error counts, avg duration, status counts) when `enable_metrics: true`
 
 ## 🚀 Quick Start
 
@@ -179,6 +183,13 @@ scope "/api/users" do
   match :*, "/*path", Lather.Server.EnhancedPlug, service: MyApp.UserService
 end
 
+# Or mount everything with a single macro (Plug.Router or Phoenix-style):
+defmodule MyAppWeb.Router do
+  use Lather.Server.Router
+
+  soap_route "/api/users", MyApp.UserService
+end
+
 # Generate enhanced WSDL with multiple protocols
 service_info = MyApp.UserService.__service_info__()
 enhanced_wsdl = Lather.Server.EnhancedWSDLGenerator.generate(service_info, "https://myapp.com/api/users")
@@ -219,6 +230,19 @@ curl -X POST "https://myapp.com/api/users/v1.2" \
 curl -X POST "https://myapp.com/api/users/api" \
   -H "Content-Type: application/json" \
   -d '{"operation": "GetUser", "parameters": {"userId": "123"}}'
+```
+
+### Testing Your Service
+
+```elixir
+# Exercise a service in tests without starting a server
+config = Lather.TestClient.new(MyApp.UserService)
+
+conn = Lather.TestClient.call_json(config, "GetUser", %{"userId" => "123"})
+assert Lather.TestClient.json_body(conn)["data"]["name"] == "Ada"
+
+conn = Lather.TestClient.call_soap(config, "GetUser", %{"userId" => "123"}, version: :v1_2)
+assert Lather.TestClient.status(conn) == 200
 ```
 
 ## 📚 Interactive Learning with Livebooks
@@ -367,6 +391,69 @@ security_header = Lather.Auth.WSSecurity.security_header(username_token)
   soap_headers: [security_header],
   ssl_options: [verify: :verify_peer]
 )
+
+# WS-Security digital signatures (HMAC-SHA256)
+{:ok, client} = Lather.DynamicClient.new(wsdl_url,
+  authentication: {:signature, "shared-secret"}
+)
+
+# Server side: verify every SOAP request's signature
+plug = {Lather.Server.EnhancedPlug, [service: MyService, verify_signature: "shared-secret"]}
+
+# OAuth 2.0 client credentials
+{:ok, client} = Lather.Auth.OAuth.client_with_token(
+  wsdl_url, "client-id", "client-secret", "https://auth.example.com/oauth/token"
+)
+
+# JWT in SOAP headers (HS256)
+{:ok, client} = Lather.DynamicClient.new(wsdl_url,
+  authentication: {:jwt, "jwt-secret", %{"sub" => "user"}}
+)
+plug = {Lather.Server.EnhancedPlug, [service: MyService, jwt_secret: "jwt-secret"]}
+
+# API keys (X-API-Key header)
+{:ok, client} = Lather.DynamicClient.new(wsdl_url, authentication: {:api_key, "key-1"})
+plug = {Lather.Server.EnhancedPlug, [service: MyService, api_keys: ["key-1"]]}
+
+# SAML 2.0 assertions in WS-Security headers
+{:ok, client} = Lather.DynamicClient.new(wsdl_url,
+  authentication: {:saml, "saml-secret", "alice", [attributes: %{"role" => "admin"}]}
+)
+plug = {Lather.Server.EnhancedPlug, [service: MyService, saml_secret: "saml-secret"]}
+
+# Stream a large attachment without loading it fully into memory
+{:ok, response} = Lather.Mtom.StreamUploader.upload(
+  "http://localhost:4000/upload",
+  "Upload",
+  %{"file" => {:attachment, {:file, "huge.pdf"}, "application/pdf"}}
+)
+
+# XML-encrypted SOAP bodies (AES-256-CBC)
+{:ok, client} = Lather.DynamicClient.new(wsdl_url, encryption: {:aes256, "aes-key"})
+plug = {Lather.Server.EnhancedPlug, [service: MyService, encryption_key: "aes-key"]}
+
+# Issuing and refreshing access tokens
+{:ok, manager} = Lather.Auth.TokenManager.start_link(secret: "jwt-secret", ttl: 3600)
+token = Lather.Auth.TokenManager.issue(manager, %{"sub" => "alice"})
+{:ok, refreshed} = Lather.Auth.TokenManager.refresh(manager, token)
+
+# Supervise a service: in-process calls, on-demand HTTP server, stats
+{:ok, supervisor} = Lather.Server.ServiceSupervisor.start_link(MyService)
+{:ok, result} = Lather.Server.ServiceSupervisor.call(supervisor, "Echo", %{"message" => "hi"})
+{:ok, port} = Lather.Server.ServiceSupervisor.start_http_server(supervisor, 0)
+
+# Concurrent and streamed calls
+{:ok, client} = Lather.DynamicClient.new(wsdl_url)
+results = Lather.DynamicClient.call_many(client, [{"GetUser", %{"id" => 1}}, {"GetUser", %{"id" => 2}}], concurrency: 4)
+task = Lather.DynamicClient.call_async(client, "GetUser", %{"id" => 3})
+{:ok, response} = Lather.DynamicClient.await(task)
+
+# Enforce a security policy on a service at startup
+plug = {Lather.Server.EnhancedPlug, [
+  service: MyService,
+  api_keys: ["secret"],
+  security_policy: %{require_auth: [:api_key], min_factors: 1}
+]}
 ```
 
 ### Complex Data Structures

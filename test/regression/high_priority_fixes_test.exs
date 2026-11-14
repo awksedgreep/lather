@@ -85,7 +85,8 @@ defmodule Lather.Regression.HighPriorityFixesTest do
     end
   end
 
-  describe "SOAP 1.2 fault code/reason extraction (issue #34)" do    test "returns the fault code and reason as strings" do
+  describe "SOAP 1.2 fault code/reason extraction (issue #34)" do
+    test "returns the fault code and reason as strings" do
       xml = """
       <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
         <soap:Body>
@@ -116,8 +117,8 @@ defmodule Lather.Regression.HighPriorityFixesTest do
         output: []
       }
 
-      assert :ok = Lather.Server.validate_param_types(%{"flag" => "on"}, op)
-      assert :ok = Lather.Server.validate_param_types(%{"flag" => "off"}, op)
+      assert {:ok, _} = Lather.Server.validate_param_types(%{"flag" => "on"}, op)
+      assert {:ok, _} = Lather.Server.validate_param_types(%{"flag" => "off"}, op)
       assert {:error, _} = Lather.Server.validate_param_types(%{"flag" => "yes"}, op)
     end
   end

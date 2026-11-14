@@ -13,6 +13,29 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
   their preferred protocol while maintaining backward compatibility.
   """
 
+  @wsdl_cache_ttl_seconds 300
+
+  @doc """
+  Generates a multi-protocol WSDL for a service module, caching the result
+  for `:ttl` seconds (default 300) keyed by service module, base URL and
+  options.
+  """
+  def cached_generate(service_module, base_url, options \\ []) do
+    key = {__MODULE__, service_module, base_url, options}
+    ttl = Keyword.get(options, :ttl, @wsdl_cache_ttl_seconds)
+    now = System.monotonic_time(:second)
+
+    case :persistent_term.get(key, nil) do
+      {wsdl, inserted_at} when now - inserted_at < ttl ->
+        wsdl
+
+      _ ->
+        wsdl = generate(service_module.__soap_service__(), base_url, options)
+        :persistent_term.put(key, {wsdl, now})
+        wsdl
+    end
+  end
+
   @doc """
   Generates a comprehensive multi-protocol WSDL document.
 
@@ -44,6 +67,7 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
 
       <documentation>
         #{xml_escape(service_name)} - Multi-Protocol Web Service
+        #{version_line(service_info)}
 
         This service supports multiple protocols for maximum compatibility:
         - SOAP 1.1 (Primary - Maximum Compatibility)
@@ -106,7 +130,7 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
   defp generate_element(element) do
     type_attr = map_elixir_type_to_xsd(element.type)
     min_occurs = if element.required, do: "1", else: "0"
-    max_occurs = element.max_occurs || "1"
+    max_occurs = Map.get(element, :max_occurs) || "1"
 
     doc =
       if element.description do
@@ -162,9 +186,12 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
   # Generate message part
   defp generate_message_part(param) do
     type_attr = map_elixir_type_to_xsd(param.type)
+    min_occurs = if param.required, do: "1", else: "0"
+    max_occurs = Map.get(param, :max_occurs) || "1"
 
     """
-      <part name="#{xml_escape(param.name)}" type="#{type_attr}"/>
+      <part name="#{xml_escape(param.name)}" type="#{type_attr}"
+            minOccurs="#{min_occurs}" maxOccurs="#{max_occurs}"/>
     """
   end
 
@@ -427,6 +454,13 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
   defp map_elixir_type_to_xsd("anyURI"), do: "xsd:anyURI"
   defp map_elixir_type_to_xsd(type) when is_binary(type), do: "tns:#{type}"
   defp map_elixir_type_to_xsd(type), do: "tns:#{type}"
+
+  defp version_line(service_info) do
+    case Map.get(service_info, :version) do
+      nil -> ""
+      version -> "Version: #{xml_escape(version)}"
+    end
+  end
 
   defp xml_escape(value) do
     value

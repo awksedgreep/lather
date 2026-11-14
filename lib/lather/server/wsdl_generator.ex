@@ -6,6 +6,30 @@ defmodule Lather.Server.WSDLGenerator do
   bindings, and service definitions based on the service module metadata.
   """
 
+  @wsdl_cache_ttl_seconds 300
+
+  @doc """
+  Generates a WSDL document for a service module, caching the result for
+  `:ttl` seconds (default 300) keyed by service module and base URL.
+
+  Useful for services where the WSDL is requested repeatedly; the cache
+  expires automatically so recompiled services are picked up.
+  """
+  def cached_generate(service_module, base_url, ttl \\ @wsdl_cache_ttl_seconds) do
+    key = {__MODULE__, service_module, base_url}
+    now = System.monotonic_time(:second)
+
+    case :persistent_term.get(key, nil) do
+      {wsdl, inserted_at} when now - inserted_at < ttl ->
+        wsdl
+
+      _ ->
+        wsdl = generate(service_module.__soap_service__(), base_url)
+        :persistent_term.put(key, {wsdl, now})
+        wsdl
+    end
+  end
+
   @doc """
   Generates a complete WSDL document for a SOAP service.
   """
@@ -22,6 +46,8 @@ defmodule Lather.Server.WSDLGenerator do
                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
                  targetNamespace="#{target_namespace}">
 
+    #{generate_documentation(service_info)}
+
     #{generate_types(service_info)}
 
     #{generate_messages(service_info)}
@@ -34,6 +60,18 @@ defmodule Lather.Server.WSDLGenerator do
 
     </definitions>
     """
+  end
+
+  # WSDL has no version attribute; services that declare @api_version carry
+  # it in the documentation element.
+  defp generate_documentation(service_info) do
+    case Map.get(service_info, :version) do
+      nil ->
+        ""
+
+      version ->
+        "<documentation>Version: #{xml_escape(version)}</documentation>"
+    end
   end
 
   # Generate XSD types section
@@ -66,7 +104,7 @@ defmodule Lather.Server.WSDLGenerator do
   defp generate_element(element) do
     type_attr = map_elixir_type_to_xsd(element.type)
     min_occurs = if element.required, do: "1", else: "0"
-    max_occurs = element.max_occurs || "1"
+    max_occurs = Map.get(element, :max_occurs) || "1"
 
     """
             <xsd:element name="#{xml_escape(element.name)}" type="#{type_attr}"
@@ -96,9 +134,12 @@ defmodule Lather.Server.WSDLGenerator do
   # Generate a message part
   defp generate_message_part(param) do
     type_attr = map_elixir_type_to_xsd(param.type)
+    min_occurs = if param.required, do: "1", else: "0"
+    max_occurs = Map.get(param, :max_occurs) || "1"
 
     """
-      <part name="#{xml_escape(param.name)}" type="#{type_attr}"/>
+      <part name="#{xml_escape(param.name)}" type="#{type_attr}"
+            minOccurs="#{min_occurs}" maxOccurs="#{max_occurs}"/>
     """
   end
 

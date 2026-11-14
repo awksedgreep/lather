@@ -19,9 +19,14 @@ defmodule Lather.Server.RequestParser do
   def parse(soap_xml) do
     with {:ok, parsed} <- Parser.parse(soap_xml),
          {:ok, envelope} <- extract_envelope(parsed),
+         {:ok, headers} <- extract_headers(envelope),
          {:ok, body} <- extract_body(envelope),
          {:ok, operation_data} <- extract_operation(body) do
-      {:ok, Map.put(operation_data, :soap_version, Elements.soap_version(parsed))}
+      {:ok,
+       Map.merge(operation_data, %{
+         soap_version: Elements.soap_version(parsed),
+         headers: headers
+       })}
     else
       {:error, reason} -> {:error, {:parse_error, reason}}
     end
@@ -52,6 +57,33 @@ defmodule Lather.Server.RequestParser do
     case Elements.get(parsed, "Envelope") do
       nil -> {:error, "No SOAP envelope found"}
       envelope -> {:ok, envelope}
+    end
+  end
+
+  # Extract SOAP header entries as {local_name, content} pairs.
+  defp extract_headers(envelope) when is_map(envelope) do
+    header_element =
+      for {key, value} <- envelope,
+          not String.starts_with?(key, "@"),
+          Elements.local_name(key) == "Header" do
+        {key, value}
+      end
+      |> List.first()
+
+    case header_element do
+      {_, nil} ->
+        {:ok, []}
+
+      {_, content} when is_map(content) ->
+        headers =
+          for {name, value} <- content, not String.starts_with?(name, "@") do
+            {Elements.local_name(name), value}
+          end
+
+        {:ok, headers}
+
+      _ ->
+        {:ok, []}
     end
   end
 

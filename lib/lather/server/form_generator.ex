@@ -98,6 +98,7 @@ defmodule Lather.Server.FormGenerator do
             <div class="header">
                 <h1>#{html_escape(service_name)}</h1>
                 <p class="service-description">Multi-Protocol Web Service</p>
+                #{version_line(service_info)}
                 <p><strong>Namespace:</strong> #{html_escape(namespace)}</p>
                 <p><strong>Powered by:</strong> Lather SOAP Library v#{get_version()}</p>
             </div>
@@ -320,12 +321,16 @@ defmodule Lather.Server.FormGenerator do
 
     request_json =
       Map.get(operation, :input, Map.get(operation, :input_parameters, []))
-      |> Enum.map(fn param -> "  \"#{html_escape(param.name)}\": #{get_json_placeholder(param.type)}" end)
+      |> Enum.map(fn param ->
+        "  \"#{html_escape(param.name)}\": #{get_json_placeholder(param.type)}"
+      end)
       |> Enum.join(",\n")
 
     response_json =
       Map.get(operation, :output, Map.get(operation, :output_parameters, []))
-      |> Enum.map(fn param -> "  \"#{html_escape(param.name)}\": #{get_json_placeholder(param.type)}" end)
+      |> Enum.map(fn param ->
+        "  \"#{html_escape(param.name)}\": #{get_json_placeholder(param.type)}"
+      end)
       |> Enum.join(",\n")
 
     """
@@ -374,6 +379,8 @@ defmodule Lather.Server.FormGenerator do
         <div class="wsdl-links">
             <a href="?wsdl" class="wsdl-link">Download WSDL</a>
             <a href="?wsdl&enhanced=true" class="wsdl-link">Download Enhanced WSDL (Multi-Protocol)</a>
+            <a href="?openapi" class="wsdl-link">OpenAPI 3.1 Specification</a>
+            <a href="?swagger" class="wsdl-link">Swagger UI Explorer</a>
         </div>
     </div>
     """
@@ -1067,6 +1074,16 @@ defmodule Lather.Server.FormGenerator do
 
   # Helper functions for generating appropriate input types and placeholders
   # Escape a value for safe inclusion in HTML text or attribute values.
+  defp version_line(service_info) do
+    case Map.get(service_info, :version) do
+      nil ->
+        ""
+
+      version ->
+        "<p><strong>API Version:</strong> #{html_escape(version)}</p>"
+    end
+  end
+
   defp html_escape(value) do
     value
     |> to_string()

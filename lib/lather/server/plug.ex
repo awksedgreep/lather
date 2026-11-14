@@ -223,8 +223,8 @@ defmodule Lather.Server.Plug do
   # Validate operation parameters if enabled
   defp validate_operation_params(params, operation, true) do
     with :ok <- Lather.Server.validate_required_params(params, operation),
-         :ok <- Lather.Server.validate_param_types(params, operation) do
-      {:ok, params}
+         {:ok, validated_params} <- Lather.Server.validate_param_types(params, operation) do
+      {:ok, validated_params}
     else
       {:error, reason} ->
         {:error,

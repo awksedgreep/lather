@@ -1,7 +1,7 @@
 defmodule Lather.Mtom.BuilderTest do
   use ExUnit.Case, async: true
 
-  alias Lather.Mtom.Builder
+  alias Lather.Mtom.{Builder, Mime}
 
   describe "build_mtom_message/3" do
     test "builds MTOM message with single attachment" do
@@ -636,6 +636,105 @@ defmodule Lather.Mtom.BuilderTest do
       assert size > 10_000
       # Should be very fast (under 10ms)
       assert time_microseconds < 10_000
+    end
+  end
+
+  describe "build_message/3 MTOM threshold" do
+    test "small attachments are sent inline as base64" do
+      params = %{"file" => {:attachment, "tiny payload", "application/octet-stream"}}
+
+      {:ok, {content_type, body}} = Builder.build_message(:Upload, params, namespace: "urn:test")
+
+      assert content_type == "text/xml; charset=utf-8"
+      refute String.contains?(content_type, "multipart")
+      assert String.contains?(body, Base.encode64("tiny payload"))
+      refute String.contains?(body, "xop:Include")
+    end
+
+    test "attachments over the threshold use MTOM" do
+      payload = String.duplicate("x", 2048)
+      params = %{"file" => {:attachment, payload, "application/octet-stream"}}
+
+      {:ok, {content_type, body}} = Builder.build_message(:Upload, params, namespace: "urn:test")
+
+      assert String.starts_with?(content_type, "multipart/related")
+      assert String.contains?(body, "xop:Include")
+      assert String.contains?(body, payload)
+    end
+
+    test "the threshold can be overridden per call" do
+      params = %{"file" => {:attachment, "tiny payload", "text/plain"}}
+
+      {:ok, {forced_type, _body}} =
+        Builder.build_message(:Upload, params, namespace: "urn:test", mtom_threshold: 4)
+
+      assert String.starts_with?(forced_type, "multipart/related")
+
+      {:ok, {inline_type, _body}} =
+        Builder.build_message(:Upload, params, namespace: "urn:test", mtom_threshold: 1000)
+
+      assert inline_type == "text/xml; charset=utf-8"
+    end
+
+    test "enable_mtom forces the decision either way" do
+      params = %{"file" => {:attachment, String.duplicate("x", 5000), "application/octet-stream"}}
+
+      {:ok, {forced_type, _}} = Builder.build_message(:Upload, params, enable_mtom: false)
+      assert forced_type == "text/xml; charset=utf-8"
+
+      {:ok, {forced_mtom, _}} = Builder.build_message(:Upload, params, enable_mtom: true)
+      assert String.starts_with?(forced_mtom, "multipart/related")
+    end
+
+    test "use_mtom? respects application config" do
+      original = Application.get_env(:lather, :mtom_threshold)
+      Application.put_env(:lather, :mtom_threshold, 16)
+
+      params = %{"file" => {:attachment, String.duplicate("a", 20), "text/plain"}}
+      assert Builder.use_mtom?(params) == true
+
+      {:ok, {content_type, _}} = Builder.build_message(:Upload, params)
+      assert String.starts_with?(content_type, "multipart/related")
+
+      if original,
+        do: Application.put_env(:lather, :mtom_threshold, original),
+        else: Application.delete_env(:lather, :mtom_threshold)
+    end
+
+    test "messages without attachments are plain SOAP" do
+      {:ok, {content_type, body}} = Builder.build_message(:Ping, %{"message" => "hello"})
+      assert content_type == "text/xml; charset=utf-8"
+      assert String.contains?(body, "Ping")
+    end
+  end
+
+  describe "attachment compression" do
+    test "compressed attachments round-trip through multipart messages" do
+      original = String.duplicate("report data ", 500)
+      params = %{"report" => {:attachment, original, "text/plain", [compress: true]}}
+
+      {:ok, {content_type, body}} = Builder.build_mtom_message(:UploadReport, params)
+
+      assert String.contains?(body, "Content-Encoding: gzip")
+
+      {:ok, {_soap_part, [attachment_part]}} = Mime.parse_multipart_message(content_type, body)
+      assert attachment_part.headers["content-encoding"] == "gzip"
+      assert attachment_part.content == original
+    end
+
+    test "compressed messages are smaller than uncompressed ones" do
+      original = String.duplicate("report data ", 500)
+      params = %{"report" => {:attachment, original, "text/plain", [compress: true]}}
+
+      {:ok, {_compressed_type, compressed_body}} =
+        Builder.build_mtom_message(:UploadReport, params)
+
+      {:ok, {_plain_type, plain_body}} =
+        Builder.build_mtom_message(:UploadReport, %{
+          "report" => {:attachment, original, "text/plain"}
+        })
+
+      assert byte_size(compressed_body) < byte_size(plain_body)
     end
   end
 end

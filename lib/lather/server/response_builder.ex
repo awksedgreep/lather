@@ -65,7 +65,11 @@ defmodule Lather.Server.ResponseBuilder do
     detail = Map.get(fault, :detail) || Map.get(fault, "detail")
     detail = if detail && detail != %{}, do: format_response_data(detail), else: nil
 
-    fault_body = %{"soap:Fault" => fault_element(version, fault_code, fault_string, detail)}
+    subcode = Map.get(fault, :subcode) || Map.get(fault, "subcode")
+
+    fault_body = %{
+      "soap:Fault" => fault_element(version, fault_code, fault_string, detail, subcode)
+    }
 
     case Builder.build_fragment(envelope(fault_body, version)) do
       {:ok, xml} -> "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" <> xml
@@ -85,15 +89,24 @@ defmodule Lather.Server.ResponseBuilder do
   defp namespace(:v1_2), do: Elements.soap_1_2_namespace()
   defp namespace(_), do: Elements.soap_1_1_namespace()
 
-  defp fault_element(:v1_2, code, string, detail) do
+  defp fault_element(:v1_2, code, string, detail, subcode) do
+    code_element = %{"soap:Value" => soap_1_2_code(code)}
+
+    code_element =
+      if subcode do
+        Map.put(code_element, "soap:Subcode", %{"soap:Value" => to_string(subcode)})
+      else
+        code_element
+      end
+
     %{
-      "soap:Code" => %{"soap:Value" => soap_1_2_code(code)},
+      "soap:Code" => code_element,
       "soap:Reason" => %{"soap:Text" => %{"@xml:lang" => "en", "#text" => string}}
     }
     |> maybe_put("soap:Detail", detail)
   end
 
-  defp fault_element(_v1_1, code, string, detail) do
+  defp fault_element(_v1_1, code, string, detail, _subcode) do
     %{"faultcode" => code, "faultstring" => string}
     |> maybe_put("detail", detail)
   end

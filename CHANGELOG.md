@@ -5,6 +5,207 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### Added
+- Multi-tenant services: `tenants: %{"name" => ServiceModule}` on the
+  enhanced plug; `?tenant=name` selects the service for WSDL and SOAP
+  requests.
+- Fault injection for chaos testing: `fault_injection_rate:` on the
+  enhanced plug emits transient SOAP faults (`TemporaryFailure`) so
+  clients with `reliable: true` can be tested for retry/recovery.
+  `Lather.ReliableMessaging.deliver/3` now also retries transient
+  `Receiver` SOAP faults, not just transport errors.
+- `debug: true` on the enhanced plug logs every parsed request for
+  development-mode troubleshooting.
+- Unknown-operation faults now suggest the closest operation name
+  ("Did you mean 'EchoA'?") via a Levenshtein match.
+- WS-I Basic Profile structural validation via
+  `Lather.Soap.Profile.validate/1` (single envelope/body, namespace,
+  header-before-body ordering, valid mustUnderstand values).
+- `Lather.Wsdl.Schema` generates XSD schemas from service modules and
+  validates operation parameters client-side.
+- `Lather.I18n` translations (en/es/de) for the built-in dashboard,
+  docs, and history pages (`?lang=es|de`).
+- Accessibility improvements to built-in web pages: `lang` attributes,
+  viewport meta, skip links, focus outlines, `prefers-contrast` support,
+  responsive layouts.
+- `Lather.DynamicClient` now preserves non-`wsdl` query parameters
+  (e.g. `tenant`) when deriving the service endpoint from a WSDL URL.
+- `Lather.Http.BasicClient`, a dependency-free `:gen_tcp` HTTP/1.1
+  transport selectable with `client: :basic` (or globally via
+  `Application.put_env(:lather, :http_client, :basic)`), as an
+  alternative to Finch.
+- Deployment and guide docs: `docs/adr/`, `docs/enterprise-deployment.md`,
+  `docs/security-best-practices.md`, `docs/troubleshooting-cookbook.md`,
+  `docs/performance-tuning.md`, `docs/migration-guide.md`,
+  `docs/plugin-development.md`, `docs/editor-integration.md`,
+  `docs/http2-websocket.md`, `docs/ecto-phoenix.md`,
+  `docs/compatibility.md`, `docs/monitoring-templates.md`,
+  `docs/examples.md`, `docs/docker-kubernetes.md`.
+- `Dockerfile`, `docker-compose.yml`, `nginx.conf`, and
+  `k8s/deployment.yaml` for containerized deployment.
+- `CONTRIBUTING.md`, `scripts/check_docs.sh`, and a quality CI workflow
+  (`mix compile --warnings-as-errors`, `mix xref unused`, docs coverage).
+- `Lather.Server.OpenAPIGenerator` generates OpenAPI 3.1 specifications from
+  SOAP service definitions; the enhanced plug serves them at
+  `GET /service?openapi` and `GET /service/openapi.json`. Interop with the
+  `infusion` package is covered by a test that loads the live spec, generates
+  an SDK from it, and exercises the generated client against a running server.
+- Swagger UI explorer served by the enhanced plug at `GET /service?swagger`
+  and `GET /service/swagger`; it can be disabled with `:enable_swagger: false`.
+- `mix lather.openapi` task generating an OpenAPI 3.1 spec from a service
+  module (`--service`) or a WSDL file/URL (`--wsdl`).
+- `Lather.Client.Generator` and the `mix lather.client` task generate named,
+  documented Elixir client functions (and structs) from a service's WSDL.
+- `mix lather.analyze` task summarizing a WSDL (operations, endpoints, types,
+  bindings) with an optional `--json` output.
+- Services can declare `@api_version`, surfaced in the OpenAPI spec's
+  `info.version`, a WSDL `<documentation>` element, and the service overview
+  page.
+- `Lather.Server.Router` provides a `soap_route "/path", MyService` macro for
+  `Plug.Router`/Phoenix routers that mounts a service's full endpoint set
+  (SOAP, WSDL, OpenAPI, Swagger UI, forms) at the given path.
+- WSDL responses are cached (`WSDLGenerator.cached_generate/3` and
+  `EnhancedWSDLGenerator.cached_generate/3`) with a 300-second TTL, used
+  automatically by the enhanced plug's `?wsdl` endpoints.
+- Opt-in operation result caching: `Lather.Server.EnhancedPlug` accepts
+  `:cache_results` and `:cache_ttl` options, caching successful operation
+  results per service, operation, and parameters (`Lather.Server.ResultCache`).
+- Health check endpoint at `GET /service?health` (also `/service/health`)
+  returning JSON status, service name, version, operation count, and uptime.
+- `Lather.Mtom.Builder.build_message/3` automatically chooses between MTOM
+  multipart messages and plain inline (base64) SOAP based on attachment size;
+  the threshold is configurable per call (`:mtom_threshold`) or via
+  `:lather, :mtom_threshold` application config.
+- MTOM attachments can be gzip-compressed with the `compress: true` option
+  (`{:attachment, data, type, [compress: true]}`); parts carry a
+  `Content-Encoding: gzip` header and are transparently gunzipped when
+  parsed. `Attachment.decompress/1` is also available.
+- `mix lather.call` task for quick request/response debugging against any
+  SOAP service: `--list` operations, `--operation`/`--param`/`--json` to
+  invoke, with `--soap-version`, `--endpoint`, `--timeout`, `--raw`, and
+  `--auth`/`--ws-auth` support.
+- Every `Lather.Server.EnhancedPlug` request emits a `[:lather, :server,
+  :request]` telemetry span (`:start`/`:stop`) with duration, status,
+  service, method, and path metadata.
+- Transparent gzip support in the enhanced plug: `Content-Encoding: gzip`
+  request bodies are decompressed, and responses are gzipped when the
+  client's `Accept-Encoding` includes gzip and the body exceeds 1 KB.
+- Optional audit logging via the `:audit_log` option on
+  `Lather.Server.EnhancedPlug.init/1`, writing one JSON line per request
+  (timestamp, service, method, path, status).
+- `Lather.TestClient` for exercising a service in tests without a live
+  server: `call_json/3`, `call_soap/4` (SOAP 1.1/1.2), `wsdl/2`,
+  `openapi/1`, `health/1`, plus `status/1`, `body/1`, and `json_body/1`
+  response helpers.
+- `mustUnderstand` header enforcement in the enhanced plug: with
+  `understood_headers: [...]` configured, headers marked
+  `mustUnderstand="1|true"` whose name or namespace is not understood
+  produce a `NotUnderstood` SOAP fault.
+- Service usage analytics: `Lather.Server.Metrics` and a `GET /service?metrics`
+  endpoint (enabled with `enable_metrics: true`) reporting request/error
+  counts, average response time, status-code counts, and uptime.
+- WS-Security XML digital signatures via `Lather.Auth.Signature`: clients
+  using `authentication: {:signature, key}` attach a `wsse:Security` header
+  containing an HMAC-SHA256 digest and signature over the canonicalized
+  operation and parameters; servers configured with `verify_signature: key`
+  reject missing or invalid signatures with a `Client` SOAP fault.
+- `Lather.Auth.OAuth` implements the OAuth 2.0 client credentials and
+  refresh-token grants (`client_credentials_token/4`, `refresh_token/4`,
+  `bearer_headers/1`, `client_with_token/5`) for token-based SOAP clients.
+- `Lather.Auth.JWT` signs and verifies HS256 JWTs (no external deps) and
+  carries them in WS-Security SOAP headers: clients use
+  `authentication: {:jwt, secret}` or `{:jwt, secret, claims}`; servers verify
+  every request with the `:jwt_secret` option.
+- `Lather.Auth.APIKey` adds API-key authentication: servers accept an
+  `:api_keys` list or key/metadata map and reject requests missing a valid
+  `X-API-Key` header with a 401; clients send it via
+  `authentication: {:api_key, key}`.
+- SOAP 1.2 role-based header processing: the enhanced plug accepts a
+  `:soap_roles` list, and `mustUnderstand` headers whose `role` (or SOAP 1.1
+  `actor`) attribute is not in the list produce a `NotUnderstood` fault.
+  The default power role is always accepted.
+- `Lather.Auth.SAML` builds, signs (HMAC-SHA256), and verifies SAML 2.0
+  assertions carried in WS-Security SOAP headers: clients use
+  `authentication: {:saml, secret}` (or `{:saml, secret, subject, opts}`);
+  servers verify every request with the `:saml_secret` option.
+- MTOM large-attachment streaming: `Lather.Mtom.Builder.build_message_chunks/3`
+  builds multipart messages as lazy chunk streams (attachment sources can be
+  binaries, `{:file, path}` tuples read in `:chunk_size` blocks, or any
+  enumerable), `Lather.Http.Transport.post_stream/4` posts them with chunked
+  request bodies, and `Lather.Mtom.StreamUploader.upload/4` combines both so
+  multi-megabyte attachments never fully load into memory.
+- Multi-factor authentication: the enhanced plug's `require_auth: [...]`
+  option (`:api_key`, `:jwt`, `:basic`, `:bearer`) enforces that every listed
+  authentication factor is present on SOAP and JSON requests.
+-   `Lather.Auth.XMLEncryption` implements WS-Security-style XML Encryption:
+  clients send operation bodies as AES-256-CBC-encrypted `xenc:EncryptedData`
+  payloads via `encryption: {:aes256, key}`, and servers configured with
+  `:encryption_key` decrypt them transparently (with HMAC integrity checks);
+  plaintext requests still work.
+- `Lather.Auth.TokenManager` is a GenServer that issues HS256 JWT access
+  tokens with `exp`/`jti` claims, validates them, rotates them via a
+  `refresh/2` call (with an optional expiry grace window) while revoking the
+  previous token, and maintains a revocation blacklist.
+- `Lather.Server.ServiceSupervisor` supervises a service as a GenServer:
+  it calls operations in-process (`call/3`), starts/stops an HTTP server on
+  demand (`start_http_server/2`, `stop_http_server/1`), and reports request,
+  error, and uptime stats (`stats/1`).
+- Async and streaming client calls: `Lather.DynamicClient.call_async/4`
+  (returns an awaitable `Task`), `call_many/3` (concurrent invocations with
+  `:concurrency`/`:timeout` options, results in invocation order), and
+  `call_stream/3` (lazy stream of results for batch processing).
+- `Lather.Auth.Policy` validates a service's configuration against a
+  declarative security policy (`require_auth`, `min_factors`,
+  `max_body_size`, `require_encryption`); `EnhancedPlug` accepts a
+  `:security_policy` option and raises `ArgumentError` at startup when the
+  configuration violates the policy.
+- WS-Trust: `Lather.Auth.WSTrust` issues HMAC-signed issuer tokens
+  (`issue_token/3`, `validate_token/2`), fetches tokens from issuer
+  endpoints (`request_token/4`), and carries them in WS-Security headers.
+  Clients use `authentication: {:wstrust, secret[, subject]}` or
+  `{:wstrust_token, token}`; servers verify with `:wstrust_secret`.
+- Certificate-based authentication: `Lather.Auth.Certificate` parses X.509
+  PEM certificates with Erlang's `:public_key` and verifies common name,
+  validity window, and SHA-256 fingerprint. Clients send
+  `authentication: {:certificate, pem}` (base64-encoded in an
+  `X-Client-Certificate` header); servers enforce a `:client_certificates`
+  allowlist.
+- Connection pooling and warmup: `Lather.Http.Transport.warm_connection/2`
+  starts a dedicated, sized Finch pool for an endpoint (surfaced as
+  `DynamicClient.warm_pool/2` and `with_pool/2`), plus a new
+  `Transport.get/2` and a `:pool_name` transport option.
+- XML parsing performance: `Lather.Xml.FastParser` is a single-pass binary
+  scanner for flat SOAP-shaped documents, roughly 2-3x faster than the
+  SweetXml path; `Lather.Xml.Parser.parse/1` uses it when
+  `:fast_xml_parse` is set in application config.
+- Memory usage: `Transport.post/3` accepts `max_response_bytes`,
+  streaming the response with `Finch.stream_while/4` and aborting early
+  (with a `:response_too_large` transport error) instead of buffering
+  oversized payloads.
+- Predictive prefetching: `Lather.Prefetch` (GenServer TTL cache) plus the
+  `prefetch:` and `prefetch_pool:` options on `DynamicClient.call/4`
+  prefetch related operations asynchronously after each response and serve
+  them from cache on later calls.
+- gRPC-style streaming: operation handlers can return `{:stream, items}`;
+  the server emits one chunked SOAP response envelope per item, and
+  `DynamicClient.stream_operation/4` returns a lazy stream of parsed
+  chunks.
+- WS-Addressing: `DynamicClient.call/4` accepts `addressing: true` or
+  `addressing: %{to:, from:, action:, message_id:}` to add wsa headers;
+  `Lather.Wsdl.Addressing` provides message-id generation, header
+  extraction, validation, and action-to-operation routing, and
+  `require_addressing: true` enforces it server-side.
+- WS-Policy negotiation: services publish a policy document at
+  `GET <endpoint>?policy` (`policy:` option on EnhancedPlug), and
+  `Lather.Policy.negotiate/1` plus the `negotiate: true` call option
+  validate request options against the published policy.
+- WS-Discovery: services with `enable_discovery: true` answer WS-Discovery
+  Probe requests at `<endpoint>?discovery` with Matches documents, and
+  `Lather.Discovery.probe/1` discovers services over HTTP.
+- WS-Eventing: `Lather.Eventing` provides subscribe/publish/poll channels
+  with WS-Eventing Notify envelopes; services with `enable_eventing: true`
+  expose `?subscribe=`, `?publish=` and `?events&sub=` routes.
+
 ## [1.2.1] - 2026-10-13
 
 ### Added

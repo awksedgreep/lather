@@ -16,8 +16,9 @@ defmodule Lather.Server do
       defmodule MyApp.UserService do
         use Lather.Server
 
-        @namespace "http://myapp.com/users"
-        @service_name "UserService"
+      @namespace "http://myapp.com/users"
+      @service_name "UserService"
+      @api_version "1.0.0" # optional; surfaced in OpenAPI, WSDL, and the overview page
 
         @soap_operation %{
           name: "GetUser",
@@ -62,6 +63,7 @@ defmodule Lather.Server do
       Module.register_attribute(__MODULE__, :soap_auth, persist: true)
       Module.register_attribute(__MODULE__, :namespace, persist: true)
       Module.register_attribute(__MODULE__, :service_name, persist: true)
+      Module.register_attribute(__MODULE__, :api_version, persist: true)
       Module.register_attribute(__MODULE__, :target_namespace, persist: true)
 
       # Initialize current context attributes (used by DSL macros)
@@ -84,6 +86,7 @@ defmodule Lather.Server do
     auth = Module.get_attribute(env.module, :soap_auth, %{})
     namespace = Module.get_attribute(env.module, :namespace)
     service_name = Module.get_attribute(env.module, :service_name)
+    api_version = Module.get_attribute(env.module, :api_version)
 
     quote do
       @doc """
@@ -94,6 +97,7 @@ defmodule Lather.Server do
           name: unquote(service_name),
           namespace: unquote(namespace),
           target_namespace: unquote(namespace),
+          version: unquote(api_version),
           operations: unquote(Macro.escape(operations)),
           types: unquote(Macro.escape(types)),
           authentication: unquote(Macro.escape(auth)),
@@ -167,23 +171,120 @@ defmodule Lather.Server do
   Validates parameter types according to operation definition.
   """
   def validate_param_types(params, operation) do
-    Enum.reduce_while(operation.input, :ok, fn param, _acc ->
-      case Map.get(params, param.name) do
+    Enum.reduce_while(operation.input, {:ok, params}, fn param, {:ok, acc} ->
+      case Map.get(acc, param.name) do
         nil ->
-          if param.required do
-            {:halt, {:error, "Missing required parameter: #{param.name}"}}
-          else
-            {:cont, :ok}
+          cond do
+            param.required ->
+              {:halt, {:error, "Missing required parameter: #{param.name}"}}
+
+            param.default != nil ->
+              {:cont, {:ok, Map.put(acc, param.name, param.default)}}
+
+            true ->
+              {:cont, {:ok, acc}}
           end
 
         value ->
           case validate_type(value, param.type) do
-            :ok -> {:cont, :ok}
-            {:error, reason} -> {:halt, {:error, "Invalid #{param.name}: #{reason}"}}
+            :ok ->
+              case validate_constraints(value, param) do
+                :ok -> {:cont, {:ok, acc}}
+                {:error, reason} -> {:halt, {:error, "Invalid #{param.name}: #{reason}"}}
+              end
+
+            {:error, reason} ->
+              {:halt, {:error, "Invalid #{param.name}: #{reason}"}}
           end
       end
     end)
   end
+
+  defp validate_constraints(value, param) do
+    checks = [
+      enum_check(value, param),
+      range_check(value, param),
+      pattern_check(value, param)
+    ]
+
+    case Enum.find(checks, &match?({:error, _}, &1)) do
+      nil -> :ok
+      error -> error
+    end
+  end
+
+  defp enum_check(value, param) do
+    enum = Map.get(param, :enum)
+
+    if enum == nil do
+      :ok
+    else
+      if Enum.any?(enum, &(to_string(&1) == to_string(value))) do
+        :ok
+      else
+        {:error, "must be one of: #{Enum.join(enum, ", ")}"}
+      end
+    end
+  end
+
+  defp range_check(value, param) do
+    min = Map.get(param, :min)
+    max = Map.get(param, :max)
+
+    if min == nil and max == nil do
+      :ok
+    else
+      case parse_number(value) do
+        nil ->
+          {:error, "numeric range requires a number, got #{describe_value(value)}"}
+
+        number ->
+          cond do
+            min != nil && number < min -> {:error, "must be >= #{min}"}
+            max != nil && number > max -> {:error, "must be <= #{max}"}
+            true -> :ok
+          end
+      end
+    end
+  end
+
+  defp pattern_check(value, param) do
+    pattern = Map.get(param, :pattern)
+
+    if pattern == nil do
+      :ok
+    else
+      regex =
+        if is_binary(pattern) do
+          Regex.compile!(pattern)
+        else
+          pattern
+        end
+
+      if Regex.match?(regex, to_string(value)) do
+        :ok
+      else
+        {:error, "does not match pattern #{inspect(pattern)}"}
+      end
+    end
+  end
+
+  defp parse_number(value) when is_number(value), do: value
+
+  defp parse_number(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, ""} ->
+        int
+
+      _ ->
+        case Float.parse(value) do
+          {float, _} -> float
+          :error -> nil
+        end
+    end
+  end
+
+  defp parse_number(_value), do: nil
 
   # Parameters arrive from XML as strings (or maps/lists for structured
   # content), so simple XSD types are validated on their lexical form.
@@ -204,11 +305,19 @@ defmodule Lather.Server do
 
   defp normalize_type(type), do: to_string(type)
 
-  defp do_validate_type(value, type) when type in @simple_types and not is_binary(value) do
+  defp do_validate_type(value, type)
+       when type in @simple_types and not is_binary(value) and
+              not is_number(value) and not is_boolean(value) do
     {:error, "expected a #{type} value, got #{describe_value(value)}"}
   end
 
   defp do_validate_type(_value, "string"), do: :ok
+
+  defp do_validate_type(value, type) when type in @integer_types and is_number(value), do: :ok
+
+  defp do_validate_type(value, type) when type in @decimal_types and is_number(value), do: :ok
+
+  defp do_validate_type(value, "boolean") when is_boolean(value), do: :ok
 
   defp do_validate_type(value, type) when type in @integer_types do
     case Integer.parse(String.trim(value)) do

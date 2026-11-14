@@ -48,6 +48,22 @@ defmodule Lather.Xml.Parser do
   """
   @spec parse(String.t()) :: {:ok, map()} | {:error, any()}
   def parse(xml_string) when is_binary(xml_string) do
+    if Application.get_env(:lather, :fast_xml_parse, false) do
+      case Lather.Xml.FastParser.parse(xml_string) do
+        {:ok, value} ->
+          {:ok, value}
+
+        _ ->
+          parse_with_xmerl(xml_string)
+      end
+    else
+      parse_with_xmerl(xml_string)
+    end
+  end
+
+  def parse(_), do: {:error, :invalid_input}
+
+  defp parse_with_xmerl(xml_string) do
     try do
       doc = parse_document(xml_string)
       parsed = parse_node(doc)
@@ -61,8 +77,6 @@ defmodule Lather.Xml.Parser do
         {:error, {:parse_error, reason}}
     end
   end
-
-  def parse(_), do: {:error, :invalid_input}
 
   @doc """
   Extracts an element as a standalone XML document.

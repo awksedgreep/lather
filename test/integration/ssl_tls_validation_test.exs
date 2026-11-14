@@ -1161,7 +1161,8 @@ defmodule Lather.Integration.SslTlsValidationTest do
 
                 on_exit(fn -> stop_server(server_pid) end)
 
-                {:ok, port: actual_port, ca_cert_der: ca_cert_der, server_cert_der: server_cert_der}
+                {:ok,
+                 port: actual_port, ca_cert_der: ca_cert_der, server_cert_der: server_cert_der}
 
               {:error, _} ->
                 {:ok, skip: true}

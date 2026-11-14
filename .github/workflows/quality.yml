@@ -1,0 +1,22 @@
+name: Quality
+
+"on":
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: erlef/setup-beam@v1.24.1
+        with:
+          version-file: .tool-versions
+          version-type: strict
+      - run: mix deps.get --check-locked
+      - run: mix compile --warnings-as-errors
+      - run: mix xref unused
+      - run: ./scripts/check_docs.sh
+      - run: mix test --cover

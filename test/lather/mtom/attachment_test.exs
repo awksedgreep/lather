@@ -413,4 +413,31 @@ defmodule Lather.Mtom.AttachmentTest do
       assert time_microseconds < 100_000
     end
   end
+
+  describe "compression" do
+    test "compressed attachments store gzipped data" do
+      data = String.duplicate("compressible payload ", 100)
+      attachment = Attachment.new(data, "application/octet-stream", compress: true)
+
+      assert Attachment.compressed?(attachment)
+      assert attachment.content_encoding == "gzip"
+      assert attachment.size < byte_size(data)
+    end
+
+    test "decompress returns the original data" do
+      data = String.duplicate("compressible payload ", 100)
+      attachment = Attachment.new(data, "application/octet-stream", compress: true)
+
+      decompressed = Attachment.decompress(attachment)
+      assert decompressed.data == data
+      assert decompressed.size == byte_size(data)
+      refute Attachment.compressed?(decompressed)
+    end
+
+    test "decompress is a no-op for uncompressed attachments" do
+      attachment = Attachment.new("plain", "text/plain")
+      assert Attachment.decompress(attachment) == attachment
+      refute Attachment.compressed?(attachment)
+    end
+  end
 end
