@@ -58,6 +58,35 @@ defmodule Lather.Server.MetricsTest do
     assert counts["400"] == 1
   end
 
+  test "operation counts are tracked per invoked operation" do
+    config = EnhancedPlug.init(service: MetricsService, enable_metrics: true)
+
+    soap_body = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+      <soap:Body>
+        <Echo xmlns="urn:example"><message>one</message></Echo>
+      </soap:Body>
+    </soap:Envelope>
+    """
+
+    conn(:post, "/soap", soap_body) |> EnhancedPlug.call(config)
+    conn(:post, "/soap", soap_body) |> EnhancedPlug.call(config)
+
+    conn(:post, "/soap/api/Echo", Jason.encode!(%{"message" => "json"}))
+    |> EnhancedPlug.call(config)
+
+    conn(:get, "/soap?health") |> EnhancedPlug.call(config)
+
+    response = conn(:get, "/soap?metrics") |> EnhancedPlug.call(config)
+    body = Jason.decode!(response.resp_body)
+
+    counts = Map.new(body["operation_counts"])
+    assert counts["Echo"] == 3
+    assert not Map.has_key?(counts, "health")
+    assert body["total_duration_us"] >= 0
+  end
+
   test "metrics are disabled by default" do
     config = EnhancedPlug.init(service: MetricsService)
     response = conn(:get, "/soap?metrics") |> EnhancedPlug.call(config)

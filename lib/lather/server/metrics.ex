@@ -2,10 +2,10 @@ defmodule Lather.Server.Metrics do
   @moduledoc """
   In-memory usage analytics for an enhanced-plug server instance.
 
-  Tracks total requests, error requests, cumulative response duration, and
-  per-status-code counts using an ETS table. Created by
-  `Lather.Server.EnhancedPlug.init/1` when `:enable_metrics` is set and
-  exposed at `GET /service?metrics`.
+  Tracks total requests, error requests, cumulative response duration,
+  per-status-code counts, and per-operation counts using an ETS table.
+  Created by `Lather.Server.EnhancedPlug.init/1` when `:enable_metrics` is
+  set and exposed at `GET /service?metrics`.
   """
 
   def new do
@@ -16,9 +16,13 @@ defmodule Lather.Server.Metrics do
     %{table: table}
   end
 
-  def record(metrics, status, duration_microseconds) when is_integer(status) do
+  def record(metrics, status, duration_microseconds, operation \\ nil) when is_integer(status) do
     try do
       ensure_counter(metrics.table, {:status, status})
+
+      if is_binary(operation) do
+        ensure_counter(metrics.table, {:operation, operation})
+      end
 
       :ets.update_counter(metrics.table, :requests, 1)
       :ets.update_counter(metrics.table, :duration_us, duration_microseconds)
@@ -28,6 +32,10 @@ defmodule Lather.Server.Metrics do
       end
 
       :ets.update_counter(metrics.table, {:status, status}, 1)
+
+      if is_binary(operation) do
+        :ets.update_counter(metrics.table, {:operation, operation}, 1)
+      end
     rescue
       ArgumentError -> :ok
     end
@@ -64,13 +72,23 @@ defmodule Lather.Server.Metrics do
         ArgumentError -> []
       end
 
+    operation_counts =
+      try do
+        for [operation, count] <- :ets.match(metrics.table, {{:operation, :"$1"}, :"$2"}) do
+          {operation, count}
+        end
+      rescue
+        ArgumentError -> []
+      end
+
     %{
       requests: requests,
       errors: counter.(:errors),
       total_duration_us: total_duration_us,
       average_duration_ms:
         if(requests > 0, do: Float.round(total_duration_us / requests / 1000, 2), else: 0.0),
-      status_counts: status_counts
+      status_counts: status_counts,
+      operation_counts: operation_counts
     }
   end
 end

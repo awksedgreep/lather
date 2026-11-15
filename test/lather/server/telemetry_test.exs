@@ -86,4 +86,46 @@ defmodule Lather.Server.TelemetryTest do
 
     assert metadata.status == 400
   end
+
+  test "the span reports the SOAP operation that was invoked" do
+    event_id = capture_event()
+
+    body = """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+      <soap:Body>
+        <Ping xmlns="urn:example"><seq>2</seq></Ping>
+      </soap:Body>
+    </soap:Envelope>
+    """
+
+    conn(:post, "/soap", body) |> EnhancedPlug.call(@config)
+
+    {_measurements, metadata} = Process.get(:lather_event)
+    :telemetry.detach(event_id)
+
+    assert metadata.operation == "Ping"
+  end
+
+  test "JSON/REST requests report their operation too" do
+    event_id = capture_event()
+
+    conn(:post, "/soap/api/Ping", Jason.encode!(%{"seq" => 3})) |> EnhancedPlug.call(@config)
+
+    {_measurements, metadata} = Process.get(:lather_event)
+    :telemetry.detach(event_id)
+
+    assert metadata.operation == "Ping"
+  end
+
+  test "requests without an operation report none" do
+    event_id = capture_event()
+
+    conn(:get, "/soap?health") |> EnhancedPlug.call(@config)
+
+    {_measurements, metadata} = Process.get(:lather_event)
+    :telemetry.detach(event_id)
+
+    assert metadata.operation == nil
+  end
 end

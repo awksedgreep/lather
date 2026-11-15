@@ -129,10 +129,14 @@ defmodule Mix.Tasks.Lather.OpenapiTest do
       assert document["servers"] == [%{"url" => "http://localhost:4000/soap/TaskService"}]
 
       for {path, item} <- document["paths"] do
-        assert is_map(item["post"])
+        if String.starts_with?(path, "/api/") do
+          assert is_map(item["post"])
+        end
       end
 
       assert Map.has_key?(document["paths"], "/api/Ping")
+      assert Map.has_key?(document["paths"], "/health")
+      assert Map.has_key?(document["paths"], "/metrics")
     end
 
     test "the WSDL-derived spec loads in Infusion" do

@@ -135,11 +135,20 @@ defmodule Lather.Interop.OpenAPIInfusionTest do
       assert document["openapi"] == "3.1.0"
       assert document["info"]["title"] == "InteropUserService API"
 
-      for {path, item} <- document["paths"] do
+      operation_paths =
+        document["paths"]
+        |> Map.filter(fn {path, _item} ->
+          String.starts_with?(path, "/api/")
+        end)
+
+      for {path, item} <- operation_paths do
         assert is_map(item["post"]), "#{path} has a post operation"
         assert is_map(item["post"]["requestBody"])
         assert item["post"]["responses"]["200"]
       end
+
+      assert Map.has_key?(document["paths"], "/health")
+      assert Map.has_key?(document["paths"], "/metrics")
     end
 
     test "GET /soap/openapi.json returns the same document", %{port: port} do

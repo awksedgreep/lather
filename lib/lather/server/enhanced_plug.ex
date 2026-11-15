@@ -170,7 +170,8 @@ defmodule Lather.Server.EnhancedPlug do
            status: conn.status,
            service: config.service,
            method: conn.method,
-           path: conn.request_path
+           path: conn.request_path,
+           operation: conn.private[:soap_operation]
          }}
       end
     )
@@ -813,7 +814,9 @@ defmodule Lather.Server.EnhancedPlug do
       requests: snapshot.requests,
       errors: snapshot.errors,
       average_duration_ms: snapshot.average_duration_ms,
+      total_duration_us: snapshot.total_duration_us,
       status_counts: Map.new(snapshot.status_counts),
+      operation_counts: Map.new(snapshot.operation_counts),
       operations: length(service_info.operations)
     }
 
@@ -831,7 +834,7 @@ defmodule Lather.Server.EnhancedPlug do
   defp record_metrics(%{metrics: nil}, _conn, _duration_us), do: :ok
 
   defp record_metrics(config, conn, duration_us) do
-    Metrics.record(config.metrics, conn.status, duration_us)
+    Metrics.record(config.metrics, conn.status, duration_us, conn.private[:soap_operation])
   end
 
   # Handle WSDL generation requests
@@ -980,6 +983,8 @@ defmodule Lather.Server.EnhancedPlug do
   end
 
   defp dispatch_soap_with(conn, config, parsed_request, version) do
+    conn = Plug.Conn.put_private(conn, :soap_operation, operation_hint(parsed_request))
+
     with {:ok, operation_name} <- extract_operation_name(parsed_request),
          :ok <- check_addressing(parsed_request, config),
          {:ok, decrypted_request} <- decrypt_encrypted_body(parsed_request, config),
@@ -1275,6 +1280,7 @@ defmodule Lather.Server.EnhancedPlug do
   defp handle_json_request(conn, config) do
     # Extract operation from path or query parameters
     operation_name = extract_json_operation_name(conn)
+    conn = Plug.Conn.put_private(conn, :soap_operation, operation_name)
 
     with {:ok, body} <- read_request_body(conn, config.max_body_size),
          {:ok, json_params} <- decode_json_body(body),
@@ -1408,6 +1414,13 @@ defmodule Lather.Server.EnhancedPlug do
         {:error, reason} ->
           {:error, reason}
       end
+    end
+  end
+
+  defp operation_hint(parsed_request) do
+    case extract_operation_name(parsed_request) do
+      {:ok, name} -> name
+      _ -> nil
     end
   end
 

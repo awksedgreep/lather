@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   threshold selection, attachment validation, and WS-Policy round-trips;
   RPC, nested-type/multi-port, and SOAP 1.2 WSDL fixtures; and a
   `scripts/coverage_gate.sh` (80% floor) in the quality CI workflow.
+- The server request span (`[:lather, :server, :request]`) now reports the
+  invoked operation, and `Lather.Server.Metrics` tracks per-operation
+  request counts (`operation_counts`) in the `?metrics` payload.
+- The generated OpenAPI document documents the built-in observability
+  endpoints (`GET /health`, `GET /metrics`) so Swagger UI and OpenAPI
+  clients can discover them.
 
 ## [1.3.0] - 2026-11-14
 

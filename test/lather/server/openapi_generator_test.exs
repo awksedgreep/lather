@@ -82,7 +82,11 @@ defmodule Lather.Server.OpenAPIGeneratorTest do
     end
 
     test "every operation is a POST path item" do
-      paths = spec()["paths"]
+      paths =
+        spec()["paths"]
+        |> Map.filter(fn {path, _item} ->
+          String.starts_with?(path, "/api/")
+        end)
 
       assert Map.keys(paths) == ["/api/GetUser", "/api/SearchUsers"]
 
@@ -97,6 +101,33 @@ defmodule Lather.Server.OpenAPIGeneratorTest do
         assert item["post"]["responses"]["500"]["content"]["application/json"]["schema"]["$ref"] ==
                  "#/components/schemas/Error"
       end
+    end
+
+    test "the built-in observability endpoints are documented" do
+      paths = spec()["paths"]
+
+      assert Map.has_key?(paths, "/health")
+      assert Map.has_key?(paths, "/metrics")
+
+      health = paths["/health"]["get"]
+      assert health["operationId"] == "health"
+      assert health["tags"] == ["Observability"]
+
+      health_schema = health["responses"]["200"]["content"]["application/json"]["schema"]
+      assert "status" in health_schema["required"]
+      assert health_schema["properties"]["operations"]["type"] == "integer"
+
+      metrics = paths["/metrics"]["get"]
+      assert metrics["operationId"] == "metrics"
+      assert metrics["description"] =~ "enable_metrics"
+
+      metrics_schema = metrics["responses"]["200"]["content"]["application/json"]["schema"]
+      assert metrics_schema["properties"]["average_duration_ms"]["type"] == "number"
+
+      assert metrics_schema["properties"]["operation_counts"]["additionalProperties"]["type"] ==
+               "integer"
+
+      assert metrics["responses"]["404"]["description"] =~ "not enabled"
     end
   end
 

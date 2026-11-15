@@ -7,6 +7,10 @@ defmodule Lather.Server.OpenAPIGenerator do
   OpenAPI toolchain can consume: spec validators, code generators such as
   Infusion, Swagger UI, and OpenAPI clients all work against these paths.
 
+  It also documents the built-in observability endpoints
+  (`GET {base_path}/health` and `GET {base_path}/metrics`) so Swagger UI and
+  OpenAPI clients can discover them.
+
   ## Usage
 
       service_info = MyApp.UserService.__soap_service__()
@@ -60,10 +64,89 @@ defmodule Lather.Server.OpenAPIGenerator do
   end
 
   defp build_paths(service_info, schema_names) do
-    service_info.operations
-    |> Enum.reduce(%{}, fn operation, acc ->
-      Map.put(acc, "/api/#{operation.name}", %{"post" => build_operation(operation, schema_names)})
-    end)
+    operations =
+      service_info.operations
+      |> Enum.reduce(%{}, fn operation, acc ->
+        Map.put(
+          acc,
+          "/api/#{operation.name}",
+          %{"post" => build_operation(operation, schema_names)}
+        )
+      end)
+
+    Map.merge(operations, observability_paths())
+  end
+
+  defp observability_paths() do
+    %{
+      "/health" => %{
+        "get" => %{
+          "operationId" => "health",
+          "summary" => "Service health check",
+          "tags" => ["Observability"],
+          "responses" => %{
+            "200" => %{
+              "description" => "Service is running",
+              "content" => %{
+                "application/json" => %{
+                  "schema" => %{
+                    "type" => "object",
+                    "required" => ["status", "service", "operations", "uptime_seconds"],
+                    "properties" => %{
+                      "status" => %{"type" => "string"},
+                      "service" => %{"type" => "string"},
+                      "version" => %{"type" => "string"},
+                      "operations" => %{"type" => "integer"},
+                      "uptime_seconds" => %{"type" => "integer"}
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/metrics" => %{
+        "get" => %{
+          "operationId" => "metrics",
+          "summary" => "Request analytics for this service instance",
+          "description" =>
+            "Returned when the service is started with `enable_metrics: true`; otherwise " <>
+              "the endpoint responds with 404.",
+          "tags" => ["Observability"],
+          "responses" => %{
+            "200" => %{
+              "description" => "Usage analytics",
+              "content" => %{
+                "application/json" => %{
+                  "schema" => %{
+                    "type" => "object",
+                    "required" => ["requests", "errors", "average_duration_ms"],
+                    "properties" => %{
+                      "requests" => %{"type" => "integer"},
+                      "errors" => %{"type" => "integer"},
+                      "total_duration_us" => %{"type" => "integer"},
+                      "average_duration_ms" => %{"type" => "number"},
+                      "status_counts" => %{
+                        "type" => "object",
+                        "additionalProperties" => %{"type" => "integer"}
+                      },
+                      "operation_counts" => %{
+                        "type" => "object",
+                        "additionalProperties" => %{"type" => "integer"}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "404" => %{
+              "description" => "Metrics are not enabled for this service"
+            }
+          }
+        }
+      }
+    }
   end
 
   defp build_operation(operation, schema_names) do

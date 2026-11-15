@@ -40,4 +40,25 @@ defmodule Lather.TracingTest do
     traceparent = Tracing.traceparent(context)
     assert String.starts_with?(traceparent, "00-")
   end
+
+  test "collector can be cleared" do
+    name = :"TracingClearTest-#{inspect(self())}"
+    {:ok, pid} = Collector.start_link(name: name)
+    on_exit(fn -> Process.exit(pid, :kill) end)
+
+    Tracing.span("Clear", %{operation: "Clear"}, fn -> :ok end, name)
+    assert length(Collector.spans(name)) == 1
+
+    assert Collector.clear(name) == :ok
+    assert Collector.spans(name) == []
+  end
+
+  test "start_link defaults to the collector module name" do
+    case Collector.start_link() do
+      {:ok, pid} -> on_exit(fn -> Process.exit(pid, :kill) end)
+      {:error, {:already_started, _pid}} -> :ok
+    end
+
+    assert Collector.spans(Lather.Tracing.Collector) == []
+  end
 end
