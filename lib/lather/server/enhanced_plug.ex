@@ -280,14 +280,7 @@ defmodule Lather.Server.EnhancedPlug do
     }
 
     try do
-      existing =
-        case File.read(config.audit_log) do
-          {:ok, contents} -> contents
-          {:error, :enoent} -> ""
-          {:error, reason} -> raise "cannot read audit log: #{inspect(reason)}"
-        end
-
-      File.write(config.audit_log, existing <> encode_json(entry) <> "\n")
+      File.write(config.audit_log, encode_json(entry) <> "\n", [:append])
     rescue
       error -> Logger.warning("Failed to write audit log: #{inspect(error)}")
     end

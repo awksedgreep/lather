@@ -24,8 +24,10 @@ defmodule Lather.Server.AuditTest do
   end
 
   defp tmp_log() do
-    System.tmp_dir!()
-    |> Path.join("lather_audit_#{System.unique_integer([:positive])}.jsonl")
+    id = "#{System.unique_integer([:positive])}-#{:rand.uniform(1_000_000)}"
+    path = System.tmp_dir!() |> Path.join("lather_audit_#{id}.jsonl")
+    File.write(path, "")
+    path
   end
 
   test "requests are appended to the audit log" do
@@ -43,6 +45,25 @@ defmodule Lather.Server.AuditTest do
     assert Enum.all?(entries, fn entry -> entry["status"] == 200 end)
     assert Enum.any?(entries, fn entry -> entry["path"] == "/soap" end)
     assert Enum.all?(entries, fn entry -> entry["service"] == inspect(AuditedService) end)
+  end
+
+  test "concurrent requests are all recorded without loss" do
+    path = tmp_log()
+    config = EnhancedPlug.init(service: AuditedService, audit_log: path)
+
+    1..20
+    |> Task.async_stream(
+      fn _ ->
+        conn(:get, "/soap?health") |> EnhancedPlug.call(config)
+      end,
+      max_concurrency: 10
+    )
+    |> Enum.to_list()
+
+    {:ok, contents} = File.read(path)
+    lines = contents |> String.trim() |> String.split("\n")
+
+    assert length(lines) == 20
   end
 
   test "failed requests are recorded with their status" do
