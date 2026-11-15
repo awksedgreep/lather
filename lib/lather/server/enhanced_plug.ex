@@ -769,8 +769,9 @@ defmodule Lather.Server.EnhancedPlug do
     rows =
       history
       |> Enum.map(fn record ->
-        "<tr><td>#{Map.get(record, :id)}</td><td>#{Map.get(record, :operation)}</td>" <>
-          "<td>#{inspect(Map.get(record, :params))}</td></tr>"
+        "<tr><td>#{FormGenerator.html_escape(Map.get(record, :id))}</td>" <>
+          "<td>#{FormGenerator.html_escape(Map.get(record, :operation))}</td>" <>
+          "<td>#{FormGenerator.html_escape(inspect(Map.get(record, :params)))}</td></tr>"
       end)
       |> Enum.join("\n")
 
@@ -779,9 +780,9 @@ defmodule Lather.Server.EnhancedPlug do
 
     html =
       accessible_html(
-        "Lather Dashboard - #{service_info.name}",
+        "Lather Dashboard - #{FormGenerator.html_escape(service_info.name)}",
         """
-          <h1>#{I18n.t("dashboard", lang)}: #{service_info.name}</h1>
+          <h1>#{I18n.t("dashboard", lang)}: #{FormGenerator.html_escape(service_info.name)}</h1>
           <ul>
             <li>#{I18n.t("operations", lang)}: #{length(service_info.operations)}</li>
             <li>#{I18n.t("requests", lang)}: #{Map.get(snapshot, :requests, 0)}</li>
@@ -814,19 +815,22 @@ defmodule Lather.Server.EnhancedPlug do
         params =
           op.input
           |> Enum.map(fn param ->
-            "#{param.name}: #{param.type}#{if param.required, do: " (#{I18n.t("required", lang)})", else: ""}"
+            "#{FormGenerator.html_escape(param.name)}: #{FormGenerator.html_escape(param.type)}" <>
+              if(param.required, do: " (#{I18n.t("required", lang)})", else: "")
           end)
           |> Enum.join(", ")
 
-        "<h3>#{op.name}</h3><p>#{I18n.t("description", lang)}: #{description}</p><p>#{I18n.t("parameters", lang)}: #{params}</p>"
+        "<h3>#{FormGenerator.html_escape(op.name)}</h3>" <>
+          "<p>#{I18n.t("description", lang)}: #{FormGenerator.html_escape(description)}</p>" <>
+          "<p>#{I18n.t("parameters", lang)}: #{params}</p>"
       end)
       |> Enum.join("\n")
 
     html =
       accessible_html(
-        "Lather Docs - #{service_info.name}",
+        "Lather Docs - #{FormGenerator.html_escape(service_info.name)}",
         """
-          <h1>#{service_info.name}</h1>
+          <h1>#{FormGenerator.html_escape(service_info.name)}</h1>
           <h2>#{I18n.t("docs", lang)}</h2>
           #{items}
         """,
@@ -1736,6 +1740,9 @@ defmodule Lather.Server.EnhancedPlug do
         }}}
     else
       case raw do
+        {:ok, {:error, reason}} ->
+          {:error, {:soap_fault, %{fault_code: "Server", fault_string: to_string(reason)}}}
+
         {:ok, result} ->
           {:ok, result}
 
@@ -1779,7 +1786,7 @@ defmodule Lather.Server.EnhancedPlug do
     <body>
         <div class="error">
             <h2>Error</h2>
-            <p>#{message}</p>
+            <p>#{FormGenerator.html_escape(message)}</p>
             <p><a href="?wsdl">View WSDL</a></p>
         </div>
     </body>

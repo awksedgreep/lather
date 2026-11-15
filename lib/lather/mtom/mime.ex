@@ -397,8 +397,53 @@ defmodule Lather.Mtom.Mime do
       "base64" -> Base.encode64(attachment.data)
       "binary" -> attachment.data
       "8bit" -> attachment.data
+      "quoted-printable" -> encode_quoted_printable(attachment.data)
       _ -> attachment.data
     end
+  end
+
+  # RFC 2045 quoted-printable: printable ASCII passes through, everything
+  # else becomes "=XX", with soft line breaks around 76 characters.
+  defp encode_quoted_printable(data) do
+    data
+    |> :binary.bin_to_list()
+    |> Enum.reduce({"", 0}, fn byte, {acc, line_length} ->
+      chunk = qp_chunk(byte)
+      chunk_length = String.length(chunk)
+
+      cond do
+        chunk == "\n" ->
+          {acc <> "\n", 0}
+
+        line_length + chunk_length > 75 ->
+          {acc <> "\n" <> chunk, chunk_length}
+
+        true ->
+          {acc <> chunk, line_length + chunk_length}
+      end
+    end)
+    |> elem(0)
+  end
+
+  defp qp_chunk(?\n), do: "\n"
+  defp qp_chunk(?=), do: "=3D"
+  defp qp_chunk(?\s), do: "=20"
+  defp qp_chunk(?\t), do: "=09"
+  defp qp_chunk(byte) when byte >= 33 and byte <= 126, do: <<byte>>
+
+  defp qp_chunk(byte) do
+    hex = byte |> Integer.to_string(16) |> String.pad_leading(2, "0")
+    "=" <> hex
+  end
+
+  defp decode_quoted_printable(data) do
+    data
+    |> String.replace("=\r\n", "")
+    |> String.replace("=\n", "")
+    |> String.replace(~r'=([0-9A-Fa-f]{2})', fn match ->
+      hex = String.slice(match, 1, 2)
+      <<String.to_integer(hex, 16)>>
+    end)
   end
 
   defp parse_multipart_body(body, boundary) when is_binary(body) and is_binary(boundary) do
@@ -431,6 +476,9 @@ defmodule Lather.Mtom.Mime do
                     {:ok, decoded} -> decoded
                     :error -> trimmed_content
                   end
+
+                "quoted-printable" ->
+                  decode_quoted_printable(trimmed_content)
 
                 _ ->
                   trimmed_content

@@ -106,6 +106,29 @@ defmodule Lather.Regression.HighPriorityFixesTest do
       assert is_binary(fault.fault_code)
       assert fault.fault_code =~ "Sender"
     end
+
+    test "a Text element with attributes still yields the text" do
+      xml = """
+      <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
+        <soap:Body>
+          <soap:Fault>
+            <Code><Value>soap:Sender</Value></Code>
+            <Reason>
+              <Text xml:lang="en">bad request</Text>
+            </Reason>
+            <Detail xml:lang="en">see the logs</Detail>
+          </soap:Fault>
+        </soap:Body>
+      </soap:Envelope>
+      """
+
+      {:ok, fault} = Error.parse_soap_fault(xml)
+
+      assert fault.fault_string == "bad request"
+      assert fault.fault_code == "soap:Sender"
+      assert fault.detail == %{"detail" => "see the logs"}
+      assert Error.format_error(fault) =~ "bad request"
+    end
   end
 
   describe "boolean form submission (issue #33)" do

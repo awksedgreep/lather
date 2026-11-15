@@ -238,6 +238,6 @@ defmodule Lather.Server.WSDLGenerator do
   defp map_elixir_type_to_xsd("decimal"), do: "xsd:decimal"
   defp map_elixir_type_to_xsd("float"), do: "xsd:float"
   defp map_elixir_type_to_xsd("dateTime"), do: "xsd:dateTime"
-  defp map_elixir_type_to_xsd(type) when is_binary(type), do: "tns:#{type}"
-  defp map_elixir_type_to_xsd(type), do: "tns:#{type}"
+  defp map_elixir_type_to_xsd(type) when is_binary(type), do: "tns:#{xml_escape(type)}"
+  defp map_elixir_type_to_xsd(type), do: "tns:#{xml_escape(to_string(type))}"
 end

@@ -457,10 +457,10 @@ defmodule Lather.Http.Transport do
 
     case reason do
       %Finch.TransportError{} = r ->
-        handle_transport_error(r, "transport")
+        handle_transport_error(r, "transport", timeout)
 
       %Mint.TransportError{} = r ->
-        handle_transport_error(r, "transport")
+        handle_transport_error(r, "transport", timeout)
 
       %Mint.HTTPError{} = r ->
         handle_transport_error(r, "HTTP")
@@ -652,16 +652,26 @@ defmodule Lather.Http.Transport do
     end
   end
 
-  defp handle_transport_error(reason, label) do
+  defp handle_transport_error(reason, label, timeout \\ nil) do
     normalized_reason = transport_reason(reason)
+
+    details =
+      if normalized_reason == :timeout do
+        %{
+          message: "Request timeout after #{timeout}ms",
+          timeout: timeout,
+          source: reason
+        }
+      else
+        %{
+          message: "#{label} error: #{inspect(normalized_reason)}",
+          source: reason
+        }
+      end
 
     Logger.error("SOAP #{label} error: #{inspect(normalized_reason)}")
 
-    error =
-      Error.transport_error(normalized_reason, %{
-        message: "#{label} error: #{inspect(normalized_reason)}",
-        source: reason
-      })
+    error = Error.transport_error(normalized_reason, details)
 
     {:error, error}
   end

@@ -46,6 +46,22 @@ defmodule Lather.TypesTest do
     assert {:ok, ^xml_data} = Mapper.elixir_to_xml(user, "User", context)
   end
 
+  test "mapper accepts on/off boolean spellings" do
+    context = Mapper.create_context(@service_info)
+
+    for {raw, expected} <- [{"on", true}, {"off", false}, {"ON", true}, {"Off", false}] do
+      xml_data = %{
+        "name" => "Ada",
+        "age" => "30",
+        "active" => raw,
+        "tags" => ["admin"]
+      }
+
+      assert {:ok, user} = Mapper.xml_to_elixir(xml_data, "User", context)
+      assert user.active == expected
+    end
+  end
+
   test "mapper reports missing required fields and invalid array shape" do
     context = Mapper.create_context(@service_info)
 

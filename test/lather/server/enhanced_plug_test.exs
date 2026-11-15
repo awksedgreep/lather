@@ -104,7 +104,7 @@ defmodule Lather.Server.EnhancedPlugTest do
     unsupported = request(:put, "/soap")
 
     assert missing.status == 404
-    assert missing.resp_body =~ "Operation 'Missing' not found"
+    assert missing.resp_body =~ "Operation &#39;Missing&#39; not found"
     assert unsupported.status == 405
     assert unsupported.resp_body =~ "Method not allowed"
   end
@@ -337,6 +337,18 @@ defmodule Lather.Server.EnhancedPlugTest do
       def boom(_params), do: soap_fault("Client", "boom occurred")
     end
 
+    defmodule NestedFaultService do
+      use Lather.Server
+
+      @service_name "NestedFaultService"
+
+      soap_operation "Nested" do
+        description("returns an error nested inside :ok")
+      end
+
+      def nested(_params), do: {:ok, {:error, "nested boom"}}
+    end
+
     defmodule DenyAuth do
       def authenticate(_conn), do: {:error, :unauthorized}
     end
@@ -359,6 +371,34 @@ defmodule Lather.Server.EnhancedPlugTest do
       assert response.status == 500
       assert response.resp_body =~ "<faultcode>Client</faultcode>"
       assert response.resp_body =~ "boom occurred"
+    end
+
+    test "an {:ok, {:error, reason}} result is unwrapped into a SOAP fault" do
+      config = EnhancedPlug.init(service: NestedFaultService, enable_forms: false)
+
+      body =
+        ~s(<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><Nested/></soap:Body></soap:Envelope>)
+
+      response =
+        conn(:post, "/soap", body)
+        |> put_req_header("content-type", "text/xml")
+        |> EnhancedPlug.call(config)
+
+      assert response.status == 500
+      assert response.resp_body =~ "<faultcode>Server</faultcode>"
+      assert response.resp_body =~ "nested boom"
+    end
+
+    test "an {:ok, {:error, reason}} result is unwrapped in the JSON response" do
+      config = EnhancedPlug.init(service: NestedFaultService)
+
+      response =
+        conn(:post, "/soap/api/Nested", "{}")
+        |> put_req_header("content-type", "application/json")
+        |> EnhancedPlug.call(config)
+
+      assert response.status == 500
+      assert response.resp_body =~ "nested boom"
     end
 
     test "the configured auth_handler is enforced on SOAP requests" do

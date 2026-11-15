@@ -402,32 +402,56 @@ defmodule Lather.Error do
 
   defp extract_fault_code(fault) do
     # SOAP 1.1: <faultcode>. SOAP 1.2: <Code><Value>...</Value></Code>
-    case Elements.get_in(fault, ["Code", "Value"]) do
-      nil -> Elements.get(fault, "faultcode") || "Unknown"
+    case fault_text(Elements.get_in(fault, ["Code", "Value"])) do
+      nil -> fault_text(Elements.get(fault, "faultcode")) || "Unknown"
       value -> value
     end
   end
 
   defp extract_fault_string(fault) do
     # SOAP 1.1: <faultstring>. SOAP 1.2: <Reason><Text>...</Text></Reason>
-    case Elements.get_in(fault, ["Reason", "Text"]) do
-      nil -> Elements.get(fault, "faultstring") || "Unknown error"
+    case fault_text(Elements.get_in(fault, ["Reason", "Text"])) do
+      nil -> fault_text(Elements.get(fault, "faultstring")) || "Unknown error"
       value -> value
     end
   end
 
   defp extract_fault_actor(fault) do
-    Elements.get(fault, "faultactor") || Elements.get(fault, "Actor")
+    fault_text(Elements.get(fault, "faultactor")) || fault_text(Elements.get(fault, "Actor"))
   end
 
   defp extract_fault_detail(fault) do
     detail = Elements.get(fault, "detail") || Elements.get(fault, "Detail")
 
     case detail do
-      nil -> nil
-      detail_map when is_map(detail_map) -> detail_map
-      detail_text -> %{"detail" => detail_text}
+      nil ->
+        nil
+
+      detail_map when is_map(detail_map) ->
+        if only_text_and_attributes?(detail_map) do
+          %{"detail" => Map.get(detail_map, "#text")}
+        else
+          detail_map
+        end
+
+      detail_text ->
+        %{"detail" => detail_text}
     end
+  end
+
+  # An element such as <Text xml:lang="en">boom</Text> parses to
+  # %{"#text" => "boom", "@xml:lang" => "en"}; callers want the text.
+  defp fault_text(value) when is_binary(value), do: value
+
+  defp fault_text(%{"#text" => text}) when is_binary(text), do: text
+
+  defp fault_text(value), do: value
+
+  defp only_text_and_attributes?(map) do
+    Map.has_key?(map, "#text") and
+      Enum.all?(map, fn {key, _value} ->
+        key == "#text" or String.starts_with?(to_string(key), "@")
+      end)
   end
 
   defp build_fault_details(fault) do

@@ -108,6 +108,26 @@ defmodule Lather.Regression.MediumPriorityFixesTest do
       [decoded | _] = parts
       assert decoded.content == payload
     end
+
+    test "quoted-printable attachments round-trip to their original bytes" do
+      payload = <<0, 1, 2, 255, 10, 13, 61, 32, 65, 66>>
+
+      attachment =
+        Attachment.new(
+          payload,
+          "application/octet-stream",
+          content_transfer_encoding: "quoted-printable"
+        )
+
+      {_content_type, multipart} =
+        Mime.build_multipart_message("<soap:Envelope/>", [attachment], boundary: "BOUNDARY")
+
+      {:ok, {_soap, parts}} =
+        Mime.parse_multipart_message("multipart/related; boundary=BOUNDARY", multipart)
+
+      [decoded | _] = parts
+      assert decoded.content == payload
+    end
   end
 
   describe "SSL pool registry (issue #35)" do
@@ -133,7 +153,7 @@ defmodule Lather.Regression.MediumPriorityFixesTest do
   end
 
   describe "type mapper coercion (issue #44)" do
-    test "truncated numeric values no longer silently become numbers" do
+    test "invalid numeric and boolean values are rejected instead of coerced" do
       context = %{
         type_registry: %{
           "Rec" => %{
@@ -149,11 +169,14 @@ defmodule Lather.Regression.MediumPriorityFixesTest do
         options: []
       }
 
-      xml = %{"age" => "1.5", "active" => "0"}
-      {:ok, result} = Mapper.xml_to_elixir(xml, "Rec", context)
+      assert {:error, {:invalid_value, "xsd:int", "1.5"}} =
+               Mapper.xml_to_elixir(%{"age" => "1.5", "active" => "0"}, "Rec", context)
 
-      assert result[:age] == 0
-      assert result[:active] == false
+      assert {:error, {:invalid_value, "xsd:boolean", "maybe"}} =
+               Mapper.xml_to_elixir(%{"age" => "1", "active" => "maybe"}, "Rec", context)
+
+      assert {:ok, %{age: 1, active: true}} =
+               Mapper.xml_to_elixir(%{"age" => "1", "active" => "on"}, "Rec", context)
     end
 
     test "boolean serializes to canonical XSD form" do

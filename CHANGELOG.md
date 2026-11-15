@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2026-11-14
+
+### Fixed
+- Enhanced multi-protocol WSDL endpoint URLs are joined with a `join_url/2`
+  helper, so a base URL with or without a trailing slash no longer produces
+  `.../soapsoap/v1.1/...` or `.../soap//api/...`; the HTTP port service name is
+  XML-escaped.
+- The built-in dashboard, docs, history and error pages HTML-escape service
+  names, operation names, descriptions, parameters and error messages
+  (follow-up to issue #32). Generated form pages and WSDL documents now also
+  escape endpoint URLs and user-defined type names.
+- An operation result of `{:ok, {:error, reason}}` is unwrapped into a SOAP
+  fault (and a JSON error) instead of being treated as a successful payload
+  (follow-up to issue #26).
+- Boolean parsing accepts `on`/`off` (any case) in addition to `true`/`false`
+  and `1`/`0`, in both the type mapper and the type generator
+  (follow-up to issue #33).
+- `Lather.Types.Mapper` now returns `{:error, {:invalid_value, type, raw}}`
+  for values that do not lexically match their declared XSD type instead of
+  silently coercing them to `0` or `false` (issue #44).
+- MTOM attachments declared with `Content-Transfer-Encoding: quoted-printable`
+  are now quoted-printable encoded on build and decoded on parse, so the MIME
+  part matches its declared encoding (issue #42).
+- Transport timeout errors from Finch/Mint report the timeout that was in
+  effect (`details[:timeout]` and a "Request timeout after Nms" message)
+  instead of a bare `:timeout` reason (issue #38).
+- SOAP 1.2 faults whose `<Text>` element carries attributes (for example
+  `<Text xml:lang="en">`) now yield plain strings instead of nested
+  `%{"#text" => ...}` maps, so `Error.format_error/2` no longer raises
+  (issue #34).
+
 ## [1.3.2] - 2026-11-14
 
 ### Added

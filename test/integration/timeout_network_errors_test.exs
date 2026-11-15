@@ -281,6 +281,8 @@ defmodule Lather.Integration.TimeoutNetworkErrorsTest do
       assert error.type == :transport_error
       # Reason may vary - timeout, :timeout, or Finch-specific
       assert error.reason == :timeout or is_atom(error.reason)
+      assert error.details[:timeout] == 100
+      assert error.details[:message] =~ "100ms"
     end
 
     test "succeeds when response arrives within timeout", %{base_url: base_url} do

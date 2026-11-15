@@ -82,7 +82,7 @@ defmodule Lather.WSTrustIntegrationTest do
     {:error, {:soap_fault, fault}} =
       Lather.DynamicClient.call(client, "Ping", %{"message" => "hi"})
 
-    assert fault[:fault_string]["#text"] =~ "WS-Trust"
+    assert fault[:fault_string] =~ "WS-Trust"
   end
 
   test "tampered tokens are rejected", %{client: client} do
@@ -94,7 +94,7 @@ defmodule Lather.WSTrustIntegrationTest do
         authentication: {:wstrust_token, "junk.signature"}
       )
 
-    assert fault[:fault_string]["#text"] =~ "WS-Trust"
+    assert fault[:fault_string] =~ "WS-Trust"
   end
 
   test "request_token obtains a usable token from an issuer" do

@@ -390,7 +390,7 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
 
   # Generate SOAP 1.1 service port
   defp generate_soap_1_1_port(service_info, base_url) do
-    endpoint_url = "#{base_url}soap/v1.1/#{xml_escape(service_info.name)}"
+    endpoint_url = join_url(base_url, "soap/v1.1/#{xml_escape(service_info.name)}")
 
     """
       <port name="#{xml_escape(service_info.name)}SOAP11Port" binding="tns:#{xml_escape(service_info.name)}SOAP11Binding">
@@ -402,7 +402,7 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
 
   # Generate SOAP 1.2 service port
   defp generate_soap_1_2_port(service_info, base_url) do
-    endpoint_url = "#{base_url}soap/v1.2/#{xml_escape(service_info.name)}"
+    endpoint_url = join_url(base_url, "soap/v1.2/#{xml_escape(service_info.name)}")
 
     """
       <port name="#{xml_escape(service_info.name)}SOAP12Port" binding="tns:#{xml_escape(service_info.name)}SOAP12Binding">
@@ -415,7 +415,10 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
   # Generate HTTP/REST service port
   defp generate_http_port(service_info, base_url, base_path) do
     endpoint_url =
-      "#{base_url}#{String.trim_leading(base_path, "/")}/#{String.downcase(service_info.name)}"
+      join_url(
+        base_url,
+        "#{String.trim_leading(base_path, "/")}/#{String.downcase(xml_escape(service_info.name))}"
+      )
 
     """
       <port name="#{xml_escape(service_info.name)}HTTPPort" binding="tns:#{xml_escape(service_info.name)}HTTPBinding">
@@ -452,14 +455,22 @@ defmodule Lather.Server.EnhancedWSDLGenerator do
   defp map_elixir_type_to_xsd("time"), do: "xsd:time"
   defp map_elixir_type_to_xsd("base64Binary"), do: "xsd:base64Binary"
   defp map_elixir_type_to_xsd("anyURI"), do: "xsd:anyURI"
-  defp map_elixir_type_to_xsd(type) when is_binary(type), do: "tns:#{type}"
-  defp map_elixir_type_to_xsd(type), do: "tns:#{type}"
+  defp map_elixir_type_to_xsd(type) when is_binary(type), do: "tns:#{xml_escape(type)}"
+  defp map_elixir_type_to_xsd(type), do: "tns:#{xml_escape(to_string(type))}"
 
   defp version_line(service_info) do
     case Map.get(service_info, :version) do
       nil -> ""
       version -> "Version: #{xml_escape(version)}"
     end
+  end
+
+  # Normalises the join between a base URL and a service path so a missing
+  # or duplicated separator never produces a malformed endpoint.
+  defp join_url(base_url, path) do
+    base = base_url |> to_string() |> String.trim_trailing("/")
+    tail = path |> to_string() |> String.trim_leading("/")
+    "#{base}/#{tail}"
   end
 
   defp xml_escape(value) do

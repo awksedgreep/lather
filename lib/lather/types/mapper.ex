@@ -296,37 +296,44 @@ defmodule Lather.Types.Mapper do
 
   defp convert_complex_type_from_xml(xml_data, type_definition, type_context) do
     result =
-      Enum.reduce(type_definition.elements, %{}, fn element, acc ->
+      Enum.reduce_while(type_definition.elements, %{}, fn element, acc ->
         xml_value = Map.get(xml_data, element.name)
+        field_name = String.to_atom(element.name)
 
-        if not is_nil(xml_value) do
-          elixir_value = convert_element_value_from_xml(xml_value, element, type_context)
-          field_name = String.to_atom(element.name)
-          Map.put(acc, field_name, elixir_value)
-        else
-          # Handle optional fields
+        if is_nil(xml_value) do
           if element.min_occurs == "0" do
-            acc
+            {:cont, acc}
           else
-            field_name = String.to_atom(element.name)
-            Map.put(acc, field_name, nil)
+            {:cont, Map.put(acc, field_name, nil)}
+          end
+        else
+          case convert_element_value_from_xml(xml_value, element, type_context) do
+            {:ok, elixir_value} -> {:cont, Map.put(acc, field_name, elixir_value)}
+            {:error, reason} -> {:halt, {:error, reason}}
           end
         end
       end)
 
-    {:ok, result}
+    case result do
+      {:error, reason} -> {:error, reason}
+      data -> {:ok, data}
+    end
   end
 
   defp convert_simple_type_from_xml(xml_data, type_definition) do
     case type_definition.base_type do
       "xsd:string" -> {:ok, to_string(xml_data)}
-      "xsd:int" -> {:ok, parse_integer(xml_data)}
-      "xsd:boolean" -> {:ok, parse_boolean(xml_data)}
-      "xsd:decimal" -> {:ok, parse_decimal(xml_data)}
-      "xsd:dateTime" -> {:ok, parse_datetime(xml_data)}
+      "xsd:int" -> strict_primitive(parse_integer(xml_data), "xsd:int", xml_data)
+      "xsd:integer" -> strict_primitive(parse_integer(xml_data), "xsd:integer", xml_data)
+      "xsd:boolean" -> strict_primitive(parse_boolean(xml_data), "xsd:boolean", xml_data)
+      "xsd:decimal" -> strict_primitive(parse_decimal(xml_data), "xsd:decimal", xml_data)
+      "xsd:dateTime" -> strict_primitive(parse_datetime(xml_data), "xsd:dateTime", xml_data)
       _ -> {:ok, xml_data}
     end
   end
+
+  defp strict_primitive(nil, type, raw), do: {:error, {:invalid_value, type, raw}}
+  defp strict_primitive(value, _type, _raw), do: {:ok, value}
 
   defp convert_element_from_xml(xml_data, element_definition, type_context) do
     if element_definition.type do
@@ -339,9 +346,15 @@ defmodule Lather.Types.Mapper do
 
   defp convert_element_value_from_xml(xml_value, element, type_context) do
     if element.max_occurs != "1" do
-      xml_value
-      |> List.wrap()
-      |> Enum.map(&convert_single_value_from_xml(&1, element, type_context))
+      values =
+        xml_value
+        |> List.wrap()
+        |> Enum.map(&convert_single_value_from_xml(&1, element, type_context))
+
+      case Enum.find(values, &match?({:error, _}, &1)) do
+        nil -> {:ok, Enum.map(values, fn {:ok, value} -> value end)}
+        {:error, reason} -> {:error, reason}
+      end
     else
       convert_single_value_from_xml(xml_value, element, type_context)
     end
@@ -352,8 +365,8 @@ defmodule Lather.Types.Mapper do
 
     if type_name && Map.has_key?(type_context.type_registry, type_name) do
       case xml_to_elixir(xml_value, type_name, type_context) do
-        {:ok, converted} -> converted
-        {:error, _} -> xml_value
+        {:ok, converted} -> {:ok, converted}
+        {:error, reason} -> {:error, reason}
       end
     else
       convert_primitive_value(xml_value, element.type)
@@ -443,12 +456,13 @@ defmodule Lather.Types.Mapper do
 
   defp convert_primitive_value(xml_value, type) do
     case type do
-      "xsd:string" -> to_string(xml_value)
-      "xsd:int" -> parse_integer(xml_value)
-      "xsd:boolean" -> parse_boolean(xml_value)
-      "xsd:decimal" -> parse_decimal(xml_value)
-      "xsd:dateTime" -> parse_datetime(xml_value)
-      _ -> xml_value
+      "xsd:string" -> {:ok, to_string(xml_value)}
+      "xsd:int" -> strict_primitive(parse_integer(xml_value), "xsd:int", xml_value)
+      "xsd:integer" -> strict_primitive(parse_integer(xml_value), "xsd:integer", xml_value)
+      "xsd:boolean" -> strict_primitive(parse_boolean(xml_value), "xsd:boolean", xml_value)
+      "xsd:decimal" -> strict_primitive(parse_decimal(xml_value), "xsd:decimal", xml_value)
+      "xsd:dateTime" -> strict_primitive(parse_datetime(xml_value), "xsd:dateTime", xml_value)
+      _ -> {:ok, xml_value}
     end
   end
 
@@ -557,30 +571,43 @@ defmodule Lather.Types.Mapper do
   defp parse_integer(value) when is_binary(value) do
     case Integer.parse(String.trim(value)) do
       {int, ""} -> int
-      _ -> 0
+      _ -> nil
     end
   end
 
   defp parse_integer(value) when is_integer(value), do: value
-  defp parse_integer(_), do: 0
+  defp parse_integer(%{"#text" => text}) when is_binary(text), do: parse_integer(text)
+  defp parse_integer(_), do: nil
 
-  defp parse_boolean("true"), do: true
-  defp parse_boolean("false"), do: false
-  defp parse_boolean("1"), do: true
-  defp parse_boolean("0"), do: false
   defp parse_boolean(true), do: true
   defp parse_boolean(false), do: false
-  defp parse_boolean(_), do: false
+
+  defp parse_boolean(%{"#text" => text}) when is_binary(text), do: parse_boolean(text)
+
+  defp parse_boolean(value) when is_binary(value) do
+    case String.downcase(value) do
+      "true" -> true
+      "1" -> true
+      "on" -> true
+      "false" -> false
+      "0" -> false
+      "off" -> false
+      _ -> nil
+    end
+  end
+
+  defp parse_boolean(_), do: nil
 
   defp parse_decimal(value) when is_binary(value) do
     case Float.parse(String.trim(value)) do
       {float, ""} -> float
-      _ -> 0.0
+      _ -> nil
     end
   end
 
   defp parse_decimal(value) when is_number(value), do: value
-  defp parse_decimal(_), do: 0.0
+  defp parse_decimal(%{"#text" => text}) when is_binary(text), do: parse_decimal(text)
+  defp parse_decimal(_), do: nil
 
   defp parse_datetime(value) when is_binary(value) do
     case DateTime.from_iso8601(value) do
@@ -618,6 +645,10 @@ defmodule Lather.Types.Mapper do
       "false" -> "false"
       "1" -> "true"
       "0" -> "false"
+      "on" -> "true"
+      "off" -> "false"
+      "ON" -> "true"
+      "OFF" -> "false"
       _ -> "false"
     end
   end

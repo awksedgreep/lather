@@ -324,10 +324,21 @@ defmodule Lather.Types.Generator do
   defp parse_integer(value) when is_integer(value), do: value
   defp parse_integer(_), do: 0
 
-  defp parse_boolean("true"), do: true
-  defp parse_boolean("false"), do: false
   defp parse_boolean(true), do: true
   defp parse_boolean(false), do: false
+
+  defp parse_boolean(value) when is_binary(value) do
+    case String.downcase(value) do
+      "true" -> true
+      "1" -> true
+      "on" -> true
+      "false" -> false
+      "0" -> false
+      "off" -> false
+      _ -> false
+    end
+  end
+
   defp parse_boolean(_), do: false
 
   defp parse_decimal(value) when is_binary(value) do

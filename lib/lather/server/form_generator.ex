@@ -109,17 +109,17 @@ defmodule Lather.Server.FormGenerator do
                     <div class="protocol-card">
                         <h3>SOAP 1.1</h3>
                         <p>Maximum compatibility with legacy systems</p>
-                        <code>#{base_url}soap/v1.1/#{html_escape(service_name)}</code>
+                        <code>#{html_escape(base_url)}soap/v1.1/#{html_escape(service_name)}</code>
                     </div>
                     <div class="protocol-card">
                         <h3>SOAP 1.2</h3>
                         <p>Enhanced error handling and performance</p>
-                        <code>#{base_url}soap/v1.2/#{html_escape(service_name)}</code>
+                        <code>#{html_escape(base_url)}soap/v1.2/#{html_escape(service_name)}</code>
                     </div>
                     <div class="protocol-card">
                         <h3>JSON/REST</h3>
                         <p>Modern API for web applications</p>
-                        <code>#{base_url}api/#{String.downcase(service_name)}</code>
+                        <code>#{html_escape(base_url)}api/#{html_escape(String.downcase(service_name))}</code>
                     </div>
                 </div>
             </div>
@@ -160,7 +160,7 @@ defmodule Lather.Server.FormGenerator do
             </tbody>
         </table>
         <div class="form-actions">
-            <button type="button" onclick="invokeOperation('#{form_action}', '#{html_escape(operation.name)}')" class="invoke-btn">
+            <button type="button" onclick="invokeOperation('#{html_escape(form_action)}', '#{html_escape(operation.name)}')" class="invoke-btn">
                 Invoke
             </button>
             <button type="button" onclick="viewJSON('#{html_escape(operation.name)}')" class="json-btn">
@@ -201,7 +201,7 @@ defmodule Lather.Server.FormGenerator do
 
   # Generate SOAP 1.1 example
   defp generate_soap_1_1_example(operation, base_url, service_name, namespace) do
-    endpoint = "#{base_url}soap/v1.1/#{html_escape(service_name)}"
+    endpoint = "#{base_url}soap/v1.1/#{service_name}"
     soap_action = operation.soap_action || operation.name
 
     request_params =
@@ -225,8 +225,8 @@ defmodule Lather.Server.FormGenerator do
     """
     <div class="code-example">
         <h4>Request</h4>
-        <pre><code>POST #{URI.parse(endpoint).path || "/#{html_escape(service_name)}"} HTTP/1.1
-    Host: #{URI.parse(endpoint).host || "localhost"}
+        <pre><code>POST #{html_escape(URI.parse(endpoint).path || "/#{service_name}")} HTTP/1.1
+    Host: #{html_escape(URI.parse(endpoint).host || "localhost")}
     Content-Type: text/xml; charset=utf-8
     SOAPAction: "#{html_escape(soap_action)}"
     Content-Length: length
@@ -259,7 +259,7 @@ defmodule Lather.Server.FormGenerator do
 
   # Generate SOAP 1.2 example
   defp generate_soap_1_2_example(operation, base_url, service_name, namespace) do
-    endpoint = "#{base_url}soap/v1.2/#{html_escape(service_name)}"
+    endpoint = "#{base_url}soap/v1.2/#{service_name}"
     soap_action = operation.soap_action || operation.name
 
     request_params =
@@ -283,8 +283,8 @@ defmodule Lather.Server.FormGenerator do
     """
     <div class="code-example">
         <h4>Request</h4>
-        <pre><code>POST #{URI.parse(endpoint).path || "/#{html_escape(service_name)}"} HTTP/1.1
-    Host: #{URI.parse(endpoint).host || "localhost"}
+        <pre><code>POST #{html_escape(URI.parse(endpoint).path || "/#{service_name}")} HTTP/1.1
+    Host: #{html_escape(URI.parse(endpoint).host || "localhost")}
     Content-Type: application/soap+xml; charset=utf-8; action="#{html_escape(soap_action)}"
     Content-Length: length
 
@@ -336,8 +336,8 @@ defmodule Lather.Server.FormGenerator do
     """
     <div class="code-example">
         <h4>Request</h4>
-        <pre><code>POST #{URI.parse(endpoint).path || "/api/#{html_escape(service_name)}"} HTTP/1.1
-    Host: #{URI.parse(endpoint).host || "localhost"}
+        <pre><code>POST #{html_escape(URI.parse(endpoint).path || "/api/#{html_escape(service_name)}")} HTTP/1.1
+    Host: #{html_escape(URI.parse(endpoint).host || "localhost")}
     Content-Type: application/json; charset=utf-8
     Content-Length: length
 
@@ -1084,7 +1084,11 @@ defmodule Lather.Server.FormGenerator do
     end
   end
 
-  defp html_escape(value) do
+  @doc """
+  Escapes a value for safe interpolation into generated HTML.
+  """
+  @spec html_escape(term()) :: String.t()
+  def html_escape(value) do
     value
     |> to_string()
     |> String.replace("&", "&amp;")
