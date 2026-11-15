@@ -5,7 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-11-14
+
+### Added
+- Client-side request analytics: `Lather.Http.Metrics` (enabled with
+  `metrics: true` on `Lather.DynamicClient.new/2` and read with
+  `Lather.DynamicClient.metrics/1`) records request counts, durations,
+  status codes, per-operation counts, and reliable-messaging retries. Every
+  transport call also emits `[:lather, :client, :request, :start]` /
+  `[:lather, :client, :request, :stop]` telemetry events.
+- The server request span (`[:lather, :server, :request]`) now reports the
+  invoked operation, and `Lather.Server.Metrics` tracks per-operation request
+  counts (`operation_counts`) in the `?metrics` payload.
+- The generated OpenAPI document documents the built-in observability
+  endpoints (`GET /health`, `GET /metrics`) so Swagger UI and OpenAPI clients
+  can discover them.
+
+### Fixed
+- The built-in observability endpoints are matched on complete path segments
+  instead of substrings, so an application that owns its own `/healthcare` or
+  `/api/health-check` route is no longer intercepted. Each endpoint can be
+  relocated or disabled (`health_path: nil`, `metrics_path: nil`,
+  `openapi_path: nil`, `swagger_path: nil`), and disabled endpoints are
+  omitted from the generated OpenAPI document.
+- The quality CI workflow used the non-existent `mix xref unused` step; it now
+  runs `mix xref graph --label compile-connected`.
+
+### Changed
+- Dependency lockfile updated to patched releases: plug 1.20.3,
+  plug_crypto 2.2.1, bandit 1.14.1, mint 1.11.0, hpax 1.1.0.
+
 ## [1.3.1] - 2026-11-14
+
 
 ### Fixed
 - Audit logging no longer reads and rewrites the whole log on every
@@ -19,13 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Lather.ReliableMessaging.deliver/3` retries transient `Receiver` SOAP
   faults (e.g. `TemporaryFailure`) rather than only transport errors,
   making fault injection and transient service failures recoverable.
-- The built-in observability endpoints are matched on complete path segments
-  instead of substrings, so an application that owns its own `/healthcare` or
-  `/api/health-check` route is no longer intercepted. Each endpoint can be
-  relocated or disabled (`health_path: nil`, `metrics_path: nil`,
-  `openapi_path: nil`, `swagger_path: nil`), and disabled endpoints are
-  omitted from the generated OpenAPI document.
-
 ### Added
 - `Lather.Http.Pool` is now used by `Lather.Http.Transport.warm_connection/2`
   to build and validate per-endpoint pool configuration.
@@ -33,18 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   threshold selection, attachment validation, and WS-Policy round-trips;
   RPC, nested-type/multi-port, and SOAP 1.2 WSDL fixtures; and a
   `scripts/coverage_gate.sh` (80% floor) in the quality CI workflow.
-- The server request span (`[:lather, :server, :request]`) now reports the
-  invoked operation, and `Lather.Server.Metrics` tracks per-operation
-  request counts (`operation_counts`) in the `?metrics` payload.
-- The generated OpenAPI document documents the built-in observability
-  endpoints (`GET /health`, `GET /metrics`) so Swagger UI and OpenAPI
-  clients can discover them.
-- New client-side analytics: `Lather.Http.Metrics` (enabled with
-  `metrics: true` on `Lather.DynamicClient.new/2` and read with
-  `Lather.DynamicClient.metrics/1`) records request counts, durations,
-  status codes, per-operation counts, and reliable-messaging retries.
-  Every transport call also emits `[:lather, :client, :request, :start]` /
-  `[:lather, :client, :request, :stop]` telemetry events.
 
 ## [1.3.0] - 2026-11-14
 
