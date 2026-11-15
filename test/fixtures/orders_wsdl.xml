@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                  xmlns:tns="http://example.com/orders"
+                  targetNamespace="http://example.com/orders">
+  <wsdl:types>
+    <xsd:schema targetNamespace="http://example.com/orders">
+      <xsd:complexType name="Address">
+        <xsd:sequence>
+          <xsd:element name="street" type="xsd:string"/>
+          <xsd:element name="city" type="xsd:string"/>
+          <xsd:element name="zip" type="xsd:string" minOccurs="0"/>
+        </xsd:sequence>
+      </xsd:complexType>
+      <xsd:complexType name="LineItem">
+        <xsd:sequence>
+          <xsd:element name="sku" type="xsd:string"/>
+          <xsd:element name="quantity" type="xsd:int"/>
+        </xsd:sequence>
+      </xsd:complexType>
+      <xsd:element name="PlaceOrderRequest">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="customer" type="tns:Address"/>
+            <xsd:element name="items" type="tns:LineItem" maxOccurs="unbounded"/>
+            <xsd:element name="priority" type="xsd:string" default="normal"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="PlaceOrderResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="orderId" type="xsd:string"/>
+            <xsd:element name="accepted" type="xsd:boolean"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="OrderFault">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="reason" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </wsdl:types>
+  <wsdl:message name="PlaceOrderRequest">
+    <wsdl:part name="parameters" element="tns:PlaceOrderRequest"/>
+  </wsdl:message>
+  <wsdl:message name="PlaceOrderResponse">
+    <wsdl:part name="parameters" element="tns:PlaceOrderResponse"/>
+  </wsdl:message>
+  <wsdl:message name="OrderFault">
+    <wsdl:part name="fault" element="tns:OrderFault"/>
+  </wsdl:message>
+  <wsdl:portType name="OrderPort">
+    <wsdl:operation name="PlaceOrder">
+      <wsdl:input message="tns:PlaceOrderRequest"/>
+      <wsdl:output message="tns:PlaceOrderResponse"/>
+      <wsdl:fault name="OrderFault" message="tns:OrderFault"/>
+    </wsdl:operation>
+    <wsdl:operation name="CancelOrder">
+      <wsdl:input message="tns:PlaceOrderRequest"/>
+      <wsdl:output message="tns:PlaceOrderResponse"/>
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="OrderSOAP" type="tns:OrderPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="PlaceOrder">
+      <soap:operation soapAction="urn:PlaceOrder"/>
+      <wsdl:input>
+        <soap:body use="literal"/>
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="CancelOrder">
+      <soap:operation soapAction="urn:CancelOrder"/>
+      <wsdl:input>
+        <soap:body use="literal"/>
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal"/>
+      </wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="OrderService">
+    <wsdl:port name="OrderPortSecure" binding="tns:OrderSOAP">
+      <soap:address location="https://orders.example.com/soap"/>
+    </wsdl:port>
+    <wsdl:port name="OrderPortInternal" binding="tns:OrderSOAP">
+      <soap:address location="http://orders.internal.example.com/soap"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

@@ -45,8 +45,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/examples.md`, `docs/docker-kubernetes.md`.
 - `Dockerfile`, `docker-compose.yml`, `nginx.conf`, and
   `k8s/deployment.yaml` for containerized deployment.
-- `CONTRIBUTING.md`, `scripts/check_docs.sh`, and a quality CI workflow
-  (`mix compile --warnings-as-errors`, `mix xref unused`, docs coverage).
+- Property/fuzz tests for WS-Security signatures, JWT claims, MTOM
+  threshold selection, attachment validation, and WS-Policy
+  build/parse/validate round-trips (`test/property/property_hardening_test.exs`).
+- Real-world WSDL fixtures for RPC style, nested/array complex types with
+  faults and multiple ports, and SOAP 1.2 bindings
+  (`test/fixtures/`), covered by `test/integration/real_world_compatibility_test.exs`.
+- `scripts/coverage_gate.sh` fails CI when total coverage drops below 80%
+  (`COVERAGE_MIN` to override).
+
+### Changed
+- `Lather.Http.Pool` is now used by `Lather.Http.Transport.warm_connection/2`
+  to build and validate per-endpoint pool configuration.
+- `Lather.Wsdl.Analyzer` honors the per-operation `style="rpc"` attribute
+  instead of always reporting the binding-level default.
+
+### Fixed
+- `Lather.DynamicClient` endpoint derivation keeps `?tenant=` and other
+  non-`wsdl` query parameters when the endpoint is derived from a WSDL URL.
+
+## [1.2.2] - 2026-10-23
+
+### Added
 - `Lather.Server.OpenAPIGenerator` generates OpenAPI 3.1 specifications from
   SOAP service definitions; the enhanced plug serves them at
   `GET /service?openapi` and `GET /service/openapi.json`. Interop with the

@@ -11,6 +11,7 @@ defmodule Lather.Http.Transport do
   alias Lather.Error
   alias Lather.Http.SSLPoolManager
   alias Lather.Http.BasicClient
+  alias Lather.Http.Pool
 
   # SOAP 1.1 headers
   @soap_1_1_headers [
@@ -44,18 +45,26 @@ defmodule Lather.Http.Transport do
   """
   @spec warm_connection(String.t(), keyword()) :: {:ok, atom()}
   def warm_connection(url, options \\ []) do
-    size = Keyword.get(options, :size, 20)
-    count = Keyword.get(options, :count, 1)
-    pool_name = Keyword.get(options, :pool_name, Lather.Finch)
+    config = Pool.config_for_endpoint(url, options)
 
-    unless Process.whereis(concat_pool_supervisor(pool_name)) do
-      Finch.start_link(name: pool_name)
+    case Pool.validate_config(config) do
+      :ok ->
+        pool_name = config[:name]
+        size = Keyword.get(config, :size, 20)
+        count = Keyword.get(config, :count, 1)
+
+        unless Process.whereis(concat_pool_supervisor(pool_name)) do
+          Finch.start_link(name: pool_name)
+        end
+
+        pool = Finch.Pool.new(url, tag: {:lather_warm, pool_name, size, count})
+        Finch.start_pool(pool_name, pool, size: size, count: count)
+
+        {:ok, pool_name}
+
+      {:error, reason} ->
+        {:error, {:invalid_pool_config, reason}}
     end
-
-    pool = Finch.Pool.new(url, tag: {:lather_warm, pool_name, size, count})
-    Finch.start_pool(pool_name, pool, size: size, count: count)
-
-    {:ok, pool_name}
   end
 
   defp concat_pool_supervisor(name) do

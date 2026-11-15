@@ -390,6 +390,7 @@ defmodule Lather.Wsdl.Analyzer do
     %{
       name: operation["@name"] || "unknown",
       soap_action: if(soap_operation, do: soap_operation["@soapAction"], else: ""),
+      style: if(soap_operation, do: soap_operation["@style"], else: nil),
       input: parse_binding_io(operation["wsdl:input"] || operation["input"]),
       output: parse_binding_io(operation["wsdl:output"] || operation["output"])
     }
@@ -580,12 +581,23 @@ defmodule Lather.Wsdl.Analyzer do
   end
 
   defp get_operation_style(binding_operation) do
-    # Extract style from binding operation or default to document
-    if binding_operation && binding_operation.binding_style do
-      binding_operation.binding_style
-    else
-      "document"
-    end
+    # The per-operation style (e.g. style="rpc") takes precedence over the
+    # binding-level default; fall back to "document" when unspecified.
+    # The per-operation style (e.g. style="rpc") takes precedence over the
+    # binding-level default; fall back to "document" when unspecified.
+    candidates = [
+      Map.get(binding_operation, :style),
+      Map.get(binding_operation, "style"),
+      Map.get(binding_operation, :binding_style),
+      Map.get(binding_operation, "binding_style")
+    ]
+
+    chosen =
+      Enum.find(candidates, fn value ->
+        is_binary(value) && value != ""
+      end)
+
+    chosen || "document"
   end
 
   defp get_message_use(binding_operation, direction) when direction in [:input, :output] do

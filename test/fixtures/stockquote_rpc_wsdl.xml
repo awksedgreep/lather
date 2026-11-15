@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                  xmlns:tns="http://example.com/quote"
+                  name="StockQuoteService"
+                  targetNamespace="http://example.com/quote">
+  <wsdl:types>
+    <xsd:schema targetNamespace="http://example.com/quote">
+      <xsd:element name="GetQuote">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="symbol" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="GetQuoteResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="price" type="xsd:decimal"/>
+            <xsd:element name="change" type="xsd:decimal" minOccurs="0"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </wsdl:types>
+  <wsdl:message name="GetQuoteRequest">
+    <wsdl:part name="symbol" type="xsd:string"/>
+  </wsdl:message>
+  <wsdl:message name="GetQuoteResponse">
+    <wsdl:part name="price" type="xsd:decimal"/>
+  </wsdl:message>
+  <wsdl:portType name="StockQuotePort">
+    <wsdl:operation name="GetQuote">
+      <wsdl:documentation>Returns the current quote for a ticker symbol.</wsdl:documentation>
+      <wsdl:input message="tns:GetQuoteRequest"/>
+      <wsdl:output message="tns:GetQuoteResponse"/>
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="StockQuoteSOAP" type="tns:StockQuotePort">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="GetQuote">
+      <soap:operation soapAction="urn:GetQuote" style="rpc"/>
+      <wsdl:input>
+        <soap:body use="literal" namespace="urn:GetQuote"/>
+      </wsdl:input>
+      <wsdl:output>
+        <soap:body use="literal" namespace="urn:GetQuote"/>
+      </wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="StockQuoteService">
+    <wsdl:port name="StockQuotePort" binding="tns:StockQuoteSOAP">
+      <soap:address location="http://quote.example.com/soap/rpc"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

@@ -42,9 +42,9 @@ defmodule Lather.Http.Pool do
   def config_for_endpoint(endpoint, overrides \\ []) do
     base_config = default_config()
 
-    # Extract host for pool naming
+    # Extract host for pool naming unless the caller supplies a name
     uri = URI.parse(endpoint)
-    pool_name = String.to_atom("lather_pool_#{uri.host}")
+    pool_name = Keyword.get(overrides, :pool_name, String.to_atom("lather_pool_#{uri.host}"))
 
     base_config
     |> Keyword.put(:name, pool_name)
