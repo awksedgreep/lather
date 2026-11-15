@@ -89,6 +89,19 @@ defmodule Lather.Server.EnhancedPlug do
 
   @min_compress_size 1024
 
+  @doc """
+  Builds the service configuration used by `call/2`.
+
+  Accepts the options described in the module documentation (`:service`,
+  `:base_path`, `:enable_metrics`, `:audit_log`, `:tenants`,
+  `:fault_injection_rate`, `:health_path`, `:metrics_path`, ...) and merges a
+  `:config_file` (YAML or JSON) over them when one is given.
+
+  ## Examples
+
+      config = Lather.Server.EnhancedPlug.init(service: MyService, enable_metrics: true)
+
+  """
   @impl Plug
   def init(opts) do
     opts =
