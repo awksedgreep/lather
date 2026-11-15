@@ -4,7 +4,8 @@
 
 | Lather version | Elixir | OTP | Tested in CI |
 |---|---|---|---|
-| 1.2.x | 1.16 - 1.20 | 25 - 29 | 1.20 / OTP 29 (`mix test --cover`) |
+| 1.3.x | 1.16 - 1.20 | 25 - 29 | 1.20 / OTP 29 (`mix test --cover`) |
+| 1.2.x | 1.16 - 1.19 | 25 - 28 | historical |
 | 1.1.x | 1.14 - 1.19 | 24 - 27 | historical |
 | 1.0.x | 1.13+ | 23+ | historical |
 
