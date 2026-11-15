@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-11-14
+
+### Fixed
+- Audit logging no longer reads and rewrites the whole log on every
+  request; entries are appended with `File.write/3` in `:append` mode,
+  so concurrent requests can no longer overwrite each other's entries.
+- `Lather.Wsdl.Analyzer` honors the per-operation `style="rpc"` attribute
+  instead of always reporting the binding-level default.
+- `Lather.DynamicClient` keeps non-`wsdl` query parameters (e.g.
+  `?tenant=acme`) when deriving the service endpoint from a WSDL URL, so
+  multi-tenant clients no longer fall back to the default tenant.
+- `Lather.ReliableMessaging.deliver/3` retries transient `Receiver` SOAP
+  faults (e.g. `TemporaryFailure`) rather than only transport errors,
+  making fault injection and transient service failures recoverable.
+
+### Added
+- `Lather.Http.Pool` is now used by `Lather.Http.Transport.warm_connection/2`
+  to build and validate per-endpoint pool configuration.
+- Property/fuzz tests for WS-Security signatures, JWT claims, MTOM
+  threshold selection, attachment validation, and WS-Policy round-trips;
+  RPC, nested-type/multi-port, and SOAP 1.2 WSDL fixtures; and a
+  `scripts/coverage_gate.sh` (80% floor) in the quality CI workflow.
+
 ## [1.3.0] - 2026-11-14
 
 ### Added
