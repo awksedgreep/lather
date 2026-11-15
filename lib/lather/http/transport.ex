@@ -4,6 +4,13 @@ defmodule Lather.Http.Transport do
 
   Handles HTTP/HTTPS communication using Finch for connection pooling
   and efficient request handling.
+
+  Every request emits `[:lather, :client, :request, :start]` and
+  `[:lather, :client, :request, :stop]` telemetry events (measurements:
+  `duration`; metadata: `url`, `method`, `operation`, `status`). Passing a
+  `Lather.Http.Metrics` handle via the `:metrics` option also accumulates
+  per-client request analytics.
+
   """
 
   require Logger
@@ -11,6 +18,7 @@ defmodule Lather.Http.Transport do
   alias Lather.Error
   alias Lather.Http.SSLPoolManager
   alias Lather.Http.BasicClient
+  alias Lather.Http.Metrics
   alias Lather.Http.Pool
 
   # SOAP 1.1 headers
@@ -112,6 +120,9 @@ defmodule Lather.Http.Transport do
     per-request.
   * `:pool_timeout` - Connection pool timeout in milliseconds
   * `:basic_auth` - Basic authentication credentials `{username, password}`
+  * `:metrics` - A `Lather.Http.Metrics` handle that accumulates client-side
+    request analytics for this transport call
+  * `:operation` - Operation name reported in telemetry and metrics
 
   ## Examples
 
@@ -125,18 +136,59 @@ defmodule Lather.Http.Transport do
   """
   @spec post(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, any()}
   def post(url, body, options \\ []) do
-    if basic_client?(options) do
-      BasicClient.request(
-        :post,
-        url,
-        build_headers(options),
-        body,
-        Keyword.get(options, :timeout, @default_timeout)
-      )
-    else
-      finch_post(url, body, options)
-    end
+    instrument(options, url, :post, fn ->
+      if basic_client?(options) do
+        BasicClient.request(
+          :post,
+          url,
+          build_headers(options),
+          body,
+          Keyword.get(options, :timeout, @default_timeout)
+        )
+      else
+        finch_post(url, body, options)
+      end
+    end)
   end
+
+  defp instrument(options, url, method, fun) do
+    metrics = metrics_handle(Keyword.get(options, :metrics))
+    operation = Keyword.get(options, :operation)
+    method_name = method |> to_string |> String.upcase()
+
+    :telemetry.execute(
+      [:lather, :client, :request, :start],
+      %{count: 1},
+      %{url: url, method: method_name, operation: operation}
+    )
+
+    start = System.monotonic_time(:microsecond)
+    result = fun.()
+    duration_us = System.monotonic_time(:microsecond) - start
+
+    status =
+      case result do
+        {:ok, %{status: status}} -> status
+        {:error, {:soap_fault, %{http_status: status}}} -> status
+        {:error, %{status: status}} -> status
+        _ -> 0
+      end
+
+    :telemetry.execute(
+      [:lather, :client, :request, :stop],
+      %{count: 1, duration: duration_us},
+      %{url: url, method: method_name, operation: operation, status: status}
+    )
+
+    if metrics do
+      Metrics.record(metrics, status, duration_us, operation)
+    end
+
+    result
+  end
+
+  defp metrics_handle(%{table: _table} = handle), do: handle
+  defp metrics_handle(_other), do: nil
 
   defp finch_post(url, body, options) do
     timeout = Keyword.get(options, :timeout, @default_timeout)
@@ -200,17 +252,19 @@ defmodule Lather.Http.Transport do
   """
   @spec get(String.t(), keyword()) :: {:ok, map()} | {:error, any()}
   def get(url, options \\ []) do
-    if basic_client?(options) do
-      BasicClient.request(
-        :get,
-        url,
-        List.wrap(Keyword.get(options, :headers, [])),
-        nil,
-        Keyword.get(options, :timeout, @default_timeout)
-      )
-    else
-      finch_get(url, options)
-    end
+    instrument(options, url, :get, fn ->
+      if basic_client?(options) do
+        BasicClient.request(
+          :get,
+          url,
+          List.wrap(Keyword.get(options, :headers, [])),
+          nil,
+          Keyword.get(options, :timeout, @default_timeout)
+        )
+      else
+        finch_get(url, options)
+      end
+    end)
   end
 
   defp finch_get(url, options) do
@@ -254,6 +308,12 @@ defmodule Lather.Http.Transport do
   @spec post_stream(String.t(), String.t(), Enumerable.t(), keyword()) ::
           {:ok, map()} | {:error, any()}
   def post_stream(url, content_type, body_stream, options \\ []) do
+    instrument(options, url, :post, fn ->
+      finch_post_stream(url, content_type, body_stream, options)
+    end)
+  end
+
+  defp finch_post_stream(url, content_type, body_stream, options) do
     timeout = Keyword.get(options, :timeout, @default_timeout)
     pool_timeout = Keyword.get(options, :pool_timeout, 5_000)
 
@@ -585,7 +645,7 @@ defmodule Lather.Http.Transport do
     # instead of a generic HTTP error so callers get the fault code/string.
     case Error.parse_soap_fault(body) do
       {:ok, fault} ->
-        {:error, {:soap_fault, fault}}
+        {:error, {:soap_fault, Map.put(fault, :http_status, status)}}
 
       _ ->
         {:error, Error.http_error(status, body, headers)}

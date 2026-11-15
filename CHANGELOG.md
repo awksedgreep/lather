@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The generated OpenAPI document documents the built-in observability
   endpoints (`GET /health`, `GET /metrics`) so Swagger UI and OpenAPI
   clients can discover them.
+- New client-side analytics: `Lather.Http.Metrics` (enabled with
+  `metrics: true` on `Lather.DynamicClient.new/2` and read with
+  `Lather.DynamicClient.metrics/1`) records request counts, durations,
+  status codes, per-operation counts, and reliable-messaging retries.
+  Every transport call also emits `[:lather, :client, :request, :start]` /
+  `[:lather, :client, :request, :stop]` telemetry events.
 
 ## [1.3.0] - 2026-11-14
 

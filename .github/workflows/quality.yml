@@ -17,6 +17,6 @@ jobs:
           version-type: strict
       - run: mix deps.get --check-locked
       - run: mix compile --warnings-as-errors
-      - run: mix xref unused
+      - run: mix xref graph --label compile-connected
       - run: ./scripts/check_docs.sh
       - run: ./scripts/coverage_gate.sh

@@ -24,12 +24,13 @@ defmodule Lather.DynamicClient do
   alias Lather.Error
   alias Lather.Soap.Elements
 
-  defstruct [:base_client, :service_info, :default_options]
+  defstruct [:base_client, :service_info, :default_options, :metrics]
 
   @type t :: %__MODULE__{
           base_client: Client.t(),
           service_info: map(),
-          default_options: keyword()
+          default_options: keyword(),
+          metrics: map() | nil
         }
 
   @doc """
@@ -72,26 +73,35 @@ defmodule Lather.DynamicClient do
   """
   @spec new(String.t(), keyword()) :: {:ok, t()} | {:error, term()}
   def new(wsdl_source, options \\ []) do
+    metrics = client_metrics(Keyword.get(options, :metrics))
+    base_options = if metrics, do: Keyword.put(options, :metrics, metrics), else: options
+
     with {:ok, service_info} <- Analyzer.load_and_analyze(wsdl_source, options),
          {:ok, base_client} <-
-           create_base_client(service_info, options ++ [wsdl_source: wsdl_source]) do
+           create_base_client(service_info, base_options ++ [wsdl_source: wsdl_source]) do
       # Determine SOAP version - use explicit option or detect from WSDL
       soap_version =
         Keyword.get(options, :soap_version) ||
           Map.get(service_info, :soap_version, :v1_1)
 
       # Add soap_version to default options
-      enhanced_options = Keyword.put(options, :soap_version, soap_version)
+      enhanced_options = Keyword.put(base_options, :soap_version, soap_version)
 
       dynamic_client = %__MODULE__{
         base_client: base_client,
         service_info: service_info,
-        default_options: enhanced_options
+        default_options: enhanced_options,
+        metrics: metrics
       }
 
       {:ok, dynamic_client}
     end
   end
+
+  defp client_metrics(nil), do: nil
+  defp client_metrics(true), do: Lather.Http.Metrics.new()
+  defp client_metrics(handle) when is_map(handle), do: handle
+  defp client_metrics(_other), do: nil
 
   @doc """
   Warm up the HTTP connection pool for a dynamic client's endpoint.
@@ -122,6 +132,24 @@ defmodule Lather.DynamicClient do
   def with_pool(%__MODULE__{} = client, pool_name) do
     %{client | default_options: Keyword.put(client.default_options, :pool_name, pool_name)}
   end
+
+  @doc """
+  Returns the client's request analytics, or `nil` when metrics were not
+  enabled.
+
+  Enable them with `metrics: true` (or a shared `Lather.Http.Metrics` handle)
+  when calling `new/2`.
+
+  ## Examples
+
+      {:ok, client} = Lather.DynamicClient.new(wsdl, metrics: true)
+      Lather.DynamicClient.call(client, "Echo", %{"message" => "hi"})
+      Lather.DynamicClient.metrics(client)
+      # %{requests: 1, errors: 0, retries: 0, average_duration_ms: 8.2, ...}
+  """
+  @spec metrics(t()) :: map() | nil
+  def metrics(%__MODULE__{metrics: nil}), do: nil
+  def metrics(%__MODULE__{metrics: handle}), do: Lather.Http.Metrics.snapshot(handle)
 
   @doc """
   Lists all available operations for the service.
@@ -375,7 +403,9 @@ defmodule Lather.DynamicClient do
 
       Lather.ReliableMessaging.deliver(
         fn -> send_request(base_client, envelope, operation_info, default_opts, options) end,
-        retries
+        retries,
+        Keyword.get(merged_opts, :backoff_ms, 100),
+        Keyword.get(merged_opts, :metrics)
       )
     else
       send_request(base_client, envelope, operation_info, default_opts, options)
@@ -1000,6 +1030,8 @@ defmodule Lather.DynamicClient do
           api_key_headers(default_opts, call_opts) ++
           cert_headers(default_opts, call_opts)
       )
+
+    transport_options = Keyword.put(transport_options, :operation, operation_info.name)
 
     # Send the pre-built envelope directly
     case Transport.post(base_client.endpoint, soap_envelope, transport_options) do

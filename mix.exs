@@ -110,7 +110,15 @@ defmodule Lather.MixProject do
           Lather.Wsdl.Analyzer
         ],
         "Transport & HTTP": [
-          Lather.Http.Transport
+          Lather.Http.Transport,
+          Lather.Http.BasicClient,
+          Lather.Http.Pool,
+          Lather.Http.Metrics
+        ],
+        Observability: [
+          Lather.Tracing,
+          Lather.Tracing.Collector,
+          Lather.Server.Metrics
         ],
         "XML Processing": [
           Lather.Xml.Builder,

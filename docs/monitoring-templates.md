@@ -15,6 +15,25 @@ simple Grafana "text panel" or Prometheus scraping via an exporter. The
 `/health` and `/metrics` endpoints are also documented in the generated
 OpenAPI spec (`?openapi`).
 
+## Client-side metrics
+
+Clients collect their own analytics with `Lather.Http.Metrics`:
+
+```elixir
+{:ok, client} =
+  Lather.DynamicClient.new("http://localhost:4000/soap?wsdl", metrics: true)
+
+Lather.DynamicClient.call(client, "Echo", %{"message" => "hi"})
+
+Lather.DynamicClient.metrics(client)
+# %{requests: 1, errors: 0, retries: 0, average_duration_ms: 8.2,
+#   status_counts: [{200, 1}], operation_counts: [{"Echo", 1}]}
+```
+
+Pass a shared handle (`metrics: metrics`) to several clients to aggregate one
+view. Every request that goes through `Lather.Http.Transport` is counted, and
+retries issued by `Lather.ReliableMessaging` are recorded separately.
+
 ## Telemetry event names
 
 Server-side, every request through `Lather.Server.EnhancedPlug` is wrapped
@@ -33,9 +52,18 @@ Client-side, calls made with `trace: true` emit:
 [:lather, :soap, :request, :stop]     # metadata: trace_id, span_id, operation, duration_us
 ```
 
+Client-side, every call made through `Lather.Http.Transport` emits:
+
+```elixir
+[:lather, :client, :request, :start]
+[:lather, :client, :request, :stop]   # measurements: duration
+                                      # metadata: url, method, operation, status
+```
+
 ```elixir
 :telemetry.attach_many("lather-ops", [
   [:lather, :server, :request, :stop],
+  [:lather, :client, :request, :stop],
   [:lather, :soap, :request, :start],
   [:lather, :soap, :request, :stop],
   [:lather, :soap, :error]

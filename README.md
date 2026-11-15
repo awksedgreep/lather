@@ -66,7 +66,7 @@ forms = Lather.Server.FormGenerator.generate_service_overview(service_info, base
 - `GET  /service?openapi` → OpenAPI 3.1 specification (also at `/service/openapi.json`)
 - `GET  /service?swagger` → Swagger UI explorer for the OpenAPI spec (also at `/service/swagger`)
 - `GET  /service?health` → JSON health check (service, version, operation count, uptime)
-- `GET  /service?metrics` → Usage analytics (request/error counts, avg duration, status counts) when `enable_metrics: true`
+- `GET  /service?metrics` → Usage analytics (request/error counts, avg duration, per-status and per-operation counts) when `enable_metrics: true`
 
 ## 🚀 Quick Start
 

@@ -40,6 +40,27 @@ defmodule Lather.ReliableMessagingTest do
     assert ReliableMessaging.deliver(fn -> {:error, :bad_input} end, 3, 1) == {:error, :bad_input}
   end
 
+  test "retries are recorded in client metrics" do
+    metrics = Lather.Http.Metrics.new()
+    counter = :counters.new(1, [])
+
+    fun = fn ->
+      n = :counters.get(counter, 1)
+      :counters.add(counter, 1, 1)
+
+      if n < 2 do
+        {:error, {:transport_error, :timeout}}
+      else
+        {:ok, "delivered"}
+      end
+    end
+
+    assert ReliableMessaging.deliver(fun, 3, 1, metrics) == {:ok, "delivered"}
+
+    snapshot = Lather.Http.Metrics.snapshot(metrics)
+    assert snapshot.retries == 2
+  end
+
   test "transient Receiver faults are retried" do
     counter = :counters.new(1, [])
 

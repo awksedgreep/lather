@@ -48,29 +48,35 @@ defmodule Lather.ReliableMessaging do
 
   Returns the last result when all attempts fail.
   """
-  @spec deliver((-> {:ok, term()} | {:error, term()}), non_neg_integer(), non_neg_integer()) ::
-          {:ok, term()} | {:error, term()}
-  def deliver(fun, retries \\ 3, backoff_ms \\ 100) do
-    deliver_loop(fun, retries, backoff_ms, 0)
+  @spec deliver(
+          (-> {:ok, term()} | {:error, term()}),
+          non_neg_integer(),
+          non_neg_integer(),
+          map() | nil
+        ) :: {:ok, term()} | {:error, term()}
+  def deliver(fun, retries \\ 3, backoff_ms \\ 100, metrics \\ nil) do
+    deliver_loop(fun, retries, backoff_ms, 0, metrics)
   end
 
-  defp deliver_loop(fun, retries, backoff_ms, attempt) do
+  defp deliver_loop(fun, retries, backoff_ms, attempt, metrics) do
     case fun.() do
       {:ok, _} = ok ->
         ok
 
       {:error, {:transport_error, _}} = error ->
         if attempt < retries do
+          if metrics, do: Lather.Http.Metrics.record_retry(metrics)
           Process.sleep(backoff_ms * 2 ** attempt)
-          deliver_loop(fun, retries, backoff_ms, attempt + 1)
+          deliver_loop(fun, retries, backoff_ms, attempt + 1, metrics)
         else
           error
         end
 
       {:error, {:soap_fault, fault}} = error ->
         if attempt < retries and retryable_fault?(fault) do
+          if metrics, do: Lather.Http.Metrics.record_retry(metrics)
           Process.sleep(backoff_ms * 2 ** attempt)
-          deliver_loop(fun, retries, backoff_ms, attempt + 1)
+          deliver_loop(fun, retries, backoff_ms, attempt + 1, metrics)
         else
           error
         end
