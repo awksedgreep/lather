@@ -47,6 +47,15 @@ defmodule Lather.Server.EnhancedPlug do
 
   - `:service` - The SOAP service module (required)
   - `:base_path` - Base path for service (default: "/soap")
+  - `:health_path` - Path of the built-in health endpoint (default `"/health"`,
+    matched as a complete segment under `:base_path`). Pass `nil` to disable it
+    when your application owns its own health route.
+  - `:metrics_path` - Path of the analytics endpoint (default `"/metrics"`);
+    pass `nil` to disable.
+  - `:openapi_path` - Path of the OpenAPI spec (default `"/openapi"`, also
+    served as `<path>.json`); pass `nil` to disable.
+  - `:swagger_path` - Path of the Swagger UI (default `"/swagger"`); pass `nil`
+    to disable.
   - `:enable_forms` - Enable web form interface (default: true)
   - `:enable_json` - Enable JSON endpoints (default: true)
   - `:auth_handler` - Custom authentication handler
@@ -109,6 +118,10 @@ defmodule Lather.Server.EnhancedPlug do
     %{
       service: service,
       base_path: Keyword.get(opts, :base_path, "/soap"),
+      health_path: Keyword.get(opts, :health_path, "/health"),
+      metrics_path: Keyword.get(opts, :metrics_path, "/metrics"),
+      openapi_path: Keyword.get(opts, :openapi_path, "/openapi"),
+      swagger_path: Keyword.get(opts, :swagger_path, "/swagger"),
       enable_forms: Keyword.get(opts, :enable_forms, true),
       enable_json: Keyword.get(opts, :enable_json, true),
       enable_swagger: Keyword.get(opts, :enable_swagger, true),
@@ -182,7 +195,7 @@ defmodule Lather.Server.EnhancedPlug do
     conn = Plug.Conn.fetch_query_params(conn)
     config = resolve_tenant(config, conn)
 
-    case {conn.method, get_request_type(conn)} do
+    case {conn.method, get_request_type(conn, config)} do
       # WSDL requests
       {"GET", :wsdl} ->
         handle_wsdl_request(conn, config)
@@ -369,7 +382,7 @@ defmodule Lather.Server.EnhancedPlug do
   end
 
   # Determine request type from URL and query parameters
-  defp get_request_type(conn) do
+  defp get_request_type(conn, config) do
     cond do
       # WSDL request
       Map.has_key?(conn.query_params, "wsdl") ->
@@ -394,21 +407,21 @@ defmodule Lather.Server.EnhancedPlug do
         :events
 
       # OpenAPI spec request
-      Map.has_key?(conn.query_params, "openapi") ->
+      config.openapi_path && Map.has_key?(conn.query_params, "openapi") ->
         :openapi
 
-      String.contains?(conn.request_path, "/openapi") ->
+      observability_path?(conn, config, openapi_suffixes(config)) ->
         :openapi
 
       # Health check request
-      Map.has_key?(conn.query_params, "health") ->
+      config.health_path && Map.has_key?(conn.query_params, "health") ->
         :health
 
-      String.contains?(conn.request_path, "/health") ->
+      observability_path?(conn, config, config.health_path) ->
         :health
 
       # Metrics request
-      Map.has_key?(conn.query_params, "metrics") ->
+      config.metrics_path && Map.has_key?(conn.query_params, "metrics") ->
         :metrics
 
       # Observability dashboard
@@ -423,14 +436,14 @@ defmodule Lather.Server.EnhancedPlug do
       Map.has_key?(conn.query_params, "history") ->
         :history
 
-      String.contains?(conn.request_path, "/metrics") ->
+      observability_path?(conn, config, config.metrics_path) ->
         :metrics
 
       # Swagger UI request
-      Map.has_key?(conn.query_params, "swagger") ->
+      config.swagger_path && Map.has_key?(conn.query_params, "swagger") ->
         :swagger
 
-      String.contains?(conn.request_path, "/swagger") ->
+      observability_path?(conn, config, config.swagger_path) ->
         :swagger
 
       # Operation form request
@@ -459,6 +472,27 @@ defmodule Lather.Server.EnhancedPlug do
         :unsupported
     end
   end
+
+  # Built-in observability endpoints are matched on complete path segments
+  # (`/health`, `<base_path>/health`) instead of as substrings, so an app that
+  # owns its own `/healthcare` or `/api/health` route is never hijacked.
+  # Passing `health_path: nil` (or `metrics_path:` / `openapi_path:` /
+  # `swagger_path: nil`) removes the built-in endpoint entirely.
+  defp observability_path?(_conn, _config, nil), do: false
+  defp observability_path?(_conn, _config, []), do: false
+
+  defp observability_path?(conn, config, suffixes) do
+    path = conn.request_path |> String.trim_trailing("/")
+    prefix = config.base_path |> String.trim_trailing("/")
+
+    Enum.any?(List.wrap(suffixes), fn suffix ->
+      path == suffix or path == prefix <> suffix
+    end)
+  end
+
+  defp openapi_suffixes(%{openapi_path: nil}), do: []
+
+  defp openapi_suffixes(%{openapi_path: path}), do: [path, path <> ".json"]
 
   # Handle Swagger UI requests
   defp handle_swagger_request(conn, config) do
@@ -525,7 +559,11 @@ defmodule Lather.Server.EnhancedPlug do
       service_info = service.__soap_service__()
       base_url = get_base_url(conn, config)
 
-      spec = OpenAPIGenerator.generate(service_info, base_url)
+      spec =
+        OpenAPIGenerator.generate(service_info, base_url,
+          health_path: config.health_path,
+          metrics_path: config.metrics_path
+        )
 
       conn
       |> put_resp_content_type("application/json")

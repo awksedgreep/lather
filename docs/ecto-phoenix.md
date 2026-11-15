@@ -39,6 +39,22 @@ Mount an EnhancedPlug in a Phoenix router:
 forward "/soap", Lather.Server.EnhancedPlug, [service: UserService]
 ```
 
+If your app already serves its own `/health` or `/metrics` routes, either keep
+the SOAP service on its own path (as above) or turn Lather's built-ins off.
+The endpoints are matched on complete path segments, so unrelated routes such
+as `/healthcare/patients` or `/api/health-check` are never intercepted:
+
+```elixir
+forward "/soap", Lather.Server.EnhancedPlug, [
+  service: UserService,
+  health_path: nil,      # or "/soap-health" to relocate
+  metrics_path: nil,
+  openapi_path: "/openapi.json"
+]
+```
+
+Disabled paths are also omitted from the generated OpenAPI document.
+
 For Phoenix PubSub bridging to WS-Eventing:
 
 ```elixir

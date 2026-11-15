@@ -9,7 +9,9 @@ defmodule Lather.Server.OpenAPIGenerator do
 
   It also documents the built-in observability endpoints
   (`GET {base_path}/health` and `GET {base_path}/metrics`) so Swagger UI and
-  OpenAPI clients can discover them.
+  OpenAPI clients can discover them. Pass `health_path: nil` or
+  `metrics_path: nil` to omit an endpoint your application serves itself, or
+  a different path to reflect a relocated one.
 
   ## Usage
 
@@ -41,7 +43,7 @@ defmodule Lather.Server.OpenAPIGenerator do
 
     schemas = build_component_schemas(service_info)
     schema_names = Map.keys(schemas)
-    paths = build_paths(service_info, schema_names)
+    paths = build_paths(service_info, schema_names, opts)
 
     %{
       "openapi" => "3.1.0",
@@ -63,7 +65,7 @@ defmodule Lather.Server.OpenAPIGenerator do
     url |> String.trim() |> String.trim_trailing("/")
   end
 
-  defp build_paths(service_info, schema_names) do
+  defp build_paths(service_info, schema_names, opts) do
     operations =
       service_info.operations
       |> Enum.reduce(%{}, fn operation, acc ->
@@ -74,75 +76,86 @@ defmodule Lather.Server.OpenAPIGenerator do
         )
       end)
 
-    Map.merge(operations, observability_paths())
+    paths = Map.merge(operations, observability_paths(opts))
+    paths
   end
 
-  defp observability_paths() do
+  defp observability_paths(opts) do
+    %{}
+    |> maybe_put_path(Keyword.get(opts, :health_path, "/health"), health_spec())
+    |> maybe_put_path(Keyword.get(opts, :metrics_path, "/metrics"), metrics_spec())
+  end
+
+  defp maybe_put_path(paths, nil, _spec), do: paths
+  defp maybe_put_path(paths, path, spec), do: Map.put(paths, path, spec)
+
+  defp health_spec do
     %{
-      "/health" => %{
-        "get" => %{
-          "operationId" => "health",
-          "summary" => "Service health check",
-          "tags" => ["Observability"],
-          "responses" => %{
-            "200" => %{
-              "description" => "Service is running",
-              "content" => %{
-                "application/json" => %{
-                  "schema" => %{
-                    "type" => "object",
-                    "required" => ["status", "service", "operations", "uptime_seconds"],
-                    "properties" => %{
-                      "status" => %{"type" => "string"},
-                      "service" => %{"type" => "string"},
-                      "version" => %{"type" => "string"},
-                      "operations" => %{"type" => "integer"},
-                      "uptime_seconds" => %{"type" => "integer"}
-                    }
+      "get" => %{
+        "operationId" => "health",
+        "summary" => "Service health check",
+        "tags" => ["Observability"],
+        "responses" => %{
+          "200" => %{
+            "description" => "Service is running",
+            "content" => %{
+              "application/json" => %{
+                "schema" => %{
+                  "type" => "object",
+                  "required" => ["status", "service", "operations", "uptime_seconds"],
+                  "properties" => %{
+                    "status" => %{"type" => "string"},
+                    "service" => %{"type" => "string"},
+                    "version" => %{"type" => "string"},
+                    "operations" => %{"type" => "integer"},
+                    "uptime_seconds" => %{"type" => "integer"}
                   }
                 }
               }
             }
           }
         }
-      },
-      "/metrics" => %{
-        "get" => %{
-          "operationId" => "metrics",
-          "summary" => "Request analytics for this service instance",
-          "description" =>
-            "Returned when the service is started with `enable_metrics: true`; otherwise " <>
-              "the endpoint responds with 404.",
-          "tags" => ["Observability"],
-          "responses" => %{
-            "200" => %{
-              "description" => "Usage analytics",
-              "content" => %{
-                "application/json" => %{
-                  "schema" => %{
-                    "type" => "object",
-                    "required" => ["requests", "errors", "average_duration_ms"],
-                    "properties" => %{
-                      "requests" => %{"type" => "integer"},
-                      "errors" => %{"type" => "integer"},
-                      "total_duration_us" => %{"type" => "integer"},
-                      "average_duration_ms" => %{"type" => "number"},
-                      "status_counts" => %{
-                        "type" => "object",
-                        "additionalProperties" => %{"type" => "integer"}
-                      },
-                      "operation_counts" => %{
-                        "type" => "object",
-                        "additionalProperties" => %{"type" => "integer"}
-                      }
+      }
+    }
+  end
+
+  defp metrics_spec do
+    %{
+      "get" => %{
+        "operationId" => "metrics",
+        "summary" => "Request analytics for this service instance",
+        "description" =>
+          "Returned when the service is started with `enable_metrics: true`; otherwise " <>
+            "the endpoint responds with 404.",
+        "tags" => ["Observability"],
+        "responses" => %{
+          "200" => %{
+            "description" => "Usage analytics",
+            "content" => %{
+              "application/json" => %{
+                "schema" => %{
+                  "type" => "object",
+                  "required" => ["requests", "errors", "average_duration_ms"],
+                  "properties" => %{
+                    "requests" => %{"type" => "integer"},
+                    "errors" => %{"type" => "integer"},
+                    "total_duration_us" => %{"type" => "integer"},
+                    "average_duration_ms" => %{"type" => "number"},
+                    "status_counts" => %{
+                      "type" => "object",
+                      "additionalProperties" => %{"type" => "integer"}
+                    },
+                    "operation_counts" => %{
+                      "type" => "object",
+                      "additionalProperties" => %{"type" => "integer"}
                     }
                   }
                 }
               }
-            },
-            "404" => %{
-              "description" => "Metrics are not enabled for this service"
             }
+          },
+          "404" => %{
+            "description" => "Metrics are not enabled for this service"
           }
         }
       }

@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Lather.ReliableMessaging.deliver/3` retries transient `Receiver` SOAP
   faults (e.g. `TemporaryFailure`) rather than only transport errors,
   making fault injection and transient service failures recoverable.
+- The built-in observability endpoints are matched on complete path segments
+  instead of substrings, so an application that owns its own `/healthcare` or
+  `/api/health-check` route is no longer intercepted. Each endpoint can be
+  relocated or disabled (`health_path: nil`, `metrics_path: nil`,
+  `openapi_path: nil`, `swagger_path: nil`), and disabled endpoints are
+  omitted from the generated OpenAPI document.
 
 ### Added
 - `Lather.Http.Pool` is now used by `Lather.Http.Transport.warm_connection/2`
